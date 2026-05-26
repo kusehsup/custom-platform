@@ -21,7 +21,7 @@ app.register('queries', {
             </div>
         </div>`;
 
-        document.getElementById('btn-q-refresh').addEventListener('click', () => this._load());
+        document.getElementById('btn-q-refresh').addEventListener('click', () => this._load(true));
         document.getElementById('btn-q-more').addEventListener('click', () => this._renderMore());
         document.getElementById('q-search').addEventListener('input', e => {
             this._shown = 0;
@@ -31,11 +31,11 @@ app.register('queries', {
         await this._load();
     },
 
-    async _load() {
+    async _load(refresh = false) {
         const list = document.getElementById('q-list');
         if (list) list.innerHTML = '<div style="padding:16px;color:var(--text-2);font-size:13px">Загрузка...</div>';
         try {
-            const data = await API.get('/api/queries');
+            const data = await API.get('/api/queries' + (refresh ? '?refresh=true' : ''));
             const prev = this._prevStatuses;
             this._queries = data.queries || {};
             this._shown   = 0;

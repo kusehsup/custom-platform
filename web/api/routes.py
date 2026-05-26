@@ -228,9 +228,11 @@ async def save_code(body: SaveCodeRequest, login: str = Depends(get_current_user
 # ------------------------------------------------------------------ #
 
 @router.get('/api/queries')
-async def get_queries(login: str = Depends(get_current_user)):
+async def get_queries(login: str = Depends(get_current_user), refresh: bool = False):
     client = _require_client(login)
-    queries = await client.fetch_queries(timeout=6.0)
+    if refresh:
+        client._app_data.pop('queries_ts', None)  # сбрасываем кэш
+    queries = await client.fetch_queries(timeout=8.0)
     return {'queries': queries}
 
 
