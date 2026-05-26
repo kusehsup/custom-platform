@@ -222,13 +222,8 @@ async def save_code(body: SaveCodeRequest, login: str = Depends(get_current_user
 @router.get('/api/queries')
 async def get_queries(login: str = Depends(get_current_user)):
     client = _require_client(login)
-    # Запрашиваем у платформы актуальные запросы
-    try:
-        await client._emit('open_page', 'code_queries')
-        await asyncio.sleep(1)
-    except Exception:
-        pass
-    return {'queries': client.queries}
+    queries = await client.fetch_queries(timeout=6.0)
+    return {'queries': queries}
 
 
 @router.post('/api/code_query_response')

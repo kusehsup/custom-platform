@@ -8,7 +8,9 @@ from config import PLATFORM_URL, PROXY_URL
 
 _host = urllib.parse.urlparse(PLATFORM_URL).netloc
 _path_param = urllib.parse.quote(PLATFORM_URL, safe='')
+_path_queries = urllib.parse.quote(PLATFORM_URL + 'code_queries', safe='')
 WS_URL = f'ws://{_host}/socket.io/?path={_path_param}&EIO=3&transport=websocket'
+WS_URL_QUERIES = f'ws://{_host}/socket.io/?path={_path_queries}&EIO=3&transport=websocket'
 
 WS_HEADERS = {
     'Origin': PLATFORM_URL.rstrip('/'),
@@ -193,6 +195,55 @@ class PlatformClient:
         except asyncio.TimeoutError:
             return 'Timeout: компиляция не завершилась за 2 минуты'
         return result
+
+    # ------------------------------------------------------------------ #
+    #  Запросы кода — отдельный WS endpoint                               #
+    # ------------------------------------------------------------------ #
+
+    async def fetch_queries(self, timeout: float = 5.0) -> dict:
+        """Подключается к /code_queries endpoint и получает актуальные запросы."""
+        future: asyncio.Future = asyncio.get_event_loop().create_future()
+
+        try:
+            proxy = _make_proxy()
+            kwargs = dict(
+                additional_headers=WS_HEADERS,
+                max_size=16 * 1024 * 1024,
+                ping_interval=None,
+            )
+            if proxy:
+                dest_port = int(_host.split(':')[1]) if ':' in _host else 80
+                sock = await proxy.connect(dest_host=_host.split(':')[0], dest_port=dest_port)
+                kwargs['sock'] = sock
+
+            ws = await websockets.connect(WS_URL_QUERIES, **kwargs)
+            try:
+                await ws.recv()          # handshake
+                await ws.send('40')
+                raw = await ws.recv()    # '40' confirm
+                if raw != '40':
+                    return self._app_data.get('queries', {})
+
+                # Ждём code_queries_update
+                async def _listen():
+                    async for msg in ws:
+                        if msg.startswith('42'):
+                            data = json.loads(msg[2:])
+                            if data[0] == 'code_queries_update':
+                                queries = data[1] if len(data) > 1 else {}
+                                self._app_data['queries'] = queries
+                                if not future.done():
+                                    future.set_result(queries)
+                                return
+
+                asyncio.create_task(_listen())
+                return await asyncio.wait_for(future, timeout=timeout)
+            finally:
+                await ws.close()
+        except asyncio.TimeoutError:
+            return self._app_data.get('queries', {})
+        except Exception:
+            return self._app_data.get('queries', {})
 
     # ------------------------------------------------------------------ #
     #  Обновление кэша после сохранения                                    #
