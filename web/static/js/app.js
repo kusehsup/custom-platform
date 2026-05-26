@@ -50,8 +50,31 @@ const app = {
     // ── WebSocket ─────────────────────────────────────────────────────
     connectWS() {
         if (this._ws) this._ws.close();
+        if (this._pingInterval) clearInterval(this._pingInterval);
+
         this._ws = API.connectWS(msg => this._onWS(msg));
-        this._ws.onclose = () => setTimeout(() => { if (API.hasToken()) this.connectWS(); }, 3000);
+
+        this._ws.onopen = () => {
+            this._setWsStatus(true);
+            this._pingInterval = setInterval(() => {
+                if (this._ws?.readyState === WebSocket.OPEN) this._ws.send('ping');
+            }, 20000);
+        };
+
+        this._ws.onclose = () => {
+            this._setWsStatus(false);
+            clearInterval(this._pingInterval);
+            setTimeout(() => { if (API.hasToken()) this.connectWS(); }, 3000);
+        };
+
+        this._ws.onerror = () => this._setWsStatus(false);
+    },
+
+    _setWsStatus(online) {
+        const el = document.getElementById('ws-status');
+        if (!el) return;
+        el.className = 'ws-status ' + (online ? 'ws-online' : 'ws-offline');
+        el.title = online ? 'Соединение активно' : 'Переподключение...';
     },
 
     _onWS(msg) {
@@ -122,6 +145,7 @@ const app = {
         <div class="layout">
             <header class="topbar">
                 <span class="topbar-logo"><span>⚡</span>CustomPlatform</span>
+                <span id="ws-status" class="ws-status ws-offline" title="Подключение..."></span>
                 <button class="btn btn-ghost btn-sm" id="btn-logout">Выйти</button>
             </header>
             <nav class="sidebar">

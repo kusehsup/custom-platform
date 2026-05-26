@@ -579,6 +579,24 @@ input::placeholder { color: var(--text-3); }
     border-color: rgba(59,130,246,0.3) !important;
 }
 
+/* ─── WS status indicator ────────────────────────────────────── */
+
+.ws-status {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    cursor: default;
+    transition: background 0.3s;
+}
+
+.ws-online  { background: var(--green); box-shadow: 0 0 6px rgba(52,211,153,0.5); }
+.ws-offline { background: var(--red);   animation: pulse-red 1.5s infinite; }
+
+@keyframes pulse-red {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.3; }
+}
+
 /* ─── Toast ──────────────────────────────────────────────────── */
 
 .toast-wrap { position: fixed; bottom: 24px; right: 24px; display: flex; flex-direction: column; gap: 8px; z-index: 9999; pointer-events: none; }
