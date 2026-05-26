@@ -42,7 +42,8 @@ const API = {
     // WebSocket
     connectWS(onMessage) {
         const token = this._token;
-        const ws = new WebSocket(`ws://${location.host}/ws?token=${token}`);
+        const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+        const ws = new WebSocket(`${proto}://${location.host}/ws?token=${token}`);
         ws.onmessage = e => onMessage(JSON.parse(e.data));
         return ws;
     },
