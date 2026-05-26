@@ -53,7 +53,7 @@ app.register('files', {
                         <button class="btn btn-ghost btn-sm hidden" id="btn-discard">✕ Сбросить</button>
                         <button class="btn btn-ghost btn-sm hidden" id="btn-del-toggle" title="Удалить доступ к строкам">🗑</button>
                     </div>
-                    <div id="delete-access-bar" class="hidden" style="display:flex;align-items:center;gap:8px;padding:8px 16px;background:var(--surface2);border-bottom:1px solid var(--border);font-size:13px;flex-shrink:0">
+                    <div id="delete-access-bar" class="hidden" style="align-items:center;gap:8px;padding:8px 16px;background:var(--surface2);border-bottom:1px solid var(--border);font-size:13px;flex-shrink:0">
                         <span style="color:var(--text-2);flex-shrink:0">Строки:</span>
                         <input type="number" id="del-from" placeholder="от" style="width:80px;padding:5px 10px" />
                         <span style="color:var(--text-3)">—</span>
@@ -91,8 +91,7 @@ app.register('files', {
 
         document.getElementById('btn-del-toggle').addEventListener('click', () => {
             const bar = document.getElementById('delete-access-bar');
-            const visible = bar.style.display !== 'none' && !bar.classList.contains('hidden');
-            bar.style.display = visible ? 'none' : 'flex';
+            bar.classList.toggle('hidden');
         });
         document.getElementById('btn-del-access').addEventListener('click', () => this._deleteAccess());
         document.getElementById('btn-del-block').addEventListener('click',  () => this._deleteCurrentBlock());
@@ -209,8 +208,7 @@ app.register('files', {
         document.getElementById('btn-discard')?.classList.add('hidden');
         // Показываем кнопку удаления доступа, панель скрыта по умолчанию
         document.getElementById('btn-del-toggle')?.classList.remove('hidden');
-        const delBar = document.getElementById('delete-access-bar');
-        if (delBar) { delBar.classList.add('hidden'); delBar.style.display = 'none'; }
+        document.getElementById('delete-access-bar')?.classList.add('hidden');
 
         try {
             const data = await API.get(`/api/file/${fileId}/code`);

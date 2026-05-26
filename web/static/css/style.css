@@ -588,6 +588,8 @@ input::placeholder { color: var(--text-3); }
 .file-item:hover .fav-btn { opacity: 0.5; }
 .file-item:hover .fav-btn:hover { opacity: 1; }
 
+#delete-access-bar:not(.hidden) { display: flex; }
+
 .part-tab-active {
     background: rgba(59,130,246,0.15) !important;
     color: var(--accent) !important;
