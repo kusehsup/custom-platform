@@ -97,7 +97,6 @@ const app = {
                 this.notify('CustomPlatform', hasErr ? 'Компиляция завершена с ошибками' : 'Компиляция успешна');
             }
         } else if (msg.type === 'queries_update') {
-            this._pages['queries']?.onUpdate?.(msg.queries);
             // Уведомление об одобрении запроса
             const s = this._getSettings();
             if (s.notify_code_access !== false) this._checkNewAccess(msg.queries);
@@ -207,7 +206,6 @@ const app = {
                 <a data-page="server"><span class="icon">🖥</span>Сервер</a>
                 <span class="sidebar-section">Код</span>
                 <a data-page="files"><span class="icon">📁</span>Файлы</a>
-                <a data-page="queries"><span class="icon">📨</span>Запросы кода</a>
                 <span class="sidebar-section">Прочее</span>
                 <a data-page="settings"><span class="icon">⚙️</span>Настройки</a>
             </nav>
