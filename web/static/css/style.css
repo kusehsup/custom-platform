@@ -526,14 +526,15 @@ input::placeholder { color: var(--text-3); }
 .sr-brace { font-family: var(--mono); color: var(--text-3); font-size: 13px; padding: 2px 6px; }
 .sr-gap   { color: var(--text-3); font-size: 12px; padding: 2px 6px; font-family: var(--mono); }
 
-/* Поиск — вкладка скролится целиком */
-#tab-search {
+/* Поиск — переопределяем editor-tab-content для скролла */
+#tab-search.editor-tab-content {
+    display: block;
     overflow-y: auto;
     overflow-x: hidden;
     flex: 1;
     min-height: 0;
     padding: 20px 24px;
-    display: block;
+    box-sizing: border-box;
 }
 
 #search-root {
@@ -542,7 +543,7 @@ input::placeholder { color: var(--text-3); }
     gap: 20px;
 }
 
-#tab-editor {
+#tab-editor.editor-tab-content {
     min-height: 0;
 }
 
