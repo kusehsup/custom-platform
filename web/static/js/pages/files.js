@@ -506,9 +506,9 @@ app.register('files', {
                         <span class="sr-block-toggle sr-expandable">
                             <span class="sr-id">[${id}]</span><span class="sr-type">[Блок кода]</span>
                             ${block.name ? `<span class="sr-name">${this._esc(block.name)}</span>` : ''}
-                            <span class="sr-lines">[Строк: ${block.lines}]</span>
+                            <span class="sr-lines${block.lines > 100 ? '" style="color:var(--yellow)' : ''}">[Строк: ${block.lines}]</span>
                         </span>
-                        <button class="btn btn-ghost btn-sm" data-sqaction="edit" data-file="${fileId}" data-path='${path}' data-name="${this._esc(block.name||'')}">Получить код</button>
+                        <button class="btn btn-ghost btn-sm" data-sqaction="edit" data-file="${fileId}" data-path='${path}' data-name="${this._esc(block.name||'')}" data-lines="${block.lines||0}">Получить код</button>
                     </div>
                     <div class="sr-block-children hidden">
                         <div class="sr-brace">{</div>${this._sqBlocks(fileId, block.children, [...parentPath, +id])}<div class="sr-brace">}</div>
@@ -531,22 +531,81 @@ app.register('files', {
     },
 
     async _sqGetCode(type, dataset) {
-        const fileId = dataset.file, path = JSON.parse(dataset.path), name = dataset.name || '', leaf = dataset.leaf;
+        const fileId = dataset.file;
+        const path   = JSON.parse(dataset.path);
+        const name   = dataset.name || '';
+        const leaf   = dataset.leaf;
+        const lines  = parseInt(dataset.lines || '0');
+
+        // Подтверждение для больших блоков при запросе кода
+        if (type === 'edit' && lines > 100) {
+            const confirmed = await this._confirmLargeBlock(lines, name);
+            if (!confirmed) return;
+        }
+
+        // Находим кнопку и показываем загрузку
+        const btnSelector = `[data-sqaction="${type}"][data-file="${fileId}"][data-path='${JSON.stringify(path)}']`;
+        const btn = document.querySelector(btnSelector);
+        const origText = btn?.textContent;
+        if (btn) { btn.disabled = true; btn.textContent = '⏳'; }
+
         try {
             const res    = await API.post('/api/code/get', { type, file_id: fileId, code_path: path, query_name: name });
             const result = res.result;
+
             if (type === 'preview') {
                 if (result === 'overlimit') { app.toast('Превышен лимит просмотра', 'error'); return; }
-                if (leaf) { const el = document.getElementById(leaf); if (el && result?.code !== undefined) el.innerHTML = `<span class="sr-id">[${result.line??''}]</span> ${this._esc(result.code??result)}`; }
+                if (leaf) {
+                    const el = document.getElementById(leaf);
+                    if (el && result?.code !== undefined)
+                        el.innerHTML = `<span class="sr-id">[${result.line ?? ''}]</span> ${this._esc(result.code ?? result)}`;
+                }
                 document.getElementById('sq-preview-title').textContent = name || 'Просмотр';
                 document.getElementById('sq-preview-code').textContent  = typeof result === 'string' ? result : (result?.code ?? JSON.stringify(result));
-                document.getElementById('sq-preview').classList.remove('hidden');
-                document.getElementById('sq-preview').scrollIntoView({ behavior: 'smooth' });
+                const prev = document.getElementById('sq-preview');
+                prev.classList.remove('hidden');
+                prev.scrollIntoView({ behavior: 'smooth' });
+                // Кнопка становится зелёной на 2 сек
+                if (btn) { btn.textContent = '✓'; btn.style.color = 'var(--green)'; setTimeout(() => { btn.style.color = ''; btn.textContent = origText; }, 2000); }
             } else {
-                if (result === 'access') { app.toast('✅ Доступ разрешён', 'success'); }
-                else { app.toast('⏳ Запрос направлен модераторам', 'info'); }
+                if (result === 'access') {
+                    app.toast('✅ Доступ разрешён', 'success');
+                    if (btn) { btn.textContent = '✅'; btn.style.color = 'var(--green)'; }
+                } else {
+                    app.toast('⏳ Запрос направлен модераторам', 'info');
+                    if (btn) { btn.textContent = '⏳ Отправлен'; setTimeout(() => { btn.textContent = origText; btn.disabled = false; }, 3000); return; }
+                }
             }
-        } catch (e) { app.toast('Ошибка: ' + e.message, 'error'); }
+        } catch (e) {
+            app.toast('Ошибка: ' + e.message, 'error');
+            if (btn) btn.textContent = origText;
+        } finally {
+            if (btn) btn.disabled = false;
+        }
+    },
+
+    _confirmLargeBlock(lines, name) {
+        return new Promise(resolve => {
+            const modal = document.createElement('div');
+            modal.style.cssText = 'position:fixed;inset:0;z-index:10000;display:flex;align-items:center;justify-content:center;padding:24px;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px)';
+            modal.innerHTML = `
+            <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);width:100%;max-width:400px;padding:28px;display:flex;flex-direction:column;gap:16px">
+                <div style="font-size:15px;font-weight:600;color:var(--text)">Большой блок кода</div>
+                <div style="font-size:13px;color:var(--text-2);line-height:1.6">
+                    Блок <strong style="color:var(--text)">${this._esc(name)}</strong> содержит
+                    <strong style="color:var(--yellow)">${lines} строк</strong>.<br>
+                    Запрос такого объёма может занять время. Продолжить?
+                </div>
+                <div style="display:flex;gap:8px;justify-content:flex-end">
+                    <button id="confirm-cancel" class="btn btn-ghost">Отмена</button>
+                    <button id="confirm-ok" class="btn btn-primary">Запросить</button>
+                </div>
+            </div>`;
+            document.body.appendChild(modal);
+            modal.querySelector('#confirm-ok').addEventListener('click', () => { modal.remove(); resolve(true); });
+            modal.querySelector('#confirm-cancel').addEventListener('click', () => { modal.remove(); resolve(false); });
+            modal.addEventListener('click', e => { if (e.target === modal) { modal.remove(); resolve(false); } });
+        });
     },
 
     async _sqGetLine() {
