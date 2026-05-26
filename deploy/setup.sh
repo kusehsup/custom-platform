@@ -20,8 +20,10 @@ EMAIL="vandeproject@gmail.com"
 
 # ── 1. Пакеты ─────────────────────────────────────────────────────────
 log "Обновление пакетов..."
+export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -y -qq python3 python3-pip python3-venv git nginx curl wget unzip certbot python3-certbot-nginx
+apt-get install -y -qq -o Dpkg::Options::="--force-confold" \
+    python3 python3-pip python3-venv git nginx curl wget unzip certbot python3-certbot-nginx
 
 # ── 2. Python 3.11+ ───────────────────────────────────────────────────
 PYTHON_BIN=python3
