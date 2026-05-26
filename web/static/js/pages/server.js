@@ -141,7 +141,6 @@ app.register('server', {
                 app.state.compile = true;
                 document.getElementById('btn-compile').disabled = true;
                 document.getElementById('compile-status').textContent = '⏳ Компиляция запущена, ожидаем результат...';
-                document.getElementById('compile-out').classList.add('hidden');
                 app.toast('Компиляция запущена', 'info');
             } catch (e) {
                 document.getElementById('compile-status').textContent = 'Ошибка: ' + e.message;
