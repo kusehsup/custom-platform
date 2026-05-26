@@ -33,7 +33,9 @@ app.register('server', {
         const ts = Date.now();
         const hasErrors   = /error/i.test(text);
         const hasWarnings = /warning/i.test(text);
-        try { localStorage.setItem(COMPILE_KEY, JSON.stringify({ text, ts })); } catch {}
+        // Сохраняем предыдущий текст перед заменой
+        const prev = this._loadLast();
+        try { localStorage.setItem(COMPILE_KEY, JSON.stringify({ text, ts, prevText: prev?.text || '' })); } catch {}
         let hist = [];
         try { hist = JSON.parse(localStorage.getItem(COMPILE_HIST_KEY) || '[]'); } catch {}
         hist.unshift({ ts, hasErrors, hasWarnings, preview: text.split('\n').slice(-3).join(' ').trim().slice(0, 120) });
@@ -120,7 +122,7 @@ app.register('server', {
 
         // Кнопка показа последнего результата
         document.getElementById('btn-show-last')?.addEventListener('click', () => {
-            if (saved) this._openModal(saved.text, this._fmtTs(saved.ts));
+            if (saved) this._openModal(saved.text, this._fmtTs(saved.ts), saved.prevText || '');
         });
 
         // Навешиваем обработчики на строки истории
@@ -220,14 +222,15 @@ app.register('server', {
                 btn2.className = 'btn btn-ghost btn-sm';
                 btn2.id = 'btn-show-last';
                 btn2.textContent = 'Последний результат';
-                btn2.addEventListener('click', () => this._openModal(text, this._fmtTs(now)));
+                btn2.addEventListener('click', () => { const s = this._loadLast(); this._openModal(text, this._fmtTs(now), s?.prevText || ''); });
                 btnRow.appendChild(btn2);
             }
 
             const histWrap = document.getElementById('compile-hist-wrap');
             if (histWrap) histWrap.innerHTML = this._renderHistHtml(this._loadHist());
             this._bindHistButtons();
-            this._openModal(text, this._fmtTs(now));
+            const saved = this._loadLast();
+            this._openModal(text, this._fmtTs(now), saved?.prevText || '');
         }
     },
 
@@ -257,14 +260,14 @@ app.register('server', {
                 try {
                     const saved = JSON.parse(localStorage.getItem(COMPILE_KEY));
                     // Если это последняя — берём из last
-                    if (idx === 0 && saved) { this._openModal(saved.text, this._fmtTs(h.ts)); return; }
+                    if (idx === 0 && saved) { this._openModal(saved.text, this._fmtTs(h.ts), saved.prevText || ''); return; }
                 } catch {}
                 this._openModal(h.preview, this._fmtTs(h.ts));
             });
         });
     },
 
-    _openModal(text, title) {
+    _openModal(text, title, prevText) {
         // Удаляем старую модалку
         document.getElementById('compile-modal')?.remove();
 
@@ -280,7 +283,7 @@ app.register('server', {
                 <button id="compile-modal-close" style="background:none;border:none;color:var(--text-2);cursor:pointer;font-size:18px;line-height:1;padding:4px">✕</button>
             </div>
             <div style="overflow-y:auto;padding:16px 20px;flex:1">
-                <pre class="compile-out" style="max-height:none;border:none;padding:0;background:transparent">${this._colorizeText(text)}</pre>
+                <pre class="compile-out" style="max-height:none;border:none;padding:0;background:transparent">${this._colorizeText(text, prevText)}</pre>
             </div>
         </div>`;
 
@@ -289,13 +292,30 @@ app.register('server', {
         document.getElementById('compile-modal-close').addEventListener('click', () => modal.remove());
     },
 
-    _colorizeText(text) {
+    _colorizeText(text, prevText) {
+        // Строим множество строк из предыдущей компиляции для быстрого поиска
+        const prevLines = new Set((prevText || '').split('\n').map(l => l.trim()).filter(Boolean));
+
         return text.split('\n').map(raw => {
-            const safe = this._esc(raw);
-            if (/error/i.test(raw))                       return `<span class="line-err">${safe}</span>`;
-            if (/warning/i.test(raw))                     return `<span class="line-warn">${safe}</span>`;
-            if (/done|success|\(0 error/i.test(raw))      return `<span class="line-ok">${safe}</span>`;
-            return safe;
+            const safe    = this._esc(raw);
+            const trimmed = raw.trim();
+            const isErr   = /error/i.test(raw);
+            const isWarn  = /warning/i.test(raw);
+            const isOk    = /done|success|\(0 error/i.test(raw);
+
+            if (!isErr && !isWarn) {
+                if (isOk) return `<span class="line-ok">${safe}</span>`;
+                return safe;
+            }
+
+            // Это ошибка или варнинг — проверяем новая ли она
+            const isNew = trimmed && !prevLines.has(trimmed);
+            const cls   = isErr ? 'line-err' : 'line-warn';
+            const badge = isNew
+                ? `<span style="display:inline-block;background:${isErr ? '#7F1D1D' : '#78350F'};color:${isErr ? '#FCA5A5' : '#FDE68A'};font-size:10px;padding:1px 5px;border-radius:3px;margin-right:6px;vertical-align:middle;font-weight:600">NEW</span>`
+                : '';
+
+            return `<span class="${cls}">${badge}${safe}</span>`;
         }).join('\n');
     },
 
