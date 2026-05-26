@@ -100,8 +100,11 @@ async def get_info():
 
 @router.get('/api/status')
 async def get_status(login: str = Depends(get_current_user)):
-    client = _require_client(login)
-    return {'server': client.server_status, 'compile': client.is_compiling}
+    client = get_session(login)
+    if not client:
+        # Сессия потеряна (рестарт сервера) — возвращаем 200 с флагом
+        return {'server': 'unknown', 'compile': False, 'session_lost': True}
+    return {'server': client.server_status, 'compile': client.is_compiling, 'session_lost': False}
 
 
 # ------------------------------------------------------------------ #

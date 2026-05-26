@@ -121,7 +121,6 @@ const app = {
 
     // ── Boot ──────────────────────────────────────────────────────────
     async boot() {
-        // Загружаем публичную информацию (не требует авторизации)
         try {
             const info = await API.get('/api/info');
             this.platformHost = info.platform_host || '';
@@ -130,9 +129,64 @@ const app = {
         if (!API.hasToken()) { this._showAuth(); return; }
         try {
             const s = await API.get('/api/status');
+            if (s.session_lost) {
+                // JWT валидный но сессия потеряна (рестарт) — показываем переподключение
+                this._showReconnect();
+                return;
+            }
             this.state = { server: s.server, compile: s.compile };
             this._showApp();
         } catch { this._showAuth(); }
+    },
+
+    _showReconnect() {
+        document.body.innerHTML = '';
+        const wrap = document.createElement('div');
+        wrap.className = 'auth-wrap';
+        wrap.innerHTML = `
+        <div class="auth-box">
+            <div class="auth-logo">
+                <h1>CustomPlatform</h1>
+                <p>Сервер был перезапущен.<br>Войдите снова для продолжения.</p>
+            </div>
+            <input type="password" id="rc-pass" placeholder="Пароль" autocomplete="current-password" />
+            <div class="auth-error" id="rc-error"></div>
+            <button class="btn btn-primary btn-full" id="rc-btn">Переподключиться</button>
+        </div>`;
+        document.body.appendChild(wrap);
+
+        // Логин уже известен из токена
+        const login = this._getLoginFromToken();
+
+        const doReconnect = async () => {
+            const password = document.getElementById('rc-pass').value;
+            const err = document.getElementById('rc-error');
+            const btn = document.getElementById('rc-btn');
+            if (!password) { err.textContent = 'Введите пароль'; return; }
+            btn.disabled = true; btn.textContent = 'Подключение...'; err.textContent = '';
+            try {
+                const data = await API.post('/api/login', { login, password });
+                API.setToken(data.token);
+                const s = await API.get('/api/status');
+                this.state = { server: s.server, compile: s.compile };
+                this._showApp();
+            } catch (e) {
+                err.textContent = e.message;
+                btn.disabled = false; btn.textContent = 'Переподключиться';
+            }
+        };
+
+        document.getElementById('rc-btn').addEventListener('click', doReconnect);
+        document.getElementById('rc-pass').addEventListener('keydown', e => { if (e.key === 'Enter') doReconnect(); });
+    },
+
+    _getLoginFromToken() {
+        try {
+            const token = localStorage.getItem('token');
+            if (!token) return '';
+            const payload = JSON.parse(atob(token.split('.')[1]));
+            return payload.sub || '';
+        } catch { return ''; }
     },
 
     _showAuth() {
