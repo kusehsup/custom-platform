@@ -51,14 +51,16 @@ app.register('files', {
                         <span class="editor-filename" id="editor-filename">Выберите файл</span>
                         <button class="btn btn-ghost btn-sm hidden" id="btn-save">💾 Сохранить</button>
                         <button class="btn btn-ghost btn-sm hidden" id="btn-discard">✕ Сбросить</button>
+                        <button class="btn btn-ghost btn-sm hidden" id="btn-del-toggle" title="Удалить доступ к строкам">🗑</button>
                     </div>
-                    <div id="delete-access-bar" class="hidden" style="display:flex;align-items:center;gap:8px;padding:6px 16px;background:var(--surface);border-bottom:1px solid var(--border);font-size:13px;flex-shrink:0">
-                        <span style="color:var(--text-2)">Удалить доступ:</span>
-                        <input type="number" id="del-from" placeholder="от строки" style="width:110px;padding:5px 10px" />
-                        <span style="color:var(--text-2)">—</span>
-                        <input type="number" id="del-to" placeholder="до строки" style="width:110px;padding:5px 10px" />
+                    <div id="delete-access-bar" class="hidden" style="display:flex;align-items:center;gap:8px;padding:8px 16px;background:var(--surface2);border-bottom:1px solid var(--border);font-size:13px;flex-shrink:0">
+                        <span style="color:var(--text-2);flex-shrink:0">Строки:</span>
+                        <input type="number" id="del-from" placeholder="от" style="width:80px;padding:5px 10px" />
+                        <span style="color:var(--text-3)">—</span>
+                        <input type="number" id="del-to" placeholder="до" style="width:80px;padding:5px 10px" />
                         <button class="btn btn-danger btn-sm" id="btn-del-access">Удалить</button>
-                        <button class="btn btn-ghost btn-sm" id="btn-del-block">Удалить текущий блок</button>
+                        <div style="width:1px;height:16px;background:var(--border);flex-shrink:0"></div>
+                        <button class="btn btn-ghost btn-sm" id="btn-del-block" style="color:var(--text-2)">Весь блок</button>
                     </div>
                     <div class="editor-area">
                         <div id="monaco-editor"></div>
@@ -87,6 +89,11 @@ app.register('files', {
             btn.addEventListener('click', () => this._switchTab(btn.dataset.tab))
         );
 
+        document.getElementById('btn-del-toggle').addEventListener('click', () => {
+            const bar = document.getElementById('delete-access-bar');
+            const visible = bar.style.display !== 'none' && !bar.classList.contains('hidden');
+            bar.style.display = visible ? 'none' : 'flex';
+        });
         document.getElementById('btn-del-access').addEventListener('click', () => this._deleteAccess());
         document.getElementById('btn-del-block').addEventListener('click',  () => this._deleteCurrentBlock());
     },
@@ -200,9 +207,10 @@ app.register('files', {
         document.getElementById('editor-empty')?.style.setProperty('display', 'none');
         document.getElementById('btn-save')?.classList.add('hidden');
         document.getElementById('btn-discard')?.classList.add('hidden');
-        // Показываем панель удаления доступа
+        // Показываем кнопку удаления доступа, панель скрыта по умолчанию
+        document.getElementById('btn-del-toggle')?.classList.remove('hidden');
         const delBar = document.getElementById('delete-access-bar');
-        if (delBar) { delBar.classList.remove('hidden'); delBar.style.display = 'flex'; }
+        if (delBar) { delBar.classList.add('hidden'); delBar.style.display = 'none'; }
 
         try {
             const data = await API.get(`/api/file/${fileId}/code`);
