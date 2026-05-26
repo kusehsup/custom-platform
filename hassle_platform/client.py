@@ -200,8 +200,11 @@ class PlatformClient:
     #  Запросы кода — отдельный WS endpoint                               #
     # ------------------------------------------------------------------ #
 
-    async def fetch_queries(self, timeout: float = 5.0) -> dict:
-        """Подключается к /code_queries endpoint и получает актуальные запросы."""
+    async def fetch_queries(self, timeout: float = 8.0) -> dict:
+        """Подключается к /code_queries endpoint, авторизуется и получает запросы."""
+        if not self._login:
+            return {}
+
         future: asyncio.Future = asyncio.get_event_loop().create_future()
 
         try:
@@ -218,23 +221,31 @@ class PlatformClient:
 
             ws = await websockets.connect(WS_URL_QUERIES, **kwargs)
             try:
-                await ws.recv()          # handshake
+                await ws.recv()       # Engine.IO handshake
                 await ws.send('40')
-                raw = await ws.recv()    # '40' confirm
+                raw = await ws.recv() # '40' confirm
                 if raw != '40':
                     return self._app_data.get('queries', {})
 
-                # Ждём code_queries_update
+                # Авторизуемся
+                await ws.send(_encode('log_in', self._login, self._password))
+
+                # Слушаем события
                 async def _listen():
                     async for msg in ws:
-                        if msg.startswith('42'):
-                            data = json.loads(msg[2:])
-                            if data[0] == 'code_queries_update':
-                                queries = data[1] if len(data) > 1 else {}
-                                self._app_data['queries'] = queries
-                                if not future.done():
-                                    future.set_result(queries)
-                                return
+                        if msg == '2':
+                            await ws.send('3')
+                            continue
+                        if not msg.startswith('42'):
+                            continue
+                        data = json.loads(msg[2:])
+                        event = data[0] if data else ''
+                        if event == 'code_queries_update':
+                            queries = data[1] if len(data) > 1 else {}
+                            self._app_data['queries'] = queries
+                            if not future.done():
+                                future.set_result(queries)
+                            return
 
                 asyncio.create_task(_listen())
                 return await asyncio.wait_for(future, timeout=timeout)
