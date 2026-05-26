@@ -620,18 +620,48 @@ input::placeholder { color: var(--text-3); }
 
 /* ─── Queries ────────────────────────────────────────────────── */
 
-.query-block {
-    padding: 14px 0; border-bottom: 1px solid var(--border);
+.q-item {
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
 }
-.query-block:last-child { border-bottom: none; }
-.query-info  { font-size: 13px; color: var(--text); margin-bottom: 6px; }
-.query-meta  { margin-bottom: 8px; }
-.query-code  {
-    font-family: var(--mono); font-size: 12px; color: var(--text-2);
-    background: var(--surface2); border: 1px solid var(--border);
-    border-radius: var(--radius-sm); padding: 8px 12px;
-    white-space: pre-wrap; word-break: break-all;
-    max-height: 120px; overflow-y: auto; margin: 0;
+.q-item:last-child { border-bottom: none; }
+
+.q-item-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    min-height: 28px;
+}
+
+.q-item-user {
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--text);
+    flex-shrink: 0;
+}
+
+.q-item-file {
+    font-size: 12px;
+    color: var(--accent);
+    font-family: var(--mono);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 400px;
+}
+
+.q-item-code {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-2);
+    background: var(--surface2);
+    border-radius: var(--radius-xs);
+    padding: 4px 10px;
+    margin-top: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 /* ─── Scrollbar ──────────────────────────────────────────────── */

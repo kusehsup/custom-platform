@@ -50,6 +50,11 @@ class QueryResponseRequest(BaseModel):
     query_id: str
 
 
+class NotifyQueryRequest(BaseModel):
+    file_name: str = ''
+    query_name: str = ''
+
+
 # ------------------------------------------------------------------ #
 #  Авторизация                                                         #
 # ------------------------------------------------------------------ #
@@ -231,6 +236,32 @@ async def debug_appdata(login: str = Depends(get_current_user)):
     client = _require_client(login)
     keys = list(client._app_data.keys())
     return {'keys': keys, 'queries_val': str(client._app_data.get('queries', 'NOT_FOUND'))[:200]}
+
+
+@router.post('/api/notify/query_accepted')
+async def notify_query_accepted(body: NotifyQueryRequest, login: str = Depends(get_current_user)):
+    from config import BOT_TOKEN
+    from bot.sessions import get_session as get_bot_session
+    import aiohttp
+    # Находим telegram user_id по login через сессии бота
+    from bot import sessions as bot_sessions
+    tg_user_id = None
+    for uid, client in bot_sessions._sessions.items():
+        if client._login == login:
+            tg_user_id = uid
+            break
+    if tg_user_id and BOT_TOKEN:
+        text = f'✅ Доступ разрешён\nФайл: {body.file_name}\nБлок: {body.query_name}'
+        try:
+            async with aiohttp.ClientSession() as session:
+                await session.post(
+                    f'https://api.telegram.org/bot{BOT_TOKEN}/sendMessage',
+                    json={'chat_id': tg_user_id, 'text': text},
+                    timeout=aiohttp.ClientTimeout(total=5),
+                )
+        except Exception:
+            pass
+    return {'ok': True}
 
 
 @router.post('/api/code_query_response')
