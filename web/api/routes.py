@@ -226,6 +226,13 @@ async def get_queries(login: str = Depends(get_current_user)):
     return {'queries': queries}
 
 
+@router.get('/api/debug/appdata')
+async def debug_appdata(login: str = Depends(get_current_user)):
+    client = _require_client(login)
+    keys = list(client._app_data.keys())
+    return {'keys': keys, 'queries_val': str(client._app_data.get('queries', 'NOT_FOUND'))[:200]}
+
+
 @router.post('/api/code_query_response')
 async def code_query_response(body: QueryResponseRequest, login: str = Depends(get_current_user)):
     client = _require_client(login)

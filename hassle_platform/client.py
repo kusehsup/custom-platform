@@ -201,60 +201,33 @@ class PlatformClient:
     # ------------------------------------------------------------------ #
 
     async def fetch_queries(self, timeout: float = 8.0) -> dict:
-        """Подключается к /code_queries endpoint, авторизуется и получает запросы."""
-        if not self._login:
-            return {}
+        """Запрашивает актуальные запросы через основное соединение."""
+        if not self._connected:
+            return self._app_data.get('queries', {})
 
         future: asyncio.Future = asyncio.get_event_loop().create_future()
 
+        def on_queries(queries):
+            self._app_data['queries'] = queries
+            if not future.done():
+                future.set_result(queries)
+
+        self.on('code_queries_update', on_queries)
         try:
-            proxy = _make_proxy()
-            kwargs = dict(
-                additional_headers=WS_HEADERS,
-                max_size=16 * 1024 * 1024,
-                ping_interval=None,
-            )
-            if proxy:
-                dest_port = int(_host.split(':')[1]) if ':' in _host else 80
-                sock = await proxy.connect(dest_host=_host.split(':')[0], dest_port=dest_port)
-                kwargs['sock'] = sock
-
-            ws = await websockets.connect(WS_URL_QUERIES, **kwargs)
-            try:
-                await ws.recv()       # Engine.IO handshake
-                await ws.send('40')
-                raw = await ws.recv() # '40' confirm
-                if raw != '40':
-                    return self._app_data.get('queries', {})
-
-                # Авторизуемся
-                await ws.send(_encode('log_in', self._login, self._password))
-
-                # Слушаем события
-                async def _listen():
-                    async for msg in ws:
-                        if msg == '2':
-                            await ws.send('3')
-                            continue
-                        if not msg.startswith('42'):
-                            continue
-                        data = json.loads(msg[2:])
-                        event = data[0] if data else ''
-                        if event == 'code_queries_update':
-                            queries = data[1] if len(data) > 1 else {}
-                            self._app_data['queries'] = queries
-                            if not future.done():
-                                future.set_result(queries)
-                            return
-
-                asyncio.create_task(_listen())
-                return await asyncio.wait_for(future, timeout=timeout)
-            finally:
-                await ws.close()
+            # Переключаемся на страницу запросов — платформа пришлёт code_queries_update
+            await self._emit('open_page', 'code_queries')
+            return await asyncio.wait_for(future, timeout=timeout)
         except asyncio.TimeoutError:
             return self._app_data.get('queries', {})
         except Exception:
             return self._app_data.get('queries', {})
+        finally:
+            self.off('code_queries_update', on_queries)
+            # Возвращаемся на главную страницу
+            try:
+                await self._emit('open_page', 'main')
+            except Exception:
+                pass
 
     # ------------------------------------------------------------------ #
     #  Обновление кэша после сохранения                                    #
