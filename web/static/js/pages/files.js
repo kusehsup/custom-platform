@@ -424,13 +424,7 @@ app.register('files', {
             </div>
             <div id="sq-results" style="padding:8px 0"></div>
         </div>
-        <div id="sq-preview" class="card hidden">
-            <div class="card-header">
-                <span class="card-title" id="sq-preview-title">Просмотр</span>
-                <button class="btn btn-ghost btn-sm" id="sq-preview-close">✕</button>
-            </div>
-            <pre id="sq-preview-code" style="font-family:var(--mono);font-size:13px;line-height:1.7;color:#C8D3F5;white-space:pre-wrap;word-break:break-all;max-height:400px;overflow-y:auto;background:#0D0D0F;padding:14px;border-radius:var(--radius-sm)"></pre>
-        </div>`;
+        `;
 
         // Заполняем селекты файлов
         Object.entries(this._files).forEach(([id, f]) => {
@@ -442,9 +436,6 @@ app.register('files', {
         document.getElementById('sq-btn').addEventListener('click', () => this._sqSearch());
         document.getElementById('sq-text').addEventListener('keydown', e => { if (e.key === 'Enter') this._sqSearch(); });
         document.getElementById('sq-get-line').addEventListener('click', () => this._sqGetLine());
-        document.getElementById('sq-preview-close').addEventListener('click', () =>
-            document.getElementById('sq-preview').classList.add('hidden')
-        );
     },
 
     async _sqSearch() {
@@ -555,16 +546,13 @@ app.register('files', {
 
             if (type === 'preview') {
                 if (result === 'overlimit') { app.toast('Превышен лимит просмотра', 'error'); return; }
+                // Показываем код прямо в строке результата
+                const code = typeof result === 'string' ? result : (result?.code ?? '');
+                const line = result?.line ?? '';
                 if (leaf) {
                     const el = document.getElementById(leaf);
-                    if (el && result?.code !== undefined)
-                        el.innerHTML = `<span class="sr-id">[${result.line ?? ''}]</span> ${this._esc(result.code ?? result)}`;
+                    if (el) el.innerHTML = `<span class="sr-id">[${line}]</span> <span style="color:var(--text);white-space:pre-wrap">${this._esc(code)}</span>`;
                 }
-                document.getElementById('sq-preview-title').textContent = name || 'Просмотр';
-                document.getElementById('sq-preview-code').textContent  = typeof result === 'string' ? result : (result?.code ?? JSON.stringify(result));
-                const prev = document.getElementById('sq-preview');
-                prev.classList.remove('hidden');
-                prev.scrollIntoView({ behavior: 'smooth' });
                 btn?.remove();  // просмотрели — кнопка больше не нужна
             } else {
                 if (result === 'access') {
