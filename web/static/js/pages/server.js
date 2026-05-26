@@ -87,21 +87,15 @@ app.register('server', {
             </div>
             <div class="btn-row" style="margin-bottom:14px">
                 <button class="btn btn-primary" id="btn-compile">🔨 Компилировать</button>
+                ${saved ? `<button class="btn btn-ghost btn-sm" id="btn-show-last">Последний результат</button>` : ''}
             </div>
             <div id="compile-status" style="color:var(--text-2);font-size:13px;margin-bottom:10px;min-height:16px">
                 ${app.state.compile ? '⏳ Компиляция выполняется...' : ''}
             </div>
-            <div id="compile-out" class="compile-out ${saved ? '' : 'hidden'}"></div>
 
-            ${hist.length ? `
-            <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:14px">
-                <div style="font-size:12px;color:var(--text-2);margin-bottom:8px;text-transform:uppercase;letter-spacing:.06em">История компиляций</div>
-                ${hist.map(h => `
-                <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:12.5px">
-                    <span>${h.hasErrors ? '❌' : h.hasWarnings ? '⚠️' : '✅'}</span>
-                    <span style="color:var(--text-2)">${this._fmtTs(h.ts)}</span>
-                    <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-3);font-family:var(--mono);font-size:11px">${this._esc(h.preview)}</span>
-                </div>`).join('')}
+            <div id="compile-hist-wrap" style="margin-top:4px">
+                ${this._renderHistHtml(hist)}
+            </div>
             </div>` : ''}
         </div>
 
@@ -123,8 +117,15 @@ app.register('server', {
         if (hostEl && app.platformHost) hostEl.textContent = app.platformHost;
         this.onState();
         this._flushConsole();
-        if (saved) this._renderCompile(saved.text, false);
         if (app.state.compile) document.getElementById('btn-compile').disabled = true;
+
+        // Кнопка показа последнего результата
+        document.getElementById('btn-show-last')?.addEventListener('click', () => {
+            if (saved) this._openModal(saved.text, this._fmtTs(saved.ts));
+        });
+
+        // Навешиваем обработчики на строки истории
+        this._bindHistButtons();
 
         // Сервер
         document.getElementById('btn-refresh').addEventListener('click', async () => {
@@ -207,28 +208,97 @@ app.register('server', {
         const status = document.getElementById('compile-status');
         if (status) status.textContent = '';
         const tsEl = document.getElementById('compile-last-ts');
-        if (tsEl) tsEl.textContent = 'Последняя: ' + this._fmtTs(Date.now());
-        this._renderCompile(text, true);
-        // Обновляем историю в DOM
-        const histEl = document.querySelector('.card:nth-child(2) [style*="История"]');
-        if (histEl) this.render(document.getElementById('main'));
+        const now = Date.now();
+        if (tsEl) tsEl.textContent = 'Последняя: ' + this._fmtTs(now);
+
+        // Обновляем кнопку показа результата
+        const btnRow = document.querySelector('#btn-compile')?.closest('.btn-row');
+        if (btnRow && !document.getElementById('btn-show-last')) {
+            const btn2 = document.createElement('button');
+            btn2.className = 'btn btn-ghost btn-sm';
+            btn2.id = 'btn-show-last';
+            btn2.textContent = 'Последний результат';
+            btn2.addEventListener('click', () => this._openModal(text, this._fmtTs(now)));
+            btnRow.appendChild(btn2);
+        }
+
+        // Обновляем историю в DOM без перезагрузки
+        const histWrap = document.getElementById('compile-hist-wrap');
+        if (histWrap) histWrap.innerHTML = this._renderHistHtml(this._loadHist());
+
+        // Навешиваем обработчики на кнопки истории
+        this._bindHistButtons();
+
+        // Показываем модалку с результатом
+        this._openModal(text, this._fmtTs(now));
     },
 
-    _renderCompile(text, isNew) {
-        const out = document.getElementById('compile-out');
-        if (!out) return;
-        out.classList.remove('hidden');
-        const existing = out.querySelectorAll('.compile-line').length;
-        out.innerHTML = text.split('\n').map((raw, i) => {
+    _renderHistHtml(hist) {
+        if (!hist.length) return '';
+        return `<div style="border-top:1px solid var(--border);padding-top:14px;margin-top:4px">
+            <div style="font-size:12px;color:var(--text-2);margin-bottom:8px;text-transform:uppercase;letter-spacing:.06em">История компиляций</div>
+            ${hist.map((h, i) => `
+            <div class="compile-hist-row" data-idx="${i}" style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:12.5px;cursor:pointer;transition:background .1s" onmouseover="this.style.background='rgba(255,255,255,0.03)'" onmouseout="this.style.background=''">
+                <span>${h.hasErrors ? '❌' : h.hasWarnings ? '⚠️' : '✅'}</span>
+                <span style="color:var(--text-2);flex-shrink:0">${this._fmtTs(h.ts)}</span>
+                <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-3);font-family:var(--mono);font-size:11px">${this._esc(h.preview)}</span>
+                <span style="color:var(--text-3);font-size:11px">↗</span>
+            </div>`).join('')}
+        </div>`;
+    },
+
+    _bindHistButtons() {
+        document.querySelectorAll('.compile-hist-row').forEach(row => {
+            row.addEventListener('click', () => {
+                const idx = parseInt(row.dataset.idx);
+                const hist = this._loadHist();
+                const h = hist[idx];
+                if (!h) return;
+                // Загружаем полный текст из localStorage
+                const all = [];
+                try {
+                    const saved = JSON.parse(localStorage.getItem(COMPILE_KEY));
+                    // Если это последняя — берём из last
+                    if (idx === 0 && saved) { this._openModal(saved.text, this._fmtTs(h.ts)); return; }
+                } catch {}
+                this._openModal(h.preview, this._fmtTs(h.ts));
+            });
+        });
+    },
+
+    _openModal(text, title) {
+        // Удаляем старую модалку
+        document.getElementById('compile-modal')?.remove();
+
+        const modal = document.createElement('div');
+        modal.id = 'compile-modal';
+        modal.style.cssText = 'position:fixed;inset:0;z-index:10000;display:flex;align-items:center;justify-content:center;padding:24px;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px)';
+        modal.innerHTML = `
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);width:100%;max-width:800px;max-height:85vh;display:flex;flex-direction:column;overflow:hidden">
+            <div style="display:flex;align-items:center;gap:12px;padding:16px 20px;border-bottom:1px solid var(--border);flex-shrink:0">
+                <span style="font-size:13px;font-weight:600;color:var(--text-2);text-transform:uppercase;letter-spacing:.06em">Результат компиляции</span>
+                <span style="font-size:12px;color:var(--text-3)">${title || ''}</span>
+                <span style="flex:1"></span>
+                <button id="compile-modal-close" style="background:none;border:none;color:var(--text-2);cursor:pointer;font-size:18px;line-height:1;padding:4px">✕</button>
+            </div>
+            <div style="overflow-y:auto;padding:16px 20px;flex:1">
+                <pre class="compile-out" style="max-height:none;border:none;padding:0;background:transparent">${this._colorizeText(text)}</pre>
+            </div>
+        </div>`;
+
+        document.body.appendChild(modal);
+        modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+        document.getElementById('compile-modal-close').addEventListener('click', () => modal.remove());
+    },
+
+    _colorizeText(text) {
+        return text.split('\n').map(raw => {
             const safe = this._esc(raw);
-            let cls = 'compile-line';
-            if (/error/i.test(raw))                     cls += ' line-err';
-            else if (/warning/i.test(raw))              cls += ' line-warn';
-            else if (/done|success|\(0 error/i.test(raw)) cls += ' line-ok';
-            if (isNew && i >= existing)                 cls += ' line-new';
-            return `<span class="${cls}">${safe}</span>`;
+            if (/error/i.test(raw))                       return `<span class="line-err">${safe}</span>`;
+            if (/warning/i.test(raw))                     return `<span class="line-warn">${safe}</span>`;
+            if (/done|success|\(0 error/i.test(raw))      return `<span class="line-ok">${safe}</span>`;
+            return safe;
         }).join('\n');
-        out.scrollTop = out.scrollHeight;
     },
 
     // ── Консоль ───────────────────────────────────────────────────────

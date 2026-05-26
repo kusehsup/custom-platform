@@ -526,6 +526,10 @@ input::placeholder { color: var(--text-3); }
 .sr-brace { font-family: var(--mono); color: var(--text-3); font-size: 13px; padding: 2px 6px; }
 .sr-gap   { color: var(--text-3); font-size: 12px; padding: 2px 6px; font-family: var(--mono); }
 
+/* Поиск — вкладка в правой панели должна скролиться */
+#tab-search { overflow-y: auto !important; }
+#tab-search .main { height: auto; overflow-y: visible; }
+
 /* ─── Editor tabs ────────────────────────────────────────────── */
 
 .editor-tabs {
