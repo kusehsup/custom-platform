@@ -203,21 +203,28 @@ class PlatformClient:
     # ------------------------------------------------------------------ #
 
     async def fetch_queries(self, timeout: float = 8.0) -> dict:
-        """Запрашивает актуальные запросы через отдельный процесс."""
-        import sys, os, json as _json
+        """Подключается к /code_queries с session cookie и получает запросы."""
+        if not self._session_token:
+            return self._app_data.get('queries', {})
+
+        import sys, json as _json
+        session = self._session_token
         script = f'''
 import asyncio, json, urllib.parse, sys
 
 async def main():
     import websockets
     PLATFORM_URL = {repr(PLATFORM_URL)}
-    LOGIN = {repr(self._login)}
-    PASSWORD = {repr(self._password)}
+    SESSION = {repr(session)}
     PROXY_URL = {repr(PROXY_URL)}
     host = urllib.parse.urlparse(PLATFORM_URL).netloc
     path = urllib.parse.quote(PLATFORM_URL + 'code_queries', safe='')
     url = f'ws://{{host}}/socket.io/?path={{path}}&EIO=3&transport=websocket'
-    headers = {{'Origin': PLATFORM_URL.rstrip('/'), 'User-Agent': 'Mozilla/5.0'}}
+    headers = {{
+        'Origin': PLATFORM_URL.rstrip('/'),
+        'User-Agent': 'Mozilla/5.0',
+        'Cookie': f'session={{SESSION}}',
+    }}
     kwargs = dict(additional_headers=headers, max_size=16*1024*1024, ping_interval=None)
     if PROXY_URL:
         from python_socks.sync import Proxy
@@ -229,10 +236,9 @@ async def main():
     await ws.recv()
     await ws.send('40')
     await ws.recv()
-    await ws.send('42' + json.dumps(['log_in', LOGIN, PASSWORD]))
-    for _ in range(20):
+    for _ in range(10):
         try:
-            msg = await asyncio.wait_for(ws.recv(), timeout=2)
+            msg = await asyncio.wait_for(ws.recv(), timeout=3)
             if msg.startswith('42'):
                 data = json.loads(msg[2:])
                 if data[0] == 'code_queries_update':
