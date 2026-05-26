@@ -1,0 +1,209 @@
+#!/bin/bash
+# Использование:
+#   BOT_TOKEN=xxx PLATFORM_URL=yyy bash setup.sh
+set -e
+
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
+log()  { echo -e "${GREEN}[+]${NC} $1"; }
+warn() { echo -e "${YELLOW}[!]${NC} $1"; }
+err()  { echo -e "${RED}[-]${NC} $1"; exit 1; }
+
+[ -z "$BOT_TOKEN" ]     && err "Укажите BOT_TOKEN=..."
+[ -z "$PLATFORM_URL" ]  && err "Укажите PLATFORM_URL=..."
+
+GITHUB_REPO="${GITHUB_REPO:-https://github.com/vandeproject/custom-platform.git}"
+APP_DIR="/opt/custom-platform"
+WEB_PORT=8000
+PROXY_URL="socks5://127.0.0.1:10808"
+
+# ── 1. Пакеты ─────────────────────────────────────────────────────────
+log "Обновление пакетов..."
+apt-get update -qq
+apt-get install -y -qq python3 python3-pip python3-venv git nginx curl wget unzip
+
+# ── 2. Python 3.11+ ───────────────────────────────────────────────────
+PYTHON_BIN=python3
+PY_VER=$($PYTHON_BIN -c "import sys; print(sys.version_info.minor)")
+if [ "$(python3 -c 'import sys; print(sys.version_info.major)')" -lt 3 ] || [ "$PY_VER" -lt 11 ]; then
+    log "Устанавливаем Python 3.12..."
+    apt-get install -y -qq software-properties-common
+    add-apt-repository -y ppa:deadsnakes/ppa
+    apt-get update -qq
+    apt-get install -y -qq python3.12 python3.12-venv python3.12-dev
+    PYTHON_BIN=python3.12
+fi
+log "Python: $($PYTHON_BIN --version)"
+
+# ── 3. Клонируем/обновляем репозиторий ───────────────────────────────
+log "Получаем код..."
+if [ -d "$APP_DIR/.git" ]; then
+    warn "Директория уже есть — обновляем..."
+    git -C "$APP_DIR" pull
+else
+    git clone "$GITHUB_REPO" "$APP_DIR"
+fi
+cd "$APP_DIR"
+
+# ── 4. Зависимости ────────────────────────────────────────────────────
+log "Устанавливаем Python зависимости..."
+$PYTHON_BIN -m venv .venv
+.venv/bin/pip install -q --upgrade pip
+.venv/bin/pip install -q \
+    "fastapi" "uvicorn[standard]" \
+    "python-jose[cryptography]" "passlib[bcrypt]" \
+    "websockets" "python-dotenv" \
+    "aiogram" "aiohttp" "aiohttp-socks" \
+    "python-socks"
+
+# ── 5. .env ───────────────────────────────────────────────────────────
+log "Создаём .env..."
+cat > "$APP_DIR/.env" <<EOF
+BOT_TOKEN=${BOT_TOKEN}
+PLATFORM_URL=${PLATFORM_URL}
+PROXY_URL=${PROXY_URL}
+EOF
+chmod 600 "$APP_DIR/.env"
+
+# ── 6. Xray ───────────────────────────────────────────────────────────
+log "Устанавливаем xray-core..."
+XRAY_VERSION="v25.4.30"
+wget -q "https://github.com/XTLS/Xray-core/releases/download/${XRAY_VERSION}/Xray-linux-64.zip" -O /tmp/xray.zip
+unzip -q -o /tmp/xray.zip -d /tmp/xray_bin
+install -m 755 /tmp/xray_bin/xray /usr/local/bin/xray
+rm -rf /tmp/xray.zip /tmp/xray_bin
+
+mkdir -p /etc/xray
+cat > /etc/xray/config.json <<'XEOF'
+{
+  "log": { "loglevel": "warning" },
+  "inbounds": [{
+    "port": 10808,
+    "protocol": "socks",
+    "settings": { "auth": "noauth", "udp": true }
+  }],
+  "outbounds": [{
+    "protocol": "vless",
+    "settings": {
+      "vnext": [{
+        "address": "185.200.178.3",
+        "port": 443,
+        "users": [{
+          "id": "cba60396-75e4-44e7-b2e1-2b96d2a33b36",
+          "encryption": "none",
+          "flow": "xtls-rprx-vision"
+        }]
+      }]
+    },
+    "streamSettings": {
+      "network": "tcp",
+      "security": "reality",
+      "realitySettings": {
+        "serverName": "google.com",
+        "fingerprint": "random",
+        "publicKey": "QX5m1uZOv5QPX8dM3vnj5s9l2AK7FqRV8mFgr40s0W",
+        "shortId": "",
+        "spiderX": ""
+      }
+    }
+  }]
+}
+XEOF
+
+cat > /etc/systemd/system/xray.service <<'EOF'
+[Unit]
+Description=Xray Proxy
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/xray run -config /etc/xray/config.json
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# ── 7. Systemd: веб ───────────────────────────────────────────────────
+log "Создаём systemd сервисы..."
+cat > /etc/systemd/system/custom-platform-web.service <<EOF
+[Unit]
+Description=CustomPlatform Web
+After=network.target xray.service
+
+[Service]
+User=root
+WorkingDirectory=${APP_DIR}
+EnvironmentFile=${APP_DIR}/.env
+ExecStart=${APP_DIR}/.venv/bin/uvicorn web.app:app --host 127.0.0.1 --port ${WEB_PORT} --workers 1
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# ── 8. Systemd: бот ───────────────────────────────────────────────────
+cat > /etc/systemd/system/custom-platform-bot.service <<EOF
+[Unit]
+Description=CustomPlatform Telegram Bot
+After=network.target xray.service
+
+[Service]
+User=root
+WorkingDirectory=${APP_DIR}
+EnvironmentFile=${APP_DIR}/.env
+ExecStart=${APP_DIR}/.venv/bin/python -m bot.main
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# ── 9. Nginx ──────────────────────────────────────────────────────────
+log "Настраиваем nginx..."
+cat > /etc/nginx/sites-available/custom-platform <<EOF
+server {
+    listen 80;
+    server_name _;
+    client_max_body_size 10M;
+
+    location / {
+        proxy_pass http://127.0.0.1:${WEB_PORT};
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_read_timeout 300s;
+    }
+}
+EOF
+
+ln -sf /etc/nginx/sites-available/custom-platform /etc/nginx/sites-enabled/
+rm -f /etc/nginx/sites-enabled/default
+nginx -t && systemctl reload nginx
+
+# ── 10. Запуск ────────────────────────────────────────────────────────
+log "Запускаем сервисы..."
+systemctl daemon-reload
+systemctl enable xray custom-platform-web custom-platform-bot
+systemctl restart xray
+sleep 3
+systemctl restart custom-platform-web custom-platform-bot
+
+# ── 11. Итог ──────────────────────────────────────────────────────────
+echo ""
+log "════════════════════════════════"
+log "  Деплой завершён!"
+log "════════════════════════════════"
+systemctl is-active xray                && echo "  ✅ xray"          || echo "  ❌ xray"
+systemctl is-active custom-platform-web && echo "  ✅ web"           || echo "  ❌ web"
+systemctl is-active custom-platform-bot && echo "  ✅ bot"           || echo "  ❌ bot"
+echo ""
+echo "  🌐 http://5.129.227.157"
+echo ""
+echo "Логи:"
+echo "  journalctl -u custom-platform-web -f"
+echo "  journalctl -u custom-platform-bot -f"
+echo "  journalctl -u xray -f"
