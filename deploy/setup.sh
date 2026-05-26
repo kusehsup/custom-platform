@@ -13,7 +13,8 @@ err()  { echo -e "${RED}[-]${NC} $1"; exit 1; }
 
 GITHUB_REPO="${GITHUB_REPO:-https://github.com/kusehsup/custom-platform.git}"
 APP_DIR="/opt/custom-platform"
-WEB_PORT=8000
+WEB_PORT=8002       # uvicorn порт
+NGINX_PORT=8001     # nginx порт (публичный)
 PROXY_URL="socks5://127.0.0.1:10808"
 DOMAIN="code.kusehsup.ru"
 EMAIL="vandeproject@gmail.com"
@@ -142,11 +143,15 @@ EOF
 
 # ── 9. Nginx — HTTP (для certbot) ─────────────────────────────────────
 log "Настраиваем nginx..."
-cat > /etc/nginx/sites-available/custom-platform <<EOF
+cat > /etc/nginx/conf.d/custom-platform.conf <<EOF
 server {
-    listen 80;
+    listen ${NGINX_PORT};
     server_name ${DOMAIN};
     client_max_body_size 10M;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/html;
+    }
 
     location / {
         proxy_pass http://127.0.0.1:${WEB_PORT};
@@ -160,8 +165,7 @@ server {
 }
 EOF
 
-ln -sf /etc/nginx/sites-available/custom-platform /etc/nginx/sites-enabled/
-rm -f /etc/nginx/sites-enabled/default
+mkdir -p /var/www/html
 nginx -t && systemctl reload nginx
 
 # ── 10. SSL через Let's Encrypt ───────────────────────────────────────
