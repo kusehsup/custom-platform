@@ -84,9 +84,19 @@ app.register('files', {
         this._activeTab = tab;
         document.querySelectorAll('.etab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
         document.getElementById('tab-editor').classList.toggle('hidden', tab !== 'files');
-        document.getElementById('tab-search').classList.toggle('hidden', tab !== 'search');
-        if (tab === 'search') this._initSearch();
-        // При возврате к редактору принудительно пересчитываем размер Monaco
+        const searchEl = document.getElementById('tab-search');
+        searchEl.classList.toggle('hidden', tab !== 'search');
+        if (tab === 'search') {
+            this._initSearch();
+            // Явно задаём высоту по родителю чтобы overflow-y работал
+            requestAnimationFrame(() => {
+                const parent = searchEl.parentElement;
+                if (parent) {
+                    const tabsH = document.querySelector('.editor-tabs')?.offsetHeight || 0;
+                    searchEl.style.height = (parent.offsetHeight - tabsH) + 'px';
+                }
+            });
+        }
         if (tab === 'files' && this._editor) {
             requestAnimationFrame(() => this._editor.layout());
         }
