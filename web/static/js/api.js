@@ -8,7 +8,7 @@ const API = {
         };
     },
 
-    async _fetch(method, url, body) {
+    async _fetch(method, url, body, _retry = 0) {
         const res = await fetch(url, {
             method,
             headers: this._headers(),
@@ -19,6 +19,12 @@ const API = {
             app.toast('Сессия истекла, войдите снова', 'error');
             setTimeout(() => app._showAuth(), 1500);
             throw new Error('Сессия истекла');
+        }
+        if (res.status === 503 && _retry < 3) {
+            // Платформа переподключается — ждём и повторяем
+            app.toast('⏳ Переподключение к платформе...', 'info');
+            await new Promise(r => setTimeout(r, 3000));
+            return this._fetch(method, url, body, _retry + 1);
         }
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || 'Ошибка запроса');

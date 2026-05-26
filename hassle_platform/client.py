@@ -127,10 +127,11 @@ class PlatformClient:
         if not self._login or self._reconnecting:
             return
         self._reconnecting = True
-        self._reconnect_event.clear()  # сигнал: идёт переподключение
+        self._reconnect_event.clear()
         try:
-            for attempt in range(1, 6):
-                await asyncio.sleep(attempt * 2)
+            for attempt in range(1, 10):
+                wait = min(attempt * 1.5, 10)  # 1.5, 3, 4.5, 6, 7.5, 9, 10, 10...
+                await asyncio.sleep(wait)
                 try:
                     ok = await self.connect()
                     if not ok:
@@ -142,7 +143,7 @@ class PlatformClient:
                     pass
         finally:
             self._reconnecting = False
-            self._reconnect_event.set()  # сигнал: переподключение завершено (успешно или нет)
+            self._reconnect_event.set()
 
     async def disconnect(self):
         self._connected = False
@@ -346,17 +347,23 @@ asyncio.run(main())
             raise ConnectionError('Соединение разорвано во время отправки')
 
     async def _wait_for_connection(self, timeout: float = 30.0):
+        # Если идёт реконнект — ждём его завершения
         if self._reconnecting:
             try:
                 await asyncio.wait_for(self._reconnect_event.wait(), timeout=timeout)
             except asyncio.TimeoutError:
                 raise ConnectionError('Не удалось переподключиться к платформе')
+
+        # Если после реконнекта всё ещё нет соединения — запускаем реконнект
         if not self._connected or not self._ws:
-            # Если не подключены но и не переподключаемся — ждём немного
-            for _ in range(10):
-                await asyncio.sleep(1)
-                if self._connected and self._ws:
-                    return
+            if not self._reconnecting:
+                asyncio.create_task(self._reconnect())
+            try:
+                await asyncio.wait_for(self._reconnect_event.wait(), timeout=timeout)
+            except asyncio.TimeoutError:
+                raise ConnectionError('Нет соединения с платформой')
+
+        if not self._connected or not self._ws:
             raise ConnectionError('Нет соединения с платформой')
 
     async def _receive_loop(self):
