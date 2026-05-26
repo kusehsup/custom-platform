@@ -4,7 +4,7 @@ import urllib.parse
 import websockets
 from typing import Callable, Any
 
-from config import PLATFORM_URL
+from config import PLATFORM_URL, PROXY_URL
 
 _host = urllib.parse.urlparse(PLATFORM_URL).netloc
 _path_param = urllib.parse.quote(PLATFORM_URL, safe='')
@@ -14,6 +14,17 @@ WS_HEADERS = {
     'Origin': PLATFORM_URL.rstrip('/'),
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
 }
+
+
+def _make_proxy():
+    """Возвращает proxy параметр для websockets если PROXY_URL задан."""
+    if not PROXY_URL:
+        return None
+    try:
+        from python_socks.async_.asyncio import Proxy
+        return Proxy.from_url(PROXY_URL)
+    except Exception:
+        return None
 
 
 def _encode(event: str, *args) -> str:
@@ -85,12 +96,16 @@ class PlatformClient:
     # ------------------------------------------------------------------ #
 
     async def connect(self) -> bool:
-        self._ws = await websockets.connect(
-            WS_URL,
+        proxy = _make_proxy()
+        kwargs = dict(
             additional_headers=WS_HEADERS,
             max_size=16 * 1024 * 1024,
             ping_interval=None,
         )
+        if proxy:
+            sock = await proxy.connect(dest_host=_host.split(':')[0], dest_port=int(_host.split(':')[1]) if ':' in _host else 80)
+            kwargs['sock'] = sock
+        self._ws = await websockets.connect(WS_URL, **kwargs)
         await self._ws.recv()   # Engine.IO handshake
         await self._ws.send('40')
         raw = await self._ws.recv()
