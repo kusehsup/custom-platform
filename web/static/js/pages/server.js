@@ -96,7 +96,6 @@ app.register('server', {
             <div id="compile-hist-wrap" style="margin-top:4px">
                 ${this._renderHistHtml(hist)}
             </div>
-            </div>` : ''}
         </div>
 
         <!-- Консоль -->
