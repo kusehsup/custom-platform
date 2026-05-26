@@ -345,14 +345,18 @@ asyncio.run(main())
             asyncio.create_task(self._reconnect())
             raise ConnectionError('Соединение разорвано во время отправки')
 
-    async def _wait_for_connection(self, timeout: float = 15.0):
+    async def _wait_for_connection(self, timeout: float = 30.0):
         if self._reconnecting:
-            # Ждём завершения переподключения, но не дольше timeout секунд
             try:
                 await asyncio.wait_for(self._reconnect_event.wait(), timeout=timeout)
             except asyncio.TimeoutError:
                 raise ConnectionError('Не удалось переподключиться к платформе')
         if not self._connected or not self._ws:
+            # Если не подключены но и не переподключаемся — ждём немного
+            for _ in range(10):
+                await asyncio.sleep(1)
+                if self._connected and self._ws:
+                    return
             raise ConnectionError('Нет соединения с платформой')
 
     async def _receive_loop(self):

@@ -16,8 +16,9 @@ const API = {
         });
         if (res.status === 401) {
             this.clearToken();
-            window.app.navigate('login');
-            throw new Error('Unauthorized');
+            app.toast('Сессия истекла, войдите снова', 'error');
+            setTimeout(() => app._showAuth(), 1500);
+            throw new Error('Сессия истекла');
         }
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || 'Ошибка запроса');

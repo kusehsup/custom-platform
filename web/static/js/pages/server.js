@@ -202,34 +202,34 @@ app.register('server', {
     onCompileResult(text) {
         app.state.compile = false;
         this._saveLast(text);
-        const btn = document.getElementById('btn-compile');
-        if (btn) btn.disabled = false;
-        const status = document.getElementById('compile-status');
-        if (status) status.textContent = '';
-        const tsEl = document.getElementById('compile-last-ts');
         const now = Date.now();
-        if (tsEl) tsEl.textContent = 'Последняя: ' + this._fmtTs(now);
 
-        // Обновляем кнопку показа результата
-        const btnRow = document.querySelector('#btn-compile')?.closest('.btn-row');
-        if (btnRow && !document.getElementById('btn-show-last')) {
-            const btn2 = document.createElement('button');
-            btn2.className = 'btn btn-ghost btn-sm';
-            btn2.id = 'btn-show-last';
-            btn2.textContent = 'Последний результат';
-            btn2.addEventListener('click', () => this._openModal(text, this._fmtTs(now)));
-            btnRow.appendChild(btn2);
+        // Обновляем DOM только если страница сервера открыта
+        const onPage = !!document.getElementById('btn-compile');
+        if (onPage) {
+            const btn = document.getElementById('btn-compile');
+            if (btn) btn.disabled = false;
+            const status = document.getElementById('compile-status');
+            if (status) status.textContent = '';
+            const tsEl = document.getElementById('compile-last-ts');
+            if (tsEl) tsEl.textContent = 'Последняя: ' + this._fmtTs(now);
+
+            // Кнопка показа результата
+            const btnRow = btn?.closest('.btn-row');
+            if (btnRow && !document.getElementById('btn-show-last')) {
+                const btn2 = document.createElement('button');
+                btn2.className = 'btn btn-ghost btn-sm';
+                btn2.id = 'btn-show-last';
+                btn2.textContent = 'Последний результат';
+                btn2.addEventListener('click', () => this._openModal(text, this._fmtTs(now)));
+                btnRow.appendChild(btn2);
+            }
+
+            const histWrap = document.getElementById('compile-hist-wrap');
+            if (histWrap) histWrap.innerHTML = this._renderHistHtml(this._loadHist());
+            this._bindHistButtons();
+            this._openModal(text, this._fmtTs(now));
         }
-
-        // Обновляем историю в DOM без перезагрузки
-        const histWrap = document.getElementById('compile-hist-wrap');
-        if (histWrap) histWrap.innerHTML = this._renderHistHtml(this._loadHist());
-
-        // Навешиваем обработчики на кнопки истории
-        this._bindHistButtons();
-
-        // Показываем модалку с результатом
-        this._openModal(text, this._fmtTs(now));
     },
 
     _renderHistHtml(hist) {
