@@ -204,75 +204,42 @@ class PlatformClient:
     # ------------------------------------------------------------------ #
 
     async def fetch_queries(self, timeout: float = 8.0) -> dict:
-        """Подключается к /code_queries с session cookie и получает запросы."""
+        """Получает запросы через основное соединение — без отдельного WS."""
         import time
-        # Возвращаем кэш если он свежий (30 секунд)
+        # Кэш 60 секунд
         cached = self._app_data.get('queries', {})
         cache_ts = self._app_data.get('queries_ts', 0)
-        if cached and (time.time() - cache_ts) < 30:
+        if cached and (time.time() - cache_ts) < 60:
             return cached
 
-        if not self._session_token:
+        if not self._connected:
             return cached
 
-        import sys, json as _json
-        session = self._session_token
-        script = f'''
-import asyncio, json, urllib.parse, sys
+        future: asyncio.Future = asyncio.get_event_loop().create_future()
 
-async def main():
-    import websockets
-    PLATFORM_URL = {repr(PLATFORM_URL)}
-    SESSION = {repr(session)}
-    PROXY_URL = {repr(PROXY_URL)}
-    host = urllib.parse.urlparse(PLATFORM_URL).netloc
-    path = urllib.parse.quote(PLATFORM_URL + 'code_queries', safe='')
-    url = f'ws://{{host}}/socket.io/?path={{path}}&EIO=3&transport=websocket'
-    headers = {{
-        'Origin': PLATFORM_URL.rstrip('/'),
-        'User-Agent': 'Mozilla/5.0',
-        'Cookie': f'session={{SESSION}}',
-    }}
-    kwargs = dict(additional_headers=headers, max_size=16*1024*1024, ping_interval=None)
-    if PROXY_URL:
-        from python_socks.sync import Proxy
-        proxy = Proxy.from_url(PROXY_URL)
-        h, p = host.split(':') if ':' in host else (host, 80)
-        sock = proxy.connect(dest_host=h, dest_port=int(p))
-        kwargs['sock'] = sock
-    ws = await websockets.connect(url, **kwargs)
-    await ws.recv()
-    await ws.send('40')
-    await ws.recv()
-    for _ in range(10):
-        try:
-            msg = await asyncio.wait_for(ws.recv(), timeout=3)
-            if msg.startswith('42'):
-                data = json.loads(msg[2:])
-                if data[0] == 'code_queries_update':
-                    print(json.dumps(data[1]))
-                    await ws.close()
-                    return
-        except: break
-    print('{{}}')
+        def on_queries(queries):
+            self._app_data['queries'] = queries
+            self._app_data['queries_ts'] = time.time()
+            if not future.done():
+                future.set_result(queries)
 
-asyncio.run(main())
-'''
+        self.on('code_queries_update', on_queries)
         try:
-            proc = await asyncio.create_subprocess_exec(
-                sys.executable, '-c', script,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.DEVNULL,
-            )
-            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-            result = _json.loads(stdout.decode().strip() or '{}')
-            if result:
-                import time
-                self._app_data['queries'] = result
-                self._app_data['queries_ts'] = time.time()
-            return result or self._app_data.get('queries', {})
+            # Просим платформу переключить нас на страницу запросов
+            await self._emit('open_page', 'code_queries')
+            return await asyncio.wait_for(future, timeout=timeout)
+        except asyncio.TimeoutError:
+            # Платформа не ответила — возвращаем кэш
+            return cached
         except Exception:
-            return self._app_data.get('queries', {})
+            return cached
+        finally:
+            self.off('code_queries_update', on_queries)
+            # Возвращаемся на главную
+            try:
+                await self._emit('open_page', 'main')
+            except Exception:
+                pass
 
     # ------------------------------------------------------------------ #
     #  Обновление кэша после сохранения                                    #
