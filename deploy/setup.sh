@@ -71,48 +71,23 @@ chmod 600 "$APP_DIR/.env"
 
 # ── 6. Xray ───────────────────────────────────────────────────────────
 log "Устанавливаем xray-core..."
-XRAY_VERSION="v25.4.30"
+XRAY_VERSION="v1.8.11"
 wget -q "https://github.com/XTLS/Xray-core/releases/download/${XRAY_VERSION}/Xray-linux-64.zip" -O /tmp/xray.zip
 unzip -q -o /tmp/xray.zip -d /tmp/xray_bin
 install -m 755 /tmp/xray_bin/xray /usr/local/bin/xray
 rm -rf /tmp/xray.zip /tmp/xray_bin
 
 mkdir -p /etc/xray
-cat > /etc/xray/config.json <<'XEOF'
-{
-  "log": { "loglevel": "warning" },
-  "inbounds": [{
-    "port": 10808,
-    "protocol": "socks",
-    "settings": { "auth": "noauth", "udp": true }
-  }],
-  "outbounds": [{
-    "protocol": "vless",
-    "settings": {
-      "vnext": [{
-        "address": "185.200.178.3",
-        "port": 443,
-        "users": [{
-          "id": "cba60396-75e4-44e7-b2e1-2b96d2a33b36",
-          "encryption": "none",
-          "flow": "xtls-rprx-vision"
-        }]
-      }]
-    },
-    "streamSettings": {
-      "network": "tcp",
-      "security": "reality",
-      "realitySettings": {
-        "serverName": "google.com",
-        "fingerprint": "random",
-        "publicKey": "QX5m1uZOv5QPX8dM3vnj5s9l2AK7FqRV8mFgr40s0W",
-        "shortId": "",
-        "spiderX": ""
-      }
-    }
-  }]
+# Используем python3 чтобы избежать проблем с heredoc в разных окружениях
+python3 -c "
+import json
+cfg = {
+  'log': {'loglevel': 'warning'},
+  'inbounds': [{'port': 10808, 'protocol': 'socks', 'settings': {'auth': 'noauth', 'udp': True}}],
+  'outbounds': [{'protocol': 'vless', 'settings': {'vnext': [{'address': '185.200.178.3', 'port': 443, 'users': [{'id': 'cba60396-75e4-44e7-b2e1-2b96d2a33b36', 'encryption': 'none', 'flow': 'xtls-rprx-vision'}]}]}, 'streamSettings': {'network': 'tcp', 'security': 'reality', 'realitySettings': {'serverName': 'google.com', 'fingerprint': 'chrome', 'publicKey': 'QX5m1uZOv5QPX8dM3vnj5s9l2AK7FqRV8mFgr40s0WE', 'shortId': '', 'spiderX': '/'}}}]
 }
-XEOF
+open('/etc/xray/config.json','w').write(json.dumps(cfg, indent=2))
+"
 
 cat > /etc/systemd/system/xray.service <<'EOF'
 [Unit]
