@@ -8,23 +8,26 @@ log()  { echo -e "${GREEN}[+]${NC} $1"; }
 warn() { echo -e "${YELLOW}[!]${NC} $1"; }
 err()  { echo -e "${RED}[-]${NC} $1"; exit 1; }
 
-[ -z "$BOT_TOKEN" ]     && err "Укажите BOT_TOKEN=..."
-[ -z "$PLATFORM_URL" ]  && err "Укажите PLATFORM_URL=..."
+[ -z "$BOT_TOKEN" ]    && err "Укажите BOT_TOKEN=..."
+[ -z "$PLATFORM_URL" ] && err "Укажите PLATFORM_URL=..."
 
-GITHUB_REPO="${GITHUB_REPO:-https://github.com/vandeproject/custom-platform.git}"
+GITHUB_REPO="${GITHUB_REPO:-https://github.com/kusehsup/custom-platform.git}"
 APP_DIR="/opt/custom-platform"
 WEB_PORT=8000
 PROXY_URL="socks5://127.0.0.1:10808"
+DOMAIN="code.kusehsup.ru"
+EMAIL="vandeproject@gmail.com"
 
 # ── 1. Пакеты ─────────────────────────────────────────────────────────
 log "Обновление пакетов..."
 apt-get update -qq
-apt-get install -y -qq python3 python3-pip python3-venv git nginx curl wget unzip
+apt-get install -y -qq python3 python3-pip python3-venv git nginx curl wget unzip certbot python3-certbot-nginx
 
 # ── 2. Python 3.11+ ───────────────────────────────────────────────────
 PYTHON_BIN=python3
-PY_VER=$($PYTHON_BIN -c "import sys; print(sys.version_info.minor)")
-if [ "$(python3 -c 'import sys; print(sys.version_info.major)')" -lt 3 ] || [ "$PY_VER" -lt 11 ]; then
+PY_MINOR=$($PYTHON_BIN -c "import sys; print(sys.version_info.minor)")
+PY_MAJOR=$($PYTHON_BIN -c "import sys; print(sys.version_info.major)")
+if [ "$PY_MAJOR" -lt 3 ] || [ "$PY_MINOR" -lt 11 ]; then
     log "Устанавливаем Python 3.12..."
     apt-get install -y -qq software-properties-common
     add-apt-repository -y ppa:deadsnakes/ppa
@@ -34,7 +37,7 @@ if [ "$(python3 -c 'import sys; print(sys.version_info.major)')" -lt 3 ] || [ "$
 fi
 log "Python: $($PYTHON_BIN --version)"
 
-# ── 3. Клонируем/обновляем репозиторий ───────────────────────────────
+# ── 3. Репозиторий ────────────────────────────────────────────────────
 log "Получаем код..."
 if [ -d "$APP_DIR/.git" ]; then
     warn "Директория уже есть — обновляем..."
@@ -160,12 +163,12 @@ RestartSec=5
 WantedBy=multi-user.target
 EOF
 
-# ── 9. Nginx ──────────────────────────────────────────────────────────
+# ── 9. Nginx — HTTP (для certbot) ─────────────────────────────────────
 log "Настраиваем nginx..."
 cat > /etc/nginx/sites-available/custom-platform <<EOF
 server {
     listen 80;
-    server_name _;
+    server_name ${DOMAIN};
     client_max_body_size 10M;
 
     location / {
@@ -184,7 +187,17 @@ ln -sf /etc/nginx/sites-available/custom-platform /etc/nginx/sites-enabled/
 rm -f /etc/nginx/sites-enabled/default
 nginx -t && systemctl reload nginx
 
-# ── 10. Запуск ────────────────────────────────────────────────────────
+# ── 10. SSL через Let's Encrypt ───────────────────────────────────────
+log "Получаем SSL сертификат для ${DOMAIN}..."
+certbot --nginx \
+    -d "$DOMAIN" \
+    --email "$EMAIL" \
+    --agree-tos \
+    --non-interactive \
+    --redirect \
+    2>&1 | tail -5
+
+# ── 11. Запуск сервисов ───────────────────────────────────────────────
 log "Запускаем сервисы..."
 systemctl daemon-reload
 systemctl enable xray custom-platform-web custom-platform-bot
@@ -192,16 +205,16 @@ systemctl restart xray
 sleep 3
 systemctl restart custom-platform-web custom-platform-bot
 
-# ── 11. Итог ──────────────────────────────────────────────────────────
+# ── 12. Итог ──────────────────────────────────────────────────────────
 echo ""
-log "════════════════════════════════"
+log "════════════════════════════════════════"
 log "  Деплой завершён!"
-log "════════════════════════════════"
-systemctl is-active xray                && echo "  ✅ xray"          || echo "  ❌ xray"
-systemctl is-active custom-platform-web && echo "  ✅ web"           || echo "  ❌ web"
-systemctl is-active custom-platform-bot && echo "  ✅ bot"           || echo "  ❌ bot"
+log "════════════════════════════════════════"
+systemctl is-active xray                && echo "  ✅ xray"     || echo "  ❌ xray"
+systemctl is-active custom-platform-web && echo "  ✅ web"      || echo "  ❌ web"
+systemctl is-active custom-platform-bot && echo "  ✅ bot"      || echo "  ❌ bot"
 echo ""
-echo "  🌐 http://5.129.227.157"
+echo "  🌐 https://${DOMAIN}"
 echo ""
 echo "Логи:"
 echo "  journalctl -u custom-platform-web -f"
