@@ -565,16 +565,16 @@ app.register('files', {
                 const prev = document.getElementById('sq-preview');
                 prev.classList.remove('hidden');
                 prev.scrollIntoView({ behavior: 'smooth' });
-                // Кнопка становится зелёной на 2 сек
-                if (btn) { btn.textContent = '✓'; btn.style.color = 'var(--green)'; setTimeout(() => { btn.style.color = ''; btn.textContent = origText; }, 2000); }
+                btn?.remove();  // просмотрели — кнопка больше не нужна
             } else {
                 if (result === 'access') {
                     app.toast('✅ Доступ разрешён', 'success');
-                    if (btn) { btn.textContent = '✅'; btn.style.color = 'var(--green)'; }
                 } else {
                     app.toast('⏳ Запрос направлен модераторам', 'info');
-                    if (btn) { btn.textContent = '⏳ Отправлен'; setTimeout(() => { btn.textContent = origText; btn.disabled = false; }, 3000); return; }
                 }
+                // В обоих случаях запрос уже сделан — убираем обе кнопки блока
+                const row = btn?.closest('.sr-block-row');
+                if (row) row.querySelectorAll('[data-sqaction]').forEach(b => b.remove());
             }
         } catch (e) {
             app.toast('Ошибка: ' + e.message, 'error');
