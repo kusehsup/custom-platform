@@ -118,7 +118,37 @@ app.register('server', {
         if (hostEl && app.platformHost) hostEl.textContent = app.platformHost;
         this.onState();
         this._flushConsole();
-        if (app.state.compile) document.getElementById('btn-compile').disabled = true;
+
+        // Если компиляция идёт — блокируем кнопку и показываем статус
+        if (app.state.compile) {
+            document.getElementById('btn-compile').disabled = true;
+            document.getElementById('compile-status').textContent = '⏳ Компиляция выполняется...';
+        } else {
+            document.getElementById('compile-status').textContent = '';
+        }
+
+        // Если результат пришёл пока страница была скрыта — показываем сейчас
+        if (this._pendingResult) {
+            const { text: pText, now: pNow } = this._pendingResult;
+            this._pendingResult = null;
+            const latestSaved = this._loadLast();
+            // Добавляем кнопку если нет
+            const btnRow2 = document.getElementById('btn-compile')?.closest('.btn-row');
+            if (btnRow2 && !document.getElementById('btn-show-last')) {
+                const btn2 = document.createElement('button');
+                btn2.className = 'btn btn-ghost btn-sm'; btn2.id = 'btn-show-last';
+                btn2.textContent = 'Последний результат';
+                btn2.addEventListener('click', () => { const s = this._loadLast(); this._openModal(pText, this._fmtTs(pNow), s?.prevText || ''); });
+                btnRow2.appendChild(btn2);
+            }
+            const histWrap2 = document.getElementById('compile-hist-wrap');
+            if (histWrap2) histWrap2.innerHTML = this._renderHistHtml(this._loadHist());
+            this._bindHistButtons();
+            const tsEl2 = document.getElementById('compile-last-ts');
+            if (tsEl2) tsEl2.textContent = 'Последняя: ' + this._fmtTs(pNow);
+            // Открываем модалку с результатом
+            this._openModal(pText, this._fmtTs(pNow), latestSaved?.prevText || '');
+        }
 
         // Кнопка показа последнего результата
         document.getElementById('btn-show-last')?.addEventListener('click', () => {
@@ -200,6 +230,8 @@ app.register('server', {
     },
 
     // ── Компиляция ────────────────────────────────────────────────────
+    _pendingResult: null,  // результат пришёл пока страница была скрыта
+
     onCompileResult(text) {
         app.state.compile = false;
         this._saveLast(text);
@@ -207,6 +239,11 @@ app.register('server', {
 
         // Обновляем DOM только если страница сервера открыта
         const onPage = !!document.getElementById('btn-compile');
+        if (!onPage) {
+            // Запомним что результат пришёл — покажем при следующем рендере
+            this._pendingResult = { text, now };
+            return;
+        }
         if (onPage) {
             const btn = document.getElementById('btn-compile');
             if (btn) btn.disabled = false;
