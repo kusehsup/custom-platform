@@ -526,20 +526,24 @@ input::placeholder { color: var(--text-3); }
 .sr-brace { font-family: var(--mono); color: var(--text-3); font-size: 13px; padding: 2px 6px; }
 .sr-gap   { color: var(--text-3); font-size: 12px; padding: 2px 6px; font-family: var(--mono); }
 
-/* Поиск — вкладка в правой панели должна скролиться */
+/* Поиск — вкладка скролится целиком */
 #tab-search {
-    overflow-y: auto !important;
+    overflow-y: auto;
     overflow-x: hidden;
     flex: 1;
-    min-height: 0;        /* ключевое — без этого flex-child растягивается бесконечно */
-}
-#tab-search .main {
-    height: auto;
-    overflow-y: visible;
     min-height: 0;
+    padding: 20px 24px;
+    display: block;
 }
+
+#search-root {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
 #tab-editor {
-    min-height: 0;        /* то же для редактора */
+    min-height: 0;
 }
 
 /* ─── Editor tabs ────────────────────────────────────────────── */

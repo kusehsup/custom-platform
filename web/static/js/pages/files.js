@@ -61,7 +61,7 @@ app.register('files', {
                     </div>
                 </div>
                 <div id="tab-search" class="editor-tab-content hidden">
-                    <div class="main" style="height:100%;overflow-y:auto" id="search-root"></div>
+                    <div id="search-root"></div>
                 </div>
             </div>
         </div>`;
@@ -379,8 +379,7 @@ app.register('files', {
         const root = document.getElementById('search-root');
         if (!root || this._searchInited) return;
         this._searchInited = true;
-        root.innerHTML = `
-        <div class="card">
+        root.innerHTML = `<div class="card">
             <div class="card-header"><span class="card-title">Поиск по коду</span></div>
             <div style="display:flex;flex-direction:column;gap:10px">
                 <div style="display:flex;gap:8px">
