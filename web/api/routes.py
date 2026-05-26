@@ -45,6 +45,12 @@ class GetLineRequest(BaseModel):
     line: str
 
 
+class DeleteAccessRequest(BaseModel):
+    file_id: str
+    start_line: int
+    end_line: int
+
+
 class QueryResponseRequest(BaseModel):
     type: str
     query_id: str
@@ -273,6 +279,31 @@ async def notify_query_accepted(body: NotifyQueryRequest, login: str = Depends(g
 async def code_query_response(body: QueryResponseRequest, login: str = Depends(get_current_user)):
     client = _require_client(login)
     await client._emit('code_query_response', body.type, body.query_id)
+    return {'ok': True}
+
+
+# ------------------------------------------------------------------ #
+#  Удаление доступа к диапазону строк                                  #
+# ------------------------------------------------------------------ #
+
+@router.post('/api/delete_access')
+async def delete_access(body: DeleteAccessRequest, login: str = Depends(get_current_user)):
+    client = _require_client(login)
+    _check_access(client, body.file_id)
+    file_id = int(body.file_id) if body.file_id.isdigit() else body.file_id
+    await client._emit('delete_access', file_id, body.start_line, body.end_line)
+    # Удаляем части из кэша которые попадают в диапазон
+    code = client._app_data.get('code', {})
+    parts = code.get(body.file_id, [])
+    new_parts = []
+    for part in parts:
+        part_start = part.get('line', 1)
+        part_lines = len(part.get('content', '').split('\n'))
+        part_end = part_start + part_lines - 1
+        # Оставляем части которые полностью вне диапазона удаления
+        if part_end < body.start_line or part_start > body.end_line:
+            new_parts.append(part)
+    code[body.file_id] = new_parts
     return {'ok': True}
 
 

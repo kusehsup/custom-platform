@@ -52,6 +52,14 @@ app.register('files', {
                         <button class="btn btn-ghost btn-sm hidden" id="btn-save">💾 Сохранить</button>
                         <button class="btn btn-ghost btn-sm hidden" id="btn-discard">✕ Сбросить</button>
                     </div>
+                    <div id="delete-access-bar" class="hidden" style="display:flex;align-items:center;gap:8px;padding:6px 16px;background:var(--surface);border-bottom:1px solid var(--border);font-size:13px;flex-shrink:0">
+                        <span style="color:var(--text-2)">Удалить доступ:</span>
+                        <input type="number" id="del-from" placeholder="от строки" style="width:110px;padding:5px 10px" />
+                        <span style="color:var(--text-2)">—</span>
+                        <input type="number" id="del-to" placeholder="до строки" style="width:110px;padding:5px 10px" />
+                        <button class="btn btn-danger btn-sm" id="btn-del-access">Удалить</button>
+                        <button class="btn btn-ghost btn-sm" id="btn-del-block">Удалить текущий блок</button>
+                    </div>
                     <div class="editor-area">
                         <div id="monaco-editor"></div>
                         <div class="editor-empty" id="editor-empty">
@@ -78,6 +86,9 @@ app.register('files', {
         document.querySelectorAll('.etab').forEach(btn =>
             btn.addEventListener('click', () => this._switchTab(btn.dataset.tab))
         );
+
+        document.getElementById('btn-del-access').addEventListener('click', () => this._deleteAccess());
+        document.getElementById('btn-del-block').addEventListener('click',  () => this._deleteCurrentBlock());
     },
 
     _switchTab(tab) {
@@ -189,6 +200,9 @@ app.register('files', {
         document.getElementById('editor-empty')?.style.setProperty('display', 'none');
         document.getElementById('btn-save')?.classList.add('hidden');
         document.getElementById('btn-discard')?.classList.add('hidden');
+        // Показываем панель удаления доступа
+        const delBar = document.getElementById('delete-access-bar');
+        if (delBar) { delBar.classList.remove('hidden'); delBar.style.display = 'flex'; }
 
         try {
             const data = await API.get(`/api/file/${fileId}/code`);
@@ -380,6 +394,62 @@ app.register('files', {
         if (!this._activeFileId) return;
         this._modified = false;
         this._loadPartIntoEditor(this._activePartIdx);
+    },
+
+    async _deleteAccess() {
+        if (!this._activeFileId) return;
+        const from = parseInt(document.getElementById('del-from').value);
+        const to   = parseInt(document.getElementById('del-to').value);
+        if (!from || isNaN(from)) { app.toast('Укажите начальную строку', 'error'); return; }
+        const endLine = (!to || isNaN(to)) ? from : to;
+        if (endLine < from) { app.toast('Конечная строка не может быть меньше начальной', 'error'); return; }
+        if (!await this._confirmDelete(from, endLine)) return;
+        try {
+            await API.post('/api/delete_access', { file_id: this._activeFileId, start_line: from, end_line: endLine });
+            app.toast(`🗑 Доступ к строкам ${from}–${endLine} удалён`, 'success');
+            document.getElementById('del-from').value = '';
+            document.getElementById('del-to').value   = '';
+            this._modified = false;
+            this._openFile(this._activeFileId);
+        } catch (e) { app.toast('Ошибка: ' + e.message, 'error'); }
+    },
+
+    async _deleteCurrentBlock() {
+        if (!this._activeFileId || !this._parts?.length) return;
+        const part = this._parts[this._activePartIdx];
+        if (!part) return;
+        const startLine = part.line || 1;
+        const endLine   = startLine + part.content.split('\n').length - 1;
+        if (!await this._confirmDelete(startLine, endLine)) return;
+        try {
+            await API.post('/api/delete_access', { file_id: this._activeFileId, start_line: startLine, end_line: endLine });
+            app.toast(`🗑 Блок [${startLine}–${endLine}] удалён из доступов`, 'success');
+            this._modified = false;
+            this._openFile(this._activeFileId);
+        } catch (e) { app.toast('Ошибка: ' + e.message, 'error'); }
+    },
+
+    _confirmDelete(from, to) {
+        return new Promise(resolve => {
+            const modal = document.createElement('div');
+            modal.style.cssText = 'position:fixed;inset:0;z-index:10000;display:flex;align-items:center;justify-content:center;padding:24px;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px)';
+            modal.innerHTML = `
+            <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);width:100%;max-width:380px;padding:28px;display:flex;flex-direction:column;gap:16px">
+                <div style="font-size:15px;font-weight:600;color:var(--text)">Удалить доступ</div>
+                <div style="font-size:13px;color:var(--text-2);line-height:1.6">
+                    Удалить доступ к строкам <strong style="color:var(--text)">${from}–${to}</strong>?<br>
+                    <span style="color:var(--text-3);font-size:12px">Это удалит эти строки из ваших доступов, но не изменит сам файл.</span>
+                </div>
+                <div style="display:flex;gap:8px;justify-content:flex-end">
+                    <button id="del-cancel" class="btn btn-ghost">Отмена</button>
+                    <button id="del-ok" class="btn btn-danger">Удалить</button>
+                </div>
+            </div>`;
+            document.body.appendChild(modal);
+            modal.querySelector('#del-ok').addEventListener('click',     () => { modal.remove(); resolve(true); });
+            modal.querySelector('#del-cancel').addEventListener('click', () => { modal.remove(); resolve(false); });
+            modal.addEventListener('click', e => { if (e.target === modal) { modal.remove(); resolve(false); } });
+        });
     },
 
     // ── Встроенный поиск ─────────────────────────────────────────────
