@@ -205,8 +205,15 @@ class PlatformClient:
 
     async def fetch_queries(self, timeout: float = 8.0) -> dict:
         """Подключается к /code_queries с session cookie и получает запросы."""
+        import time
+        # Возвращаем кэш если он свежий (30 секунд)
+        cached = self._app_data.get('queries', {})
+        cache_ts = self._app_data.get('queries_ts', 0)
+        if cached and (time.time() - cache_ts) < 30:
+            return cached
+
         if not self._session_token:
-            return self._app_data.get('queries', {})
+            return cached
 
         import sys, json as _json
         session = self._session_token
@@ -260,7 +267,9 @@ asyncio.run(main())
             stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
             result = _json.loads(stdout.decode().strip() or '{}')
             if result:
+                import time
                 self._app_data['queries'] = result
+                self._app_data['queries_ts'] = time.time()
             return result or self._app_data.get('queries', {})
         except Exception:
             return self._app_data.get('queries', {})
@@ -396,7 +405,9 @@ asyncio.run(main())
 
         elif event == 'code_queries_update':
             queries = args[0] if args else {}
+            import time
             self._app_data['queries'] = queries
+            self._app_data['queries_ts'] = time.time()
 
         elif event == 'send_app_data':
             data = args[0] if args else {}
