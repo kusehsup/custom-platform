@@ -1,13 +1,29 @@
 app.register('queries', {
     _queries: {},
 
-    render(root) {
+    async render(root) {
         root.innerHTML = `
         <div class="card">
-            <div class="card-header"><span class="card-title">Запросы кода</span></div>
+            <div class="card-header">
+                <span class="card-title">Запросы кода</span>
+                <button class="btn btn-ghost btn-sm" id="btn-queries-refresh">↻ Обновить</button>
+            </div>
             <div id="queries-list"><div style="color:var(--text-2);font-size:13px">Загрузка...</div></div>
         </div>`;
-        this._renderList();
+
+        document.getElementById('btn-queries-refresh')?.addEventListener('click', () => this._load());
+        await this._load();
+    },
+
+    async _load() {
+        try {
+            const data = await API.get('/api/queries');
+            this._queries = data.queries || {};
+            this._renderList();
+        } catch (e) {
+            const el = document.getElementById('queries-list');
+            if (el) el.innerHTML = `<div style="color:var(--red);font-size:13px">${e.message}</div>`;
+        }
     },
 
     onUpdate(queries) {

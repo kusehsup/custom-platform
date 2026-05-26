@@ -145,7 +145,9 @@ async def get_files(login: str = Depends(get_current_user)):
     all_files = client.files
     accessible_ids = set(client.code.keys())
     accessible = {fid: all_files[fid] for fid in accessible_ids if fid in all_files}
-    return {'files': accessible, 'project_files': list(accessible_ids)}
+    # Сохраняем порядок из project_files платформы (str-ified)
+    ordered = [str(pid) for pid in client.project_files if str(pid) in accessible_ids]
+    return {'files': accessible, 'project_files': ordered}
 
 
 @router.get('/api/file/{file_id}/code')
@@ -216,6 +218,12 @@ async def save_code(body: SaveCodeRequest, login: str = Depends(get_current_user
 # ------------------------------------------------------------------ #
 #  Запросы кода                                                        #
 # ------------------------------------------------------------------ #
+
+@router.get('/api/queries')
+async def get_queries(login: str = Depends(get_current_user)):
+    client = _require_client(login)
+    return {'queries': client.queries}
+
 
 @router.post('/api/code_query_response')
 async def code_query_response(body: QueryResponseRequest, login: str = Depends(get_current_user)):

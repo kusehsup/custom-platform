@@ -84,6 +84,10 @@ class PlatformClient:
         return self._app_data.get('files', {})
 
     @property
+    def queries(self) -> dict:
+        return self._app_data.get('queries', {})
+
+    @property
     def project_files(self) -> list:
         return self._app_data.get('project', {}).get('files', [])
 
@@ -308,6 +312,10 @@ class PlatformClient:
         if event == 'set_cookie':
             cookie_data = args[0] if args else {}
             self._session_token = cookie_data.get('session')
+
+        elif event == 'code_queries_update':
+            queries = args[0] if args else {}
+            self._app_data['queries'] = queries
 
         elif event == 'send_app_data':
             data = args[0] if args else {}
