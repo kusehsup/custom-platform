@@ -592,9 +592,18 @@ input::placeholder { color: var(--text-3); }
 
 /* ─── Monaco suggest widget fix ─────────────────────────────── */
 
-.monaco-editor .suggest-widget,
-.monaco-editor .suggest-widget * {
-    color: #E5E5E7 !important;
+/* Переопределяем CSS-переменные Monaco для suggest widget */
+.monaco-editor {
+    --vscode-editorSuggestWidget-background: #1C1C1F;
+    --vscode-editorSuggestWidget-border: #2A2A30;
+    --vscode-editorSuggestWidget-foreground: #E5E5E7;
+    --vscode-editorSuggestWidget-selectedBackground: rgba(59,130,246,0.2);
+    --vscode-editorSuggestWidget-selectedForeground: #E5E5E7;
+    --vscode-editorSuggestWidget-highlightForeground: #3B82F6;
+    --vscode-editorSuggestWidget-focusHighlightForeground: #3B82F6;
+    --vscode-editorHoverWidget-background: #1C1C1F;
+    --vscode-editorHoverWidget-foreground: #E5E5E7;
+    --vscode-editorHoverWidget-border: #2A2A30;
 }
 
 .monaco-editor .suggest-widget {
@@ -602,24 +611,39 @@ input::placeholder { color: var(--text-3); }
     border: 1px solid #2A2A30 !important;
 }
 
-.monaco-editor .suggest-widget .monaco-list-row {
+/* Список элементов */
+.monaco-editor .suggest-widget .monaco-list-row,
+.monaco-editor .suggest-widget .monaco-list-row .label-name,
+.monaco-editor .suggest-widget .monaco-list-row .label-description,
+.monaco-editor .suggest-widget .monaco-list-row span {
+    color: #E5E5E7 !important;
     background: transparent !important;
 }
 
-.monaco-editor .suggest-widget .monaco-list-row.focused,
-.monaco-editor .suggest-widget .monaco-list-row.selected {
+.monaco-editor .suggest-widget .monaco-list-row.focused {
     background: rgba(59,130,246,0.2) !important;
 }
 
+.monaco-editor .suggest-widget .monaco-list-row.focused span {
+    color: #E5E5E7 !important;
+}
+
+/* Нижняя статус-строка */
 .monaco-editor .suggest-widget .suggest-status-bar {
     background: #141416 !important;
     color: #8E8E93 !important;
 }
 
-.monaco-editor .parameter-hints-widget,
-.monaco-editor .parameter-hints-widget * {
-    color: #E5E5E7 !important;
+/* Подробности справа */
+.monaco-editor .suggest-widget .details > .monaco-scrollable-element > .body {
     background: #1C1C1F !important;
+    color: #E5E5E7 !important;
+}
+
+.monaco-editor .parameter-hints-widget {
+    background: #1C1C1F !important;
+    border: 1px solid #2A2A30 !important;
+    color: #E5E5E7 !important;
 }
 
 /* ─── Debug widget ───────────────────────────────────────────── */
