@@ -590,6 +590,45 @@ input::placeholder { color: var(--text-3); }
 
 #delete-access-bar:not(.hidden) { display: flex; }
 
+/* ─── Monaco suggest widget fix ─────────────────────────────── */
+
+.monaco-editor .suggest-widget {
+    background: #1C1C1F !important;
+    border: 1px solid #2A2A30 !important;
+}
+
+.monaco-editor .suggest-widget .monaco-list .monaco-list-row {
+    color: #E5E5E7 !important;
+}
+
+.monaco-editor .suggest-widget .monaco-list .monaco-list-row.focused,
+.monaco-editor .suggest-widget .monaco-list .monaco-list-row:hover {
+    background: rgba(59,130,246,0.15) !important;
+    color: #E5E5E7 !important;
+}
+
+.monaco-editor .suggest-widget .monaco-list .monaco-list-row .monaco-icon-label,
+.monaco-editor .suggest-widget .monaco-list .monaco-list-row .monaco-icon-label .label-name,
+.monaco-editor .suggest-widget .monaco-list .monaco-list-row .completion-label {
+    color: #E5E5E7 !important;
+}
+
+.monaco-editor .suggest-widget .details-label {
+    color: #8E8E93 !important;
+}
+
+.monaco-editor .suggest-widget .suggest-status-bar {
+    background: #141416 !important;
+    border-top: 1px solid #2A2A30 !important;
+    color: #8E8E93 !important;
+}
+
+.monaco-editor .parameter-hints-widget {
+    background: #1C1C1F !important;
+    border: 1px solid #2A2A30 !important;
+    color: #E5E5E7 !important;
+}
+
 /* ─── Debug widget ───────────────────────────────────────────── */
 
 #debug-widget {
