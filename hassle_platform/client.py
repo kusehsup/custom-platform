@@ -374,7 +374,6 @@ class PlatformClient:
             log.error('wait_for_connection: после реконнекта всё ещё нет соединения')
             raise ConnectionError('Нет соединения с платформой')
 
-        log.debug('wait_for_connection: OK')
 
     async def _receive_loop(self):
         try:

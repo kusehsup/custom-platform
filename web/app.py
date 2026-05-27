@@ -6,7 +6,6 @@ logging.basicConfig(
     level=logging.WARNING,
     format='%(asctime)s [%(name)s] %(levelname)s: %(message)s'
 )
-logging.getLogger('platform.client').setLevel(logging.DEBUG)
 
 if sys.platform == 'win32':
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
