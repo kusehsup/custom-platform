@@ -406,12 +406,29 @@ async def websocket_endpoint(ws: WebSocket, token: str = ''):
     client.on('code_queries_update', on_queries_update)
     client.on('update_code', on_update_code)
 
+    async def heartbeat():
+        while True:
+            await asyncio.sleep(25)
+            try:
+                await ws.send_json({'type': 'ping'})
+            except Exception:
+                break
+
+    hb_task = asyncio.create_task(heartbeat())
     try:
         while True:
-            await ws.receive_text()
+            try:
+                data = await asyncio.wait_for(ws.receive_text(), timeout=60)
+                # клиент прислал 'ping' — отвечаем 'pong' (браузер шлёт ping каждые 20с)
+            except asyncio.TimeoutError:
+                # 60 секунд тишины — закрываем
+                break
+            except Exception:
+                break
     except WebSocketDisconnect:
         pass
     finally:
+        hb_task.cancel()
         client.off('server_log', on_server_log)
         client.off('compile_result', on_compile_result)
         client.off('send_app_data', on_app_data)
