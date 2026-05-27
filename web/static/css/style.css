@@ -621,40 +621,29 @@ input::placeholder { color: var(--text-3); }
     border: 1px solid #2A2A30 !important;
 }
 
-/* Ядерный вариант — все потомки */
-.monaco-editor .suggest-widget *,
-.monaco-editor .suggest-details *,
-.monaco-editor .suggest-widget .monaco-list *,
-.monaco-editor .suggest-widget .monaco-scrollable-element *,
-.monaco-editor .suggest-widget .contents *,
-.monaco-editor .suggest-widget .main * {
-    color: #E5E5E7 !important;
-}
+/* Все потомки suggest-widget — принудительный цвет */
+.monaco-editor .suggest-widget .monaco-list-row { color: #E5E5E7 !important; }
+.monaco-editor .suggest-widget .monaco-list-row * { color: inherit !important; }
+.monaco-editor .suggest-widget .monaco-list-row.focused { color: #ffffff !important; }
+.monaco-editor .suggest-widget .monaco-list-row.focused * { color: #ffffff !important; }
+.monaco-editor .suggest-widget .monaco-list-row:hover { color: #E5E5E7 !important; }
 
-.monaco-editor .suggest-widget .monaco-list-row.focused,
-.monaco-editor .suggest-widget .monaco-list-row.focused * {
-    background: rgba(59,130,246,0.2) !important;
-    color: #ffffff !important;
-}
+/* Специфичные классы Monaco для suggest */
+.monaco-editor .suggest-widget .completionLabel { color: #E5E5E7 !important; }
+.monaco-editor .suggest-widget .details-label { color: #8E8E93 !important; }
+.monaco-editor .suggest-widget .readMore { color: #8E8E93 !important; }
+.monaco-editor .suggest-widget .type-label { color: #8E8E93 !important; }
+.monaco-editor .suggest-widget .monaco-icon-label { color: #E5E5E7 !important; }
+.monaco-editor .suggest-widget .monaco-icon-label .monaco-icon-label-container .monaco-icon-name-container { color: #E5E5E7 !important; }
+.monaco-editor .suggest-widget .monaco-icon-label .monaco-icon-label-container .monaco-icon-description-container { color: #8E8E93 !important; }
+.monaco-editor .suggest-widget .suggest-status-bar { background: #141416 !important; color: #8E8E93 !important; }
+.monaco-editor .suggest-widget .suggest-status-bar * { color: #8E8E93 !important; }
 
-.monaco-editor .suggest-widget .suggest-status-bar,
-.monaco-editor .suggest-widget .suggest-status-bar * {
-    background: #141416 !important;
-    color: #8E8E93 !important;
-}
+.monaco-editor .suggest-details { background: #1C1C1F !important; color: #E5E5E7 !important; }
+.monaco-editor .suggest-details * { color: #E5E5E7 !important; }
 
-.monaco-editor .suggest-details,
-.monaco-editor .suggest-details * {
-    background: #1C1C1F !important;
-    color: #E5E5E7 !important;
-}
-
-.monaco-editor .parameter-hints-widget,
-.monaco-editor .parameter-hints-widget * {
-    background: #1C1C1F !important;
-    border-color: #2A2A30 !important;
-    color: #E5E5E7 !important;
-}
+.monaco-editor .parameter-hints-widget { background: #1C1C1F !important; color: #E5E5E7 !important; }
+.monaco-editor .parameter-hints-widget * { color: #E5E5E7 !important; }
 
 /* ─── Debug widget ───────────────────────────────────────────── */
 
