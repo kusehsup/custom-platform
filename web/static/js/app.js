@@ -2,6 +2,8 @@ const app = {
     _pages: {},
     _current: null,
     _ws: null,
+    _wsLog: [],
+    _wsLogMax: 40,
     state: { server: 'unknown', compile: false },
 
     register(name, page) { this._pages[name] = page; },
@@ -17,6 +19,54 @@ const app = {
         main.innerHTML = '';
         const page = this._pages[name];
         if (page) page.render(main);
+    },
+
+    // ── Debug widget ──────────────────────────────────────────────────
+    _debugVisible: false,
+
+    _logWS(msg, type = 'info') {
+        const ts = new Date().toLocaleTimeString('ru-RU');
+        this._wsLog.unshift({ ts, msg, type });
+        if (this._wsLog.length > this._wsLogMax) this._wsLog.pop();
+        this._renderDebugLog();
+    },
+
+    _initDebugWidget() {
+        if (document.getElementById('debug-widget')) return;
+        const w = document.createElement('div');
+        w.id = 'debug-widget';
+        w.innerHTML = `
+        <div id="debug-header">
+            <span style="font-size:11px;font-weight:600;color:var(--text-2);text-transform:uppercase;letter-spacing:.06em">WS Log</span>
+            <span style="flex:1"></span>
+            <span id="debug-ws-dot" style="width:7px;height:7px;border-radius:50%;background:var(--red);flex-shrink:0"></span>
+            <button id="debug-close" style="background:none;border:none;color:var(--text-2);cursor:pointer;font-size:14px;padding:0 0 0 8px;line-height:1">✕</button>
+        </div>
+        <div id="debug-log"></div>`;
+        document.body.appendChild(w);
+        document.getElementById('debug-close').addEventListener('click', () => this.toggleDebug());
+        this._renderDebugLog();
+    },
+
+    _renderDebugLog() {
+        const el = document.getElementById('debug-log');
+        if (!el) return;
+        const dot = document.getElementById('debug-ws-dot');
+        if (dot) dot.style.background = this._ws?.readyState === WebSocket.OPEN ? 'var(--green)' : 'var(--red)';
+        el.innerHTML = this._wsLog.map(e => {
+            const color = e.type === 'error' ? 'var(--red)' : e.type === 'success' ? 'var(--green)' : e.type === 'warn' ? 'var(--yellow)' : 'var(--text-2)';
+            return `<div style="display:flex;gap:6px;padding:2px 0;border-bottom:1px solid rgba(255,255,255,0.04)">
+                <span style="color:var(--text-3);flex-shrink:0;font-size:10px;padding-top:1px">${e.ts}</span>
+                <span style="color:${color};word-break:break-all;font-size:11px">${e.msg}</span>
+            </div>`;
+        }).join('');
+    },
+
+    toggleDebug() {
+        this._debugVisible = !this._debugVisible;
+        const w = document.getElementById('debug-widget');
+        if (!w) { this._initDebugWidget(); this._debugVisible = true; return; }
+        w.style.display = this._debugVisible ? 'flex' : 'none';
     },
 
     // ── Toast ─────────────────────────────────────────────────────────
@@ -52,22 +102,31 @@ const app = {
         if (this._ws) this._ws.close();
         if (this._pingInterval) clearInterval(this._pingInterval);
 
+        this._logWS('Подключение к WS...', 'info');
         this._ws = API.connectWS(msg => this._onWS(msg));
 
         this._ws.onopen = () => {
             this._setWsStatus(true);
+            this._logWS('WS подключён', 'success');
             this._pingInterval = setInterval(() => {
-                if (this._ws?.readyState === WebSocket.OPEN) this._ws.send('ping');
+                if (this._ws?.readyState === WebSocket.OPEN) {
+                    this._ws.send('ping');
+                    this._logWS('ping →', 'info');
+                }
             }, 20000);
         };
 
-        this._ws.onclose = () => {
+        this._ws.onclose = (e) => {
             this._setWsStatus(false);
+            this._logWS(`WS закрыт (code=${e.code}, reason=${e.reason || '—'})`, 'error');
             clearInterval(this._pingInterval);
             setTimeout(() => { if (API.hasToken()) this.connectWS(); }, 3000);
         };
 
-        this._ws.onerror = () => this._setWsStatus(false);
+        this._ws.onerror = (e) => {
+            this._setWsStatus(false);
+            this._logWS('WS ошибка', 'error');
+        };
     },
 
     _setWsStatus(online) {
@@ -78,11 +137,12 @@ const app = {
     },
 
     _onWS(msg) {
+        this._logWS(`← ${msg.type}`, 'info');
         if (msg.type === 'status') {
             this.state.server  = msg.server;
             this.state.compile = msg.compile;
+            this._logWS(`  server=${msg.server} compile=${msg.compile}`, 'info');
             this._pages['server']?.onState?.();
-            // Реактивное обновление списка файлов при любом обновлении данных платформы
             this._pages['files']?.onFilesUpdate?.();
         } else if (msg.type === 'log') {
             this._pages['server']?.onLog?.(msg.data);
@@ -199,6 +259,7 @@ const app = {
             <header class="topbar">
                 <span class="topbar-logo"><span>⚡</span>CustomPlatform</span>
                 <span id="ws-status" class="ws-status ws-offline" title="Подключение..."></span>
+                <button class="btn btn-ghost btn-sm" id="btn-debug" title="WS лог" style="font-size:11px;padding:5px 10px">WS лог</button>
                 <button class="btn btn-ghost btn-sm" id="btn-logout">Выйти</button>
             </header>
             <nav class="sidebar">
@@ -216,6 +277,7 @@ const app = {
         document.querySelectorAll('.sidebar a').forEach(a =>
             a.addEventListener('click', () => this.navigate(a.dataset.page))
         );
+        document.getElementById('btn-debug').addEventListener('click', () => this.toggleDebug());
         document.getElementById('btn-logout').addEventListener('click', async () => {
             await API.post('/api/logout').catch(() => {});
             API.clearToken();
