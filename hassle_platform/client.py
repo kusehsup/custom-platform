@@ -18,13 +18,14 @@ WS_HEADERS = {
 }
 
 
-def _make_proxy():
-    """Возвращает proxy параметр для websockets если PROXY_URL задан."""
+def _make_proxy_sock(host: str, port: int):
+    """Создаёт SOCKS5 сокет через sync proxy (совместимо с Python 3.12)."""
     if not PROXY_URL:
         return None
     try:
-        from python_socks.async_.asyncio import Proxy
-        return Proxy.from_url(PROXY_URL)
+        from python_socks.sync import Proxy
+        proxy = Proxy.from_url(PROXY_URL)
+        return proxy.connect(dest_host=host, dest_port=port)
     except Exception:
         return None
 
@@ -104,15 +105,30 @@ class PlatformClient:
     # ------------------------------------------------------------------ #
 
     async def connect(self) -> bool:
-        proxy = _make_proxy()
+        import logging
+        log = logging.getLogger('platform.client')
+        host_part = _host.split(':')[0]
+        port_part = int(_host.split(':')[1]) if ':' in _host else 80
         kwargs = dict(
             additional_headers=WS_HEADERS,
             max_size=16 * 1024 * 1024,
             ping_interval=None,
         )
-        if proxy:
-            sock = await proxy.connect(dest_host=_host.split(':')[0], dest_port=int(_host.split(':')[1]) if ':' in _host else 80)
-            kwargs['sock'] = sock
+        if PROXY_URL:
+            # Создаём сокет в executor чтобы не блокировать event loop
+            loop = asyncio.get_event_loop()
+            try:
+                sock = await loop.run_in_executor(
+                    None, lambda: _make_proxy_sock(host_part, port_part)
+                )
+                if sock:
+                    kwargs['sock'] = sock
+                else:
+                    log.error('connect: не удалось создать proxy сокет')
+                    return False
+            except Exception as e:
+                log.error(f'connect: ошибка proxy: {e}')
+                return False
         self._ws = await websockets.connect(WS_URL, **kwargs)
         await self._ws.recv()   # Engine.IO handshake
         await self._ws.send('40')
