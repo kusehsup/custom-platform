@@ -597,13 +597,23 @@ input::placeholder { color: var(--text-3); }
     --vscode-editorSuggestWidget-background: #1C1C1F;
     --vscode-editorSuggestWidget-border: #2A2A30;
     --vscode-editorSuggestWidget-foreground: #E5E5E7;
-    --vscode-editorSuggestWidget-selectedBackground: rgba(59,130,246,0.2);
-    --vscode-editorSuggestWidget-selectedForeground: #E5E5E7;
+    --vscode-editorSuggestWidget-selectedBackground: rgba(59,130,246,0.25);
+    --vscode-editorSuggestWidget-selectedForeground: #ffffff;
     --vscode-editorSuggestWidget-highlightForeground: #3B82F6;
-    --vscode-editorSuggestWidget-focusHighlightForeground: #3B82F6;
+    --vscode-editorSuggestWidget-focusHighlightForeground: #60A5FA;
     --vscode-editorHoverWidget-background: #1C1C1F;
     --vscode-editorHoverWidget-foreground: #E5E5E7;
     --vscode-editorHoverWidget-border: #2A2A30;
+    /* Список */
+    --vscode-list-hoverBackground: rgba(255,255,255,0.04);
+    --vscode-list-hoverForeground: #E5E5E7;
+    --vscode-list-focusBackground: rgba(59,130,246,0.25);
+    --vscode-list-focusForeground: #ffffff;
+    --vscode-list-activeSelectionBackground: rgba(59,130,246,0.3);
+    --vscode-list-activeSelectionForeground: #ffffff;
+    --vscode-list-inactiveSelectionBackground: rgba(59,130,246,0.15);
+    --vscode-list-inactiveSelectionForeground: #E5E5E7;
+    --vscode-foreground: #E5E5E7;
 }
 
 .monaco-editor .suggest-widget {
