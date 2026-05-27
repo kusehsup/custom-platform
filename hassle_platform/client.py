@@ -323,24 +323,33 @@ class PlatformClient:
             raise ConnectionError('Соединение разорвано во время отправки')
 
     async def _wait_for_connection(self, timeout: float = 30.0):
-        # Если идёт реконнект — ждём его завершения
+        import logging
+        log = logging.getLogger('platform.client')
+
         if self._reconnecting:
+            log.warning('wait_for_connection: идёт реконнект, ждём...')
             try:
                 await asyncio.wait_for(self._reconnect_event.wait(), timeout=timeout)
             except asyncio.TimeoutError:
+                log.error('wait_for_connection: таймаут реконнекта')
                 raise ConnectionError('Не удалось переподключиться к платформе')
 
-        # Если после реконнекта всё ещё нет соединения — запускаем реконнект
         if not self._connected or not self._ws:
+            log.warning(f'wait_for_connection: нет соединения (connected={self._connected}, ws={self._ws is not None}), запускаем реконнект')
             if not self._reconnecting:
+                self._reconnect_event.clear()
                 asyncio.create_task(self._reconnect())
             try:
                 await asyncio.wait_for(self._reconnect_event.wait(), timeout=timeout)
             except asyncio.TimeoutError:
+                log.error('wait_for_connection: таймаут после запуска реконнекта')
                 raise ConnectionError('Нет соединения с платформой')
 
         if not self._connected or not self._ws:
+            log.error('wait_for_connection: после реконнекта всё ещё нет соединения')
             raise ConnectionError('Нет соединения с платформой')
+
+        log.debug('wait_for_connection: OK')
 
     async def _receive_loop(self):
         try:
