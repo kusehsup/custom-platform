@@ -53,14 +53,14 @@ app.register('files', {
                         <button class="btn btn-ghost btn-sm hidden" id="btn-discard">✕ Сбросить</button>
                         <button class="btn btn-ghost btn-sm hidden" id="btn-del-toggle" title="Удалить доступ к строкам">🗑</button>
                     </div>
-                    <div id="delete-access-bar" class="hidden" style="align-items:center;gap:8px;padding:8px 16px;background:var(--surface2);border-bottom:1px solid var(--border);font-size:13px;flex-shrink:0">
-                        <span style="color:var(--text-2);flex-shrink:0">Строки:</span>
-                        <input type="number" id="del-from" placeholder="от" style="width:80px;padding:5px 10px" />
-                        <span style="color:var(--text-3)">—</span>
-                        <input type="number" id="del-to" placeholder="до" style="width:80px;padding:5px 10px" />
+                    <div id="delete-access-bar" class="hidden">
+                        <span class="del-bar-label">Удалить строки:</span>
+                        <input type="number" id="del-from" placeholder="от" class="del-bar-input" />
+                        <span class="del-bar-sep">—</span>
+                        <input type="number" id="del-to" placeholder="до" class="del-bar-input" />
                         <button class="btn btn-danger btn-sm" id="btn-del-access">Удалить</button>
-                        <div style="width:1px;height:16px;background:var(--border);flex-shrink:0"></div>
-                        <button class="btn btn-ghost btn-sm" id="btn-del-block" style="color:var(--text-2)">Весь блок</button>
+                        <span class="del-bar-sep">·</span>
+                        <button class="btn btn-ghost btn-sm" id="btn-del-block">Весь блок</button>
                     </div>
                     <div class="editor-area">
                         <div id="monaco-editor"></div>
@@ -329,11 +329,26 @@ app.register('files', {
         monaco.editor.defineTheme('custom-dark', {
             base: 'vs-dark', inherit: true, rules: [],
             colors: {
-                'editor.background':                 '#0D0D0F',
-                'editor.lineHighlightBackground':    '#1C1C1F',
-                'editorLineNumber.foreground':       '#48484A',
-                'editorLineNumber.activeForeground': '#8E8E93',
-                'editor.selectionBackground':        '#3B82F630',
+                'editor.background':                       '#0D0D0F',
+                'editor.lineHighlightBackground':          '#1C1C1F',
+                'editorLineNumber.foreground':             '#48484A',
+                'editorLineNumber.activeForeground':       '#8E8E93',
+                'editor.selectionBackground':              '#3B82F630',
+                // Автодополнение
+                'editorSuggestWidget.background':          '#1C1C1F',
+                'editorSuggestWidget.border':              '#2A2A30',
+                'editorSuggestWidget.foreground':          '#E5E5E7',
+                'editorSuggestWidget.selectedBackground':  '#3B82F620',
+                'editorSuggestWidget.selectedForeground':  '#E5E5E7',
+                'editorSuggestWidget.highlightForeground': '#3B82F6',
+                'editorSuggestWidget.focusHighlightForeground': '#3B82F6',
+                // Hover / parameter hints
+                'editorHoverWidget.background':            '#1C1C1F',
+                'editorHoverWidget.border':                '#2A2A30',
+                'editorHoverWidget.foreground':            '#E5E5E7',
+                // Инлайн подсказки
+                'editorInlayHint.foreground':              '#8E8E93',
+                'editorInlayHint.background':              '#1C1C1F',
             },
         });
 
