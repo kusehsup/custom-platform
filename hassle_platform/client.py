@@ -185,7 +185,8 @@ class PlatformClient:
         self._password = password
         future: asyncio.Future = asyncio.get_event_loop().create_future()
         self._ack_futures['log_in_result'] = future
-        await self._emit('log_in', login, password)
+        # Отправляем напрямую через ws — минуя _wait_for_connection чтобы избежать дедлока при реконнекте
+        await self._ws.send(_encode('log_in', login, password))
         try:
             result = await asyncio.wait_for(future, timeout=10)
         except asyncio.TimeoutError:
