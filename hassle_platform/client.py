@@ -124,26 +124,34 @@ class PlatformClient:
         return True
 
     async def _reconnect(self):
+        import logging
+        log = logging.getLogger('platform.client')
         if not self._login or self._reconnecting:
             return
         self._reconnecting = True
         self._reconnect_event.clear()
         try:
-            for attempt in range(1, 10):
-                wait = min(attempt * 1.5, 10)  # 1.5, 3, 4.5, 6, 7.5, 9, 10, 10...
+            for attempt in range(1, 20):
+                wait = min(attempt * 1.5, 10)
+                log.warning(f'_reconnect: попытка {attempt}, ждём {wait}s...')
                 await asyncio.sleep(wait)
                 try:
                     ok = await self.connect()
                     if not ok:
+                        log.warning(f'_reconnect: connect() вернул False')
                         continue
-                    success, _ = await self.login(self._login, self._password)
+                    success, err = await self.login(self._login, self._password)
                     if success:
+                        log.warning(f'_reconnect: успешно на попытке {attempt}')
                         return
-                except Exception:
-                    pass
+                    else:
+                        log.error(f'_reconnect: login failed: {err}')
+                except Exception as e:
+                    log.error(f'_reconnect: исключение на попытке {attempt}: {type(e).__name__}: {e}')
         finally:
             self._reconnecting = False
             self._reconnect_event.set()
+            log.warning('_reconnect: завершён')
 
     async def disconnect(self):
         self._connected = False
