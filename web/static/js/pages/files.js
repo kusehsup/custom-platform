@@ -358,6 +358,9 @@ app.register('files', {
             fontLigatures: true, minimap: { enabled: true },
             scrollBeyondLastLine: false, automaticLayout: true,
             tabSize: 4, wordWrap: 'off', smoothScrolling: true, cursorBlinking: 'smooth',
+            wordBasedSuggestions: 'allDocuments',
+            suggestOnTriggerCharacters: true,
+            quickSuggestions: { other: true, comments: false, strings: false },
         });
 
         this._editor.onDidChangeModelContent(() => {
