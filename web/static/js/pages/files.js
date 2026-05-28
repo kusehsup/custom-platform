@@ -412,28 +412,38 @@ app.register('files', {
 
     async _save() {
         if (!this._activeFileId || !this._parts?.length) return;
-        const part = this._parts[this._activePartIdx];
+
+        // Фиксируем все значения в момент начала сохранения
+        const savedFileId  = this._activeFileId;
+        const savedPartIdx = this._activePartIdx;
+        const part         = this._parts[savedPartIdx];
         if (!part) return;
+        const code = this._editor.getValue();
 
         const btn = document.getElementById('btn-save');
         if (btn) { btn.disabled = true; btn.textContent = 'Сохраняем...'; }
 
-        const code = this._editor.getValue();
         try {
             const res = await API.post('/api/code/save', {
-                file_id:    this._activeFileId,
+                file_id:    savedFileId,
                 code,
-                part_index: this._activePartIdx,
+                part_index: savedPartIdx,
                 hash:       part.hash,
             });
-            this._parts[this._activePartIdx].hash = res.hash;
-            this._modified = false;
-            // Удаляем черновик — он успешно сохранён
-            if (this._partDrafts) delete this._partDrafts[this._activePartIdx];
-            document.getElementById('editor-filename').className = 'editor-filename';
-            document.getElementById('btn-save')?.classList.add('hidden');
-            document.getElementById('btn-discard')?.classList.add('hidden');
-            this._pushHistory(this._activeFileId, this._activePartIdx, part.line || 1, code);
+
+            // Применяем результат только если файл не изменился
+            if (this._activeFileId === savedFileId) {
+                this._parts[savedPartIdx].hash = res.hash;
+                if (this._partDrafts) delete this._partDrafts[savedPartIdx];
+                // Сбрасываем флаг изменений только если мы всё ещё на той же части
+                if (this._activePartIdx === savedPartIdx) {
+                    this._modified = false;
+                    document.getElementById('editor-filename').className = 'editor-filename';
+                    document.getElementById('btn-save')?.classList.add('hidden');
+                    document.getElementById('btn-discard')?.classList.add('hidden');
+                }
+            }
+            this._pushHistory(savedFileId, savedPartIdx, part.line || 1, code);
             app.toast('💾 Файл сохранён', 'success');
         } catch (e) {
             app.toast('Ошибка сохранения: ' + e.message, 'error');
