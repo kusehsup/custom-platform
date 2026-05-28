@@ -603,6 +603,54 @@ input::placeholder { color: var(--text-3); }
 
 #delete-access-bar:not(.hidden) { display: flex; }
 
+.del-access-bar {
+    align-items: center;
+    gap: 8px;
+    padding: 6px 16px;
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    font-size: 13px;
+}
+
+.del-bar-label {
+    color: var(--text-2);
+    font-size: 12.5px;
+    flex-shrink: 0;
+}
+
+.del-access-bar input[type=number] {
+    width: 72px;
+    padding: 4px 10px;
+    font-size: 12.5px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xs);
+    color: var(--text);
+    outline: none;
+    -moz-appearance: textfield;
+}
+.del-access-bar input[type=number]::-webkit-inner-spin-button { display: none; }
+.del-access-bar input[type=number]:focus { border-color: var(--accent); }
+
+.del-bar-sep {
+    color: var(--text-3);
+    font-size: 12px;
+}
+
+.del-bar-divider {
+    width: 1px;
+    height: 14px;
+    background: var(--border);
+    flex-shrink: 0;
+    margin: 0 2px;
+}
+
+.del-bar-danger {
+    color: var(--red) !important;
+}
+.del-bar-danger:hover { background: rgba(248,113,113,0.08) !important; }
+
 /* ─── Monaco suggest widget fix ─────────────────────────────── */
 
 /* Только CSS переменные — не трогаем layout */

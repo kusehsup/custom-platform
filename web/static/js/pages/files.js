@@ -56,13 +56,13 @@ app.register('files', {
                         <button class="btn btn-ghost btn-sm hidden" id="btn-history" title="История изменений">🕐 История</button>
                         <button class="btn btn-ghost btn-sm hidden" id="btn-del-toggle" title="Удалить доступ к строкам">🗑</button>
                     </div>
-                    <div id="delete-access-bar" class="hidden">
-                        <span class="del-bar-label">Удалить строки:</span>
-                        <input type="number" id="del-from" placeholder="от" class="del-bar-input" />
+                    <div id="delete-access-bar" class="hidden del-access-bar">
+                        <span class="del-bar-label">Удалить доступ к строкам:</span>
+                        <input type="number" id="del-from" placeholder="от" />
                         <span class="del-bar-sep">—</span>
-                        <input type="number" id="del-to" placeholder="до" class="del-bar-input" />
-                        <button class="btn btn-danger btn-sm" id="btn-del-access">Удалить</button>
-                        <span class="del-bar-sep">·</span>
+                        <input type="number" id="del-to" placeholder="до" />
+                        <button class="btn btn-ghost btn-sm del-bar-danger" id="btn-del-access">Удалить</button>
+                        <div class="del-bar-divider"></div>
                         <button class="btn btn-ghost btn-sm" id="btn-del-block">Весь блок</button>
                     </div>
                     <div class="editor-area">
@@ -429,6 +429,7 @@ app.register('files', {
                 code,
                 part_index: savedPartIdx,
                 hash:       part.hash,
+                html:       this._buildFileHtml(savedFileId, savedPartIdx, code),
             });
 
             // Применяем результат только если файл не изменился
@@ -450,6 +451,27 @@ app.register('files', {
         } finally {
             if (btn) { btn.disabled = false; btn.textContent = '💾 Сохранить'; }
         }
+    },
+
+    // Генерируем HTML который платформа ожидает как 5-й аргумент set_code
+    _buildFileHtml(fileId, savedPartIdx, savedCode) {
+        const file = this._files[fileId];
+        const fileName = file?.fullPath || '';
+        let partsHtml = '';
+        this._parts.forEach((p, i) => {
+            const content = (i === savedPartIdx) ? savedCode : (this._partDrafts?.[i] ?? p.content ?? '');
+            const parents = (p.parents || []).map(par =>
+                `<div class="parent"><div class="line">${par.line}</div><div class="name">${par.name}</div></div>`
+            ).join('');
+            partsHtml += `<div class="clearfix code-part" data-index="${i}">` +
+                `<div class="parents">${parents}</div>` +
+                `<div class="code" style="height: 300px" flask="${i}">` +
+                `<textarea class="codeflask__textarea">${content.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</textarea>` +
+                `</div>` +
+                `<div class="button-simple save-code" style="display: none">Сохранить</div>` +
+                `</div>`;
+        });
+        return `\n\t\t\t\t<div class="title action">${fileName}</div>\n\t\t\t\t<div class="content" style="display: block;">\n\t\t\t\t\t<div class="delete-access"><input class="line-start" placeholder="от"> - <input class="line-end" placeholder="до"><div class="button-simple">Удалить</div></div>\n\t\t\t\t\t<div class="spoiler code-block"><div class="title action">Посмотреть содержимое</div><div class="content" style="display: block;">${partsHtml}</div></div>\n\t\t\t\t</div>`;
     },
 
     // ── История изменений ─────────────────────────────────────────────
