@@ -417,7 +417,6 @@ class PlatformClient:
                 if raw == '2':
                     await self._ws.send('3')
                     continue
-                log.warning(f'RAW: {raw[:300]}')
                 if not raw.startswith('4'):
                     continue
                 event, args = _decode(raw)
@@ -438,11 +437,6 @@ class PlatformClient:
                 asyncio.create_task(self._reconnect())
 
     async def _handle_event(self, event: str, args: list):
-        import logging
-        log = logging.getLogger('platform.client')
-        if event not in ('server_log',):
-            log.warning(f'EVENT: {event} | {str(args)[:200]}')
-
         if event == 'set_cookie':
             cookie_data = args[0] if args else {}
             self._session_token = cookie_data.get('session')

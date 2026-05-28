@@ -214,18 +214,28 @@ async def save_code(body: SaveCodeRequest, login: str = Depends(get_current_user
     client.on('save_finish', on_save_finish)
     try:
         file_id = int(body.file_id) if body.file_id.isdigit() else body.file_id
-        # Если hash не передан — берём из кэша
+
+        # Получаем hash: сначала из запроса, потом из кэша
         save_hash = body.hash
         if not save_hash:
             parts = client.code.get(body.file_id, [])
             if body.part_index < len(parts):
-                save_hash = parts[body.part_index].get('hash', '')
-        import logging
-        parts = client.code.get(body.file_id, [])
-        cached_hash = parts[body.part_index].get('hash') if body.part_index < len(parts) else 'OUT_OF_RANGE'
-        logging.getLogger('platform.client').warning(
-            f'set_code: file={file_id} part={body.part_index} body_hash={repr(body.hash)} cached_hash={repr(cached_hash)} code_len={len(body.code)}'
-        )
+                save_hash = parts[body.part_index].get('hash')
+
+        # Если hash всё ещё None — запрашиваем через get_code edit
+        if not save_hash:
+            try:
+                result = await client.get_code_ack(
+                    'edit', file_id, [body.part_index], '', timeout=10.0
+                )
+                # Ждём пока платформа обновит hash в кэше
+                await asyncio.sleep(1)
+                parts = client.code.get(body.file_id, [])
+                if body.part_index < len(parts):
+                    save_hash = parts[body.part_index].get('hash')
+            except Exception:
+                pass
+
         await client._emit('set_code', file_id, body.code, body.part_index, save_hash or '', '')
         new_hash = await asyncio.wait_for(future, timeout=10)
     except ConnectionError as e:
