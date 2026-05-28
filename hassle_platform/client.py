@@ -399,6 +399,11 @@ class PlatformClient:
                 asyncio.create_task(self._reconnect())
 
     async def _handle_event(self, event: str, args: list):
+        import logging
+        log = logging.getLogger('platform.client')
+        if event not in ('server_log',):  # не спамим логами консоли
+            log.warning(f'event: {event} args_preview={str(args)[:120]}')
+
         if event == 'set_cookie':
             cookie_data = args[0] if args else {}
             self._session_token = cookie_data.get('session')

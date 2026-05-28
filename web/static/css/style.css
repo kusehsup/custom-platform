@@ -592,7 +592,7 @@ input::placeholder { color: var(--text-3); }
 
 /* ─── Monaco suggest widget fix ─────────────────────────────── */
 
-/* Переопределяем CSS-переменные Monaco для suggest widget */
+/* Только CSS переменные — не трогаем layout */
 .monaco-editor {
     --vscode-editorSuggestWidget-background: #1C1C1F;
     --vscode-editorSuggestWidget-border: #2A2A30;
@@ -604,7 +604,6 @@ input::placeholder { color: var(--text-3); }
     --vscode-editorHoverWidget-background: #1C1C1F;
     --vscode-editorHoverWidget-foreground: #E5E5E7;
     --vscode-editorHoverWidget-border: #2A2A30;
-    /* Список */
     --vscode-list-hoverBackground: rgba(255,255,255,0.04);
     --vscode-list-hoverForeground: #E5E5E7;
     --vscode-list-focusBackground: rgba(59,130,246,0.25);
@@ -621,29 +620,9 @@ input::placeholder { color: var(--text-3); }
     border: 1px solid #2A2A30 !important;
 }
 
-/* Все потомки suggest-widget — принудительный цвет */
-.monaco-editor .suggest-widget .monaco-list-row { color: #E5E5E7 !important; }
-.monaco-editor .suggest-widget .monaco-list-row * { color: inherit !important; }
-.monaco-editor .suggest-widget .monaco-list-row.focused { color: #ffffff !important; }
-.monaco-editor .suggest-widget .monaco-list-row.focused * { color: #ffffff !important; }
-.monaco-editor .suggest-widget .monaco-list-row:hover { color: #E5E5E7 !important; }
-
-/* Специфичные классы Monaco для suggest */
-.monaco-editor .suggest-widget .completionLabel { color: #E5E5E7 !important; }
-.monaco-editor .suggest-widget .details-label { color: #8E8E93 !important; }
-.monaco-editor .suggest-widget .readMore { color: #8E8E93 !important; }
-.monaco-editor .suggest-widget .type-label { color: #8E8E93 !important; }
-.monaco-editor .suggest-widget .monaco-icon-label { color: #E5E5E7 !important; }
-.monaco-editor .suggest-widget .monaco-icon-label .monaco-icon-label-container .monaco-icon-name-container { color: #E5E5E7 !important; }
-.monaco-editor .suggest-widget .monaco-icon-label .monaco-icon-label-container .monaco-icon-description-container { color: #8E8E93 !important; }
-.monaco-editor .suggest-widget .suggest-status-bar { background: #141416 !important; color: #8E8E93 !important; }
-.monaco-editor .suggest-widget .suggest-status-bar * { color: #8E8E93 !important; }
-
-.monaco-editor .suggest-details { background: #1C1C1F !important; color: #E5E5E7 !important; }
-.monaco-editor .suggest-details * { color: #E5E5E7 !important; }
-
-.monaco-editor .parameter-hints-widget { background: #1C1C1F !important; color: #E5E5E7 !important; }
-.monaco-editor .parameter-hints-widget * { color: #E5E5E7 !important; }
+.monaco-editor .suggest-widget .suggest-status-bar {
+    background: #141416 !important;
+}
 
 /* ─── Debug widget ───────────────────────────────────────────── */
 
