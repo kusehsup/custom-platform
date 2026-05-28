@@ -1,4 +1,6 @@
-const FAV_KEY = 'fav_files';
+const FAV_KEY      = 'fav_files';
+const HIST_PREFIX  = 'file_hist_';
+const HIST_MAX     = 20;
 
 app.register('files', {
     _files: {},
@@ -51,6 +53,7 @@ app.register('files', {
                         <span class="editor-filename" id="editor-filename">Выберите файл</span>
                         <button class="btn btn-ghost btn-sm hidden" id="btn-save">💾 Сохранить</button>
                         <button class="btn btn-ghost btn-sm hidden" id="btn-discard">✕ Сбросить</button>
+                        <button class="btn btn-ghost btn-sm hidden" id="btn-history" title="История изменений">🕐 История</button>
                         <button class="btn btn-ghost btn-sm hidden" id="btn-del-toggle" title="Удалить доступ к строкам">🗑</button>
                     </div>
                     <div id="delete-access-bar" class="hidden">
@@ -89,6 +92,7 @@ app.register('files', {
             btn.addEventListener('click', () => this._switchTab(btn.dataset.tab))
         );
 
+        document.getElementById('btn-history').addEventListener('click', () => this._showHistory());
         document.getElementById('btn-del-toggle').addEventListener('click', () => {
             const bar = document.getElementById('delete-access-bar');
             bar.classList.toggle('hidden');
@@ -207,6 +211,7 @@ app.register('files', {
         document.getElementById('btn-save')?.classList.add('hidden');
         document.getElementById('btn-discard')?.classList.add('hidden');
         // Показываем кнопку удаления доступа, панель скрыта по умолчанию
+        document.getElementById('btn-history')?.classList.remove('hidden');
         document.getElementById('btn-del-toggle')?.classList.remove('hidden');
         document.getElementById('delete-access-bar')?.classList.add('hidden');
 
@@ -394,10 +399,11 @@ app.register('files', {
         const btn = document.getElementById('btn-save');
         if (btn) { btn.disabled = true; btn.textContent = 'Сохраняем...'; }
 
+        const code = this._editor.getValue();
         try {
             const res = await API.post('/api/code/save', {
                 file_id:    this._activeFileId,
-                code:       this._editor.getValue(),
+                code,
                 part_index: this._activePartIdx,
                 hash:       part.hash,
             });
@@ -406,12 +412,113 @@ app.register('files', {
             document.getElementById('editor-filename').className = 'editor-filename';
             document.getElementById('btn-save')?.classList.add('hidden');
             document.getElementById('btn-discard')?.classList.add('hidden');
+            // Сохраняем снапшот в историю
+            this._pushHistory(this._activeFileId, this._activePartIdx, part.line || 1, code);
             app.toast('💾 Файл сохранён', 'success');
         } catch (e) {
             app.toast('Ошибка сохранения: ' + e.message, 'error');
         } finally {
             if (btn) { btn.disabled = false; btn.textContent = '💾 Сохранить'; }
         }
+    },
+
+    // ── История изменений ─────────────────────────────────────────────
+    _histKey(fileId, partIdx) { return `${HIST_PREFIX}${fileId}_${partIdx}`; },
+
+    _pushHistory(fileId, partIdx, startLine, content) {
+        const key = this._histKey(fileId, partIdx);
+        let hist = [];
+        try { hist = JSON.parse(localStorage.getItem(key) || '[]'); } catch {}
+        hist.unshift({ ts: Date.now(), startLine, content });
+        if (hist.length > HIST_MAX) hist = hist.slice(0, HIST_MAX);
+        try { localStorage.setItem(key, JSON.stringify(hist)); } catch {}
+    },
+
+    _loadHistory(fileId, partIdx) {
+        const key = this._histKey(fileId, partIdx);
+        try { return JSON.parse(localStorage.getItem(key) || '[]'); } catch { return []; }
+    },
+
+    _showHistory() {
+        if (!this._activeFileId) return;
+        const fileId  = this._activeFileId;
+        const partIdx = this._activePartIdx;
+        const hist    = this._loadHistory(fileId, partIdx);
+        const file    = this._files[fileId];
+        const part    = this._parts?.[partIdx];
+
+        const modal = document.createElement('div');
+        modal.id = 'history-modal';
+        modal.style.cssText = 'position:fixed;inset:0;z-index:10000;display:flex;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px)';
+
+        const fmt = ts => new Date(ts).toLocaleString('ru-RU', {
+            day: '2-digit', month: '2-digit', year: 'numeric',
+            hour: '2-digit', minute: '2-digit', second: '2-digit'
+        });
+
+        modal.innerHTML = `
+        <div style="display:flex;flex-direction:column;width:100%;max-width:900px;margin:auto;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;max-height:90vh">
+            <div style="display:flex;align-items:center;gap:12px;padding:16px 20px;border-bottom:1px solid var(--border);flex-shrink:0">
+                <span style="font-size:13px;font-weight:600;color:var(--text)">История: ${this._esc(file?.fullPath || '')}${part ? ` [${part.line}]` : ''}</span>
+                <span style="flex:1"></span>
+                <span style="font-size:12px;color:var(--text-2)">${hist.length} версий</span>
+                <button id="hist-close" style="background:none;border:none;color:var(--text-2);cursor:pointer;font-size:18px;padding:4px">✕</button>
+            </div>
+            <div style="display:grid;grid-template-columns:220px 1fr;flex:1;overflow:hidden;min-height:0">
+                <div id="hist-list" style="border-right:1px solid var(--border);overflow-y:auto;padding:8px 0">
+                    ${hist.length === 0
+                        ? '<div style="padding:16px;color:var(--text-3);font-size:13px">Нет сохранённых версий</div>'
+                        : hist.map((h, i) => `
+                        <div class="hist-item" data-idx="${i}" style="padding:10px 16px;cursor:pointer;border-bottom:1px solid var(--border);transition:background .1s">
+                            <div style="font-size:12.5px;font-weight:500;color:var(--text)">${fmt(h.ts)}</div>
+                            <div style="font-size:11px;color:var(--text-3);margin-top:2px;font-family:var(--mono)">строка ${h.startLine}</div>
+                        </div>`).join('')
+                    }
+                </div>
+                <div style="display:flex;flex-direction:column;overflow:hidden;min-height:0">
+                    <div id="hist-toolbar" style="display:flex;gap:8px;padding:8px 12px;border-bottom:1px solid var(--border);flex-shrink:0" class="hidden">
+                        <button class="btn btn-ghost btn-sm" id="hist-restore">↩ Восстановить эту версию</button>
+                        <span id="hist-meta" style="font-size:12px;color:var(--text-2);align-self:center"></span>
+                    </div>
+                    <pre id="hist-preview" style="flex:1;overflow:auto;padding:14px 16px;font-family:var(--mono);font-size:12.5px;line-height:1.7;color:#C8D3F5;background:#0D0D0F;margin:0;white-space:pre-wrap;word-break:break-all">
+                        <span style="color:var(--text-3)">← Выберите версию</span>
+                    </pre>
+                </div>
+            </div>
+        </div>`;
+
+        document.body.appendChild(modal);
+
+        let selectedHist = null;
+
+        modal.querySelectorAll('.hist-item').forEach(item => {
+            item.addEventListener('mouseenter', () => { item.style.background = 'rgba(255,255,255,0.04)'; });
+            item.addEventListener('mouseleave', () => { item.style.background = selectedHist === item ? 'rgba(59,130,246,0.1)' : ''; });
+            item.addEventListener('click', () => {
+                modal.querySelectorAll('.hist-item').forEach(i => i.style.background = '');
+                item.style.background = 'rgba(59,130,246,0.1)';
+                selectedHist = item;
+                const h = hist[parseInt(item.dataset.idx)];
+                document.getElementById('hist-preview').textContent = h.content;
+                document.getElementById('hist-toolbar').classList.remove('hidden');
+                document.getElementById('hist-meta').textContent = fmt(h.ts);
+                document.getElementById('hist-restore').onclick = () => {
+                    if (!confirm('Восстановить эту версию? Текущие несохранённые изменения будут потеряны.')) return;
+                    this._settingContent = true;
+                    this._editor.setValue(h.content);
+                    this._settingContent = false;
+                    this._modified = true;
+                    document.getElementById('editor-filename').className = 'editor-filename modified';
+                    document.getElementById('btn-save')?.classList.remove('hidden');
+                    document.getElementById('btn-discard')?.classList.remove('hidden');
+                    modal.remove();
+                    app.toast('↩ Версия восстановлена — не забудь сохранить', 'info');
+                };
+            });
+        });
+
+        modal.querySelector('#hist-close').addEventListener('click', () => modal.remove());
+        modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
     },
 
     _discard() {
