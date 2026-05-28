@@ -221,8 +221,10 @@ async def save_code(body: SaveCodeRequest, login: str = Depends(get_current_user
             if body.part_index < len(parts):
                 save_hash = parts[body.part_index].get('hash', '')
         import logging
+        parts = client.code.get(body.file_id, [])
+        cached_hash = parts[body.part_index].get('hash') if body.part_index < len(parts) else 'OUT_OF_RANGE'
         logging.getLogger('platform.client').warning(
-            f'set_code: file={file_id} part={body.part_index} hash={repr(save_hash)} code_len={len(body.code)}'
+            f'set_code: file={file_id} part={body.part_index} body_hash={repr(body.hash)} cached_hash={repr(cached_hash)} code_len={len(body.code)}'
         )
         await client._emit('set_code', file_id, body.code, body.part_index, save_hash or '', '')
         new_hash = await asyncio.wait_for(future, timeout=10)
