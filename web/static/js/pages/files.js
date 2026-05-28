@@ -233,14 +233,21 @@ app.register('files', {
 
     // Устанавливает части файла и рендерит вкладки частей
     _setParts(parts, fileId) {
+        // Если переоткрываем тот же файл — переносим актуальные hash'и
+        if (this._fileId === fileId && this._parts?.length === parts.length) {
+            parts = parts.map((p, i) => ({
+                ...p,
+                hash: this._parts[i]?.hash ?? p.hash,
+            }));
+        }
         this._parts         = parts;
+        // Сохраняем локальные правки в памяти (на случай переключения частей)
+        this._partDrafts    = {};
         this._activePartIdx = 0;
         this._modified      = false;
         this._fileId        = fileId;
 
-        // Рендерим вкладки частей под топбаром редактора
         this._renderPartTabs();
-        // Загружаем первую часть
         this._loadPartIntoEditor(0);
     },
 
@@ -260,9 +267,9 @@ app.register('files', {
             btn.textContent = `[${part.line}]`;
             btn.title = `Строка ${part.line}`;
             btn.addEventListener('click', () => {
-                if (this._modified) {
-                    if (!confirm('Есть несохранённые изменения в этой части. Переключиться?')) return;
-                    this._modified = false;
+                // Сохраняем черновик текущей части перед переключением
+                if (this._editor && this._modified) {
+                    this._partDrafts[this._activePartIdx] = this._editor.getValue();
                 }
                 this._activePartIdx = i;
                 this._renderPartTabs();
@@ -285,22 +292,34 @@ app.register('files', {
         const lang    = this._getLang(this._files[this._fileId]?.fullPath || '');
         const startLine = part.line || 1;
 
+        // Берём черновик если есть, иначе оригинальный контент
+        const draft   = this._partDrafts?.[partIdx];
+        const content = draft ?? part.content;
+        const hasDraft = !!draft;
+
         const apply = () => {
             this._settingContent = true;
             monaco.editor.setModelLanguage(this._editor.getModel(), lang);
-            this._editor.setValue(part.content);
-            // Нумерация строк начинается с реального номера строки в файле
+            this._editor.setValue(content);
             this._editor.updateOptions({
                 lineNumbers: n => String(startLine + n - 1),
             });
             this._editor.setScrollPosition({ scrollTop: 0 });
             this._settingContent = false;
 
-            // Сбрасываем индикатор изменений
             const fn = document.getElementById('editor-filename');
-            if (fn) fn.className = 'editor-filename';
-            document.getElementById('btn-save')?.classList.add('hidden');
-            document.getElementById('btn-discard')?.classList.add('hidden');
+            if (hasDraft) {
+                // Восстанавливаем флаг изменений
+                this._modified = true;
+                if (fn) fn.className = 'editor-filename modified';
+                document.getElementById('btn-save')?.classList.remove('hidden');
+                document.getElementById('btn-discard')?.classList.remove('hidden');
+            } else {
+                this._modified = false;
+                if (fn) fn.className = 'editor-filename';
+                document.getElementById('btn-save')?.classList.add('hidden');
+                document.getElementById('btn-discard')?.classList.add('hidden');
+            }
         };
 
         if (this._editor) apply();
@@ -409,10 +428,11 @@ app.register('files', {
             });
             this._parts[this._activePartIdx].hash = res.hash;
             this._modified = false;
+            // Удаляем черновик — он успешно сохранён
+            if (this._partDrafts) delete this._partDrafts[this._activePartIdx];
             document.getElementById('editor-filename').className = 'editor-filename';
             document.getElementById('btn-save')?.classList.add('hidden');
             document.getElementById('btn-discard')?.classList.add('hidden');
-            // Сохраняем снапшот в историю
             this._pushHistory(this._activeFileId, this._activePartIdx, part.line || 1, code);
             app.toast('💾 Файл сохранён', 'success');
         } catch (e) {
