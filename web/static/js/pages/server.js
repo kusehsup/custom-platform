@@ -310,17 +310,17 @@ app.register('server', {
 
         const modal = document.createElement('div');
         modal.id = 'compile-modal';
-        modal.style.cssText = 'position:fixed;inset:0;z-index:10000;display:flex;align-items:center;justify-content:center;padding:24px;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px)';
+        modal.style.cssText = 'position:fixed;inset:0;z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px)';
         modal.innerHTML = `
-        <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);width:100%;max-width:800px;max-height:85vh;display:flex;flex-direction:column;overflow:hidden">
-            <div style="display:flex;align-items:center;gap:12px;padding:16px 20px;border-bottom:1px solid var(--border);flex-shrink:0">
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);width:100%;max-width:1100px;max-height:92vh;display:flex;flex-direction:column;overflow:hidden">
+            <div style="display:flex;align-items:center;gap:12px;padding:14px 20px;border-bottom:1px solid var(--border);flex-shrink:0">
                 <span style="font-size:13px;font-weight:600;color:var(--text-2);text-transform:uppercase;letter-spacing:.06em">Результат компиляции</span>
                 <span style="font-size:12px;color:var(--text-3)">${title || ''}</span>
                 <span style="flex:1"></span>
                 <button id="compile-modal-close" style="background:none;border:none;color:var(--text-2);cursor:pointer;font-size:18px;line-height:1;padding:4px">✕</button>
             </div>
-            <div style="overflow-y:auto;padding:16px 20px;flex:1">
-                <pre class="compile-out" style="max-height:none;border:none;padding:0;background:transparent">${this._colorizeText(text, prevText)}</pre>
+            <div style="overflow:auto;padding:14px 20px;flex:1">
+                <pre class="compile-out" style="max-height:none;border:none;padding:0;background:transparent;white-space:pre;overflow-x:auto">${this._colorizeText(text, prevText)}</pre>
             </div>
         </div>`;
 
@@ -384,8 +384,12 @@ app.register('server', {
     },
 
     _colorizeText(text, prevText) {
-        // Строим множество строк из предыдущей компиляции для быстрого поиска
-        const prevLines = new Set((prevText || '').split('\n').map(l => l.trim()).filter(Boolean));
+        const prevLines    = new Set((prevText || '').split('\n').map(l => l.trim()).filter(Boolean));
+        const filesPage    = app._pages['files'];
+        const accessFiles  = filesPage ? Object.values(filesPage._files || {}).map(f => f.fullPath) : [];
+
+        // Проверяем есть ли доступ к файлу (точное совпадение или suffix)
+        const hasAccess = (fileName) => accessFiles.some(fp => fp === fileName || fp.endsWith('/' + fileName) || fp.endsWith(fileName));
 
         return text.split('\n').map(raw => {
             const safe    = this._esc(raw);
@@ -394,23 +398,25 @@ app.register('server', {
             const isWarn  = /warning/i.test(raw);
             const isOk    = /done|success|\(0 error/i.test(raw);
 
+            // Обычные строки — стандартный цвет без жёлтого
             if (!isErr && !isWarn) {
                 if (isOk) return `<span class="line-ok">${safe}</span>`;
-                return safe;
+                return `<span style="color:#C8D3F5">${safe}</span>`;
             }
 
-            // Это ошибка или варнинг — проверяем новая ли она
+            // Новая строка — бейдж
             const isNew = trimmed && !prevLines.has(trimmed);
             const cls   = isErr ? 'line-err' : 'line-warn';
             const badge = isNew
-                ? `<span style="display:inline-block;background:${isErr ? '#7F1D1D' : '#78350F'};color:${isErr ? '#FCA5A5' : '#FDE68A'};font-size:10px;padding:1px 5px;border-radius:3px;margin-right:6px;vertical-align:middle;font-weight:600">NEW</span>`
+                ? `<span style="display:inline-block;background:${isErr ? '#7F1D1D' : '#1C1917'};color:${isErr ? '#FCA5A5' : '#FDE68A'};font-size:10px;padding:1px 6px;border-radius:3px;margin-right:6px;vertical-align:middle;font-weight:600;border:1px solid ${isErr ? '#7F1D1D' : '#92400E'}">NEW</span>`
                 : '';
 
-            // Делаем filename(line) кликабельным
+            // Ссылки только для файлов с доступом
             const linked = safe.replace(
                 /(\.\.\/)?([\w\/\-\.]+\.(pwn|inc))\((\d+)\)/g,
                 (match, _dd, file, _ext, line) => {
-                    return `<a class="compile-file-link" data-file="${file}" data-line="${line}" style="color:inherit;text-decoration:underline;text-underline-offset:2px;cursor:pointer" title="Перейти к ${file}:${line}">${match}</a>`;
+                    if (!hasAccess(file)) return match; // нет доступа — просто текст
+                    return `<a class="compile-file-link" data-file="${file}" data-line="${line}" style="color:inherit;text-decoration:underline;text-underline-offset:2px;cursor:pointer" title="Открыть ${file}:${line}">${match}</a>`;
                 }
             );
 
