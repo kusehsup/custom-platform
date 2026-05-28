@@ -207,7 +207,8 @@ async def save_code(body: SaveCodeRequest, login: str = Depends(get_current_user
 
     future: asyncio.Future = asyncio.get_event_loop().create_future()
 
-    def on_save_finish(new_hash):
+    def on_save_finish(*args):
+        new_hash = args[0] if args else None
         if not future.done():
             future.set_result(new_hash)
 
@@ -222,21 +223,8 @@ async def save_code(body: SaveCodeRequest, login: str = Depends(get_current_user
             if body.part_index < len(parts):
                 save_hash = parts[body.part_index].get('hash')
 
-        # Если hash всё ещё None — запрашиваем через get_code edit
-        if not save_hash:
-            try:
-                result = await client.get_code_ack(
-                    'edit', file_id, [body.part_index], '', timeout=10.0
-                )
-                # Ждём пока платформа обновит hash в кэше
-                await asyncio.sleep(1)
-                parts = client.code.get(body.file_id, [])
-                if body.part_index < len(parts):
-                    save_hash = parts[body.part_index].get('hash')
-            except Exception:
-                pass
-
-        await client._emit('set_code', file_id, body.code, body.part_index, save_hash or '', '')
+        # Платформа принимает None/null как hash для файлов без hash
+        await client._emit('set_code', file_id, body.code, body.part_index, save_hash or None, '')
         new_hash = await asyncio.wait_for(future, timeout=10)
     except ConnectionError as e:
         raise HTTPException(status_code=503, detail=str(e))
