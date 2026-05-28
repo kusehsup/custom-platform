@@ -416,7 +416,15 @@ class PlatformClient:
 
         elif event == 'send_app_data':
             data = args[0] if args else {}
-            self._app_data.update(data)
+            # Не перезаписываем server статус если идёт реконнект —
+            # платформа может слать устаревший статус при новом подключении
+            if self._reconnecting and 'server' in data:
+                prev_server = self._app_data.get('server')
+                self._app_data.update(data)
+                if prev_server == 'on':
+                    self._app_data['server'] = 'on'
+            else:
+                self._app_data.update(data)
 
         elif event == 'update_code':
             if len(args) >= 2:
