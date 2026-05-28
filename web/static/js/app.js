@@ -23,68 +23,158 @@ const app = {
         this._updateTopbarActions();
     },
 
+    _lastCompileResult: null,
+
     _updateTopbarActions() {
         const wrap = document.getElementById('topbar-actions');
         if (!wrap) return;
         const onServer = this._current === 'server';
         wrap.classList.toggle('hidden', onServer);
         if (onServer) return;
+
         const btn = document.getElementById('tb-server-btn');
         const isOn = this.state.server === 'on';
         if (btn) {
-            btn.textContent = isOn ? '⏹ Стоп' : '▶ Запустить';
+            btn.textContent = isOn ? '⏹ Стоп' : '▶ Старт';
             btn.className   = isOn ? 'btn btn-danger btn-sm' : 'btn btn-success btn-sm';
         }
-        const cbtn = document.getElementById('tb-compile-btn');
-        if (cbtn) cbtn.disabled = !!this.state.compile;
+
+        // Кнопка компиляции меняется в зависимости от состояния
+        const cWrap = document.getElementById('tb-compile-wrap');
+        if (!cWrap) return;
+        if (this.state.compile) {
+            cWrap.innerHTML = `<button class="btn btn-ghost btn-sm" disabled style="opacity:.6">⏳ Компилируется...</button>`;
+        } else if (this._lastCompileResult) {
+            const hasErr = /error/i.test(this._lastCompileResult);
+            const icon   = hasErr ? '❌' : '✅';
+            cWrap.innerHTML = `
+            <div style="display:flex;gap:0;border:1px solid var(--border);border-radius:var(--radius-sm);overflow:hidden">
+                <button class="btn btn-ghost btn-sm" id="tb-compile-btn" style="border-radius:0;border:none;border-right:1px solid var(--border)">🔨</button>
+                <button class="btn btn-ghost btn-sm" id="tb-compile-result" style="border-radius:0;border:none">${icon} Результат</button>
+            </div>`;
+            document.getElementById('tb-compile-btn').addEventListener('click', () => this._doCompile());
+            document.getElementById('tb-compile-result').addEventListener('click', () => {
+                this._pages['server']?._openModal?.(this._lastCompileResult, 'Последний результат');
+            });
+        } else {
+            cWrap.innerHTML = `<button class="btn btn-ghost btn-sm" id="tb-compile-btn">🔨 Компилировать</button>`;
+            document.getElementById('tb-compile-btn').addEventListener('click', () => this._doCompile());
+        }
     },
 
-    // ── Debug widget ──────────────────────────────────────────────────
-    _debugVisible: false,
+    async _doCompile() {
+        if (this.state.compile) return;
+        try {
+            await API.post('/api/compile');
+            this.state.compile = true;
+            this._updateTopbarActions();
+            this._pages['server']?.onState?.();
+            app.toast('🔨 Компиляция запущена', 'info');
+        } catch (e) { app.toast('Ошибка: ' + e.message, 'error'); }
+    },
 
+    // ── WS Log widget ─────────────────────────────────────────────────
     _logWS(msg, type = 'info') {
         const ts = new Date().toLocaleTimeString('ru-RU');
         this._wsLog.unshift({ ts, msg, type });
         if (this._wsLog.length > this._wsLogMax) this._wsLog.pop();
-        this._renderDebugLog();
+        this._renderWsLog();
     },
 
-    _initDebugWidget() {
-        if (document.getElementById('debug-widget')) return;
-        const w = document.createElement('div');
-        w.id = 'debug-widget';
-        w.innerHTML = `
-        <div id="debug-header">
-            <span style="font-size:11px;font-weight:600;color:var(--text-2);text-transform:uppercase;letter-spacing:.06em">WS Log</span>
-            <span style="flex:1"></span>
-            <span id="debug-ws-dot" style="width:7px;height:7px;border-radius:50%;background:var(--red);flex-shrink:0"></span>
-            <button id="debug-close" style="background:none;border:none;color:var(--text-2);cursor:pointer;font-size:14px;padding:0 0 0 8px;line-height:1">✕</button>
-        </div>
-        <div id="debug-log"></div>`;
-        document.body.appendChild(w);
-        document.getElementById('debug-close').addEventListener('click', () => this.toggleDebug());
-        this._renderDebugLog();
-    },
-
-    _renderDebugLog() {
-        const el = document.getElementById('debug-log');
+    _renderWsLog() {
+        const el = document.getElementById('ws-log-body');
         if (!el) return;
-        const dot = document.getElementById('debug-ws-dot');
+        const dot = document.getElementById('ws-log-dot');
         if (dot) dot.style.background = this._ws?.readyState === WebSocket.OPEN ? 'var(--green)' : 'var(--red)';
         el.innerHTML = this._wsLog.map(e => {
             const color = e.type === 'error' ? 'var(--red)' : e.type === 'success' ? 'var(--green)' : e.type === 'warn' ? 'var(--yellow)' : 'var(--text-2)';
             return `<div style="display:flex;gap:6px;padding:2px 0;border-bottom:1px solid rgba(255,255,255,0.04)">
-                <span style="color:var(--text-3);flex-shrink:0;font-size:10px;padding-top:1px">${e.ts}</span>
+                <span style="color:var(--text-3);flex-shrink:0;font-size:10px">${e.ts}</span>
                 <span style="color:${color};word-break:break-all;font-size:11px">${e.msg}</span>
             </div>`;
         }).join('');
     },
 
     toggleDebug() {
-        this._debugVisible = !this._debugVisible;
-        const w = document.getElementById('debug-widget');
-        if (!w) { this._initDebugWidget(); this._debugVisible = true; return; }
-        w.style.display = this._debugVisible ? 'flex' : 'none';
+        if (!document.getElementById('widget-wslog')) {
+            Widgets.create({
+                id: 'widget-wslog',
+                title: '<span id="ws-log-dot" style="width:7px;height:7px;border-radius:50%;background:var(--red);display:inline-block;margin-right:6px"></span>WS Log',
+                content: '<div id="ws-log-body" style="overflow-y:auto;flex:1;padding:6px 10px;font-family:var(--mono)"></div>',
+                width: 340, height: 280,
+                defaultPos: { right: 24, bottom: 80 },
+            });
+            this._renderWsLog();
+        } else {
+            Widgets.toggle('widget-wslog');
+        }
+    },
+
+    // ── Console widget ────────────────────────────────────────────────
+    _consoleLines: [],
+    _consolePaused: false,
+    _consoleFilter: '',
+
+    toggleConsole() {
+        if (!document.getElementById('widget-console')) {
+            Widgets.create({
+                id: 'widget-console',
+                title: '📋 Консоль',
+                content: `
+                <div style="display:flex;gap:6px;padding:6px 10px;border-bottom:1px solid var(--border);flex-shrink:0">
+                    <input id="con-filter" type="text" placeholder="Фильтр..." style="flex:1;padding:3px 8px;font-size:12px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);outline:none" />
+                    <button id="con-pause" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--text-2);cursor:pointer;padding:3px 8px;font-size:11px">⏸</button>
+                    <button id="con-clear" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--text-2);cursor:pointer;padding:3px 8px;font-size:11px">🗑</button>
+                </div>
+                <div id="con-body" style="overflow-y:auto;flex:1;padding:6px 10px;font-family:var(--mono);font-size:11.5px;line-height:1.6"></div>`,
+                width: 420, height: 320,
+                defaultPos: { right: 24, bottom: 80 },
+            });
+            // Восстанавливаем строки
+            this._renderConsoleWidget();
+            document.getElementById('con-filter').addEventListener('input', e => {
+                this._consoleFilter = e.target.value.toLowerCase();
+                this._renderConsoleWidget();
+            });
+            document.getElementById('con-pause').addEventListener('click', e => {
+                this._consolePaused = !this._consolePaused;
+                e.target.textContent = this._consolePaused ? '▶' : '⏸';
+            });
+            document.getElementById('con-clear').addEventListener('click', () => {
+                this._consoleLines = [];
+                try { localStorage.removeItem('console_lines'); } catch {}
+                this._renderConsoleWidget();
+                this._pages['server']?._lines && (this._pages['server']._lines = []);
+            });
+        } else {
+            Widgets.toggle('widget-console');
+        }
+    },
+
+    pushConsoleLog(data) {
+        this._consoleLines.push(data);
+        if (this._consoleLines.length > 200) this._consoleLines.shift();
+        if (!this._consolePaused) this._renderConsoleWidget();
+    },
+
+    _renderConsoleWidget() {
+        const el = document.getElementById('con-body');
+        if (!el) return;
+        const filter = this._consoleFilter;
+        const lines  = this._consoleLines.join('').split('\n');
+        const filtered = filter ? lines.filter(l => l.toLowerCase().includes(filter)) : lines;
+        el.innerHTML = filtered.map(line => this._colorizeConsoleLine(line)).join('<br>');
+        el.scrollTop = el.scrollHeight;
+    },
+
+    _colorizeConsoleLine(line) {
+        const safe = line.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        if (/\[fatal\]|\[crash\]/i.test(line))  return `<span style="color:#FF3B30;font-weight:600">${safe}</span>`;
+        if (/\[error\]|error:/i.test(line))      return `<span style="color:#F87171">${safe}</span>`;
+        if (/\[warn\]|warning/i.test(line))      return `<span style="color:#FBBF24">${safe}</span>`;
+        if (/\[debug\]/i.test(line))             return `<span style="color:#8E8E93">${safe}</span>`;
+        if (/\[info\]/i.test(line))              return `<span style="color:#C8D3F5">${safe}</span>`;
+        return `<span style="color:#8E8E93">${safe}</span>`;
     },
 
     // ── Toast ─────────────────────────────────────────────────────────
@@ -165,8 +255,10 @@ const app = {
             this._updateTopbarActions();
         } else if (msg.type === 'log') {
             this._pages['server']?.onLog?.(msg.data);
+            this.pushConsoleLog(msg.data);
         } else if (msg.type === 'compile_result') {
             this.state.compile = false;
+            this._lastCompileResult = msg.data;
             this._updateTopbarActions();
             this._pages['server']?.onCompileResult?.(msg.data);
             // Уведомления
@@ -279,11 +371,15 @@ const app = {
             <header class="topbar">
                 <span class="topbar-logo"><span>⚡</span>CustomPlatform</span>
                 <span id="ws-status" class="ws-status ws-offline" title="Подключение..."></span>
+                <span style="flex:1"></span>
                 <div id="topbar-actions" class="topbar-actions hidden">
                     <button class="btn btn-sm" id="tb-server-btn">—</button>
-                    <button class="btn btn-ghost btn-sm" id="tb-compile-btn">🔨 Компилировать</button>
+                    <span class="topbar-compile-wrap" id="tb-compile-wrap">
+                        <button class="btn btn-ghost btn-sm" id="tb-compile-btn">🔨 Компилировать</button>
+                    </span>
                 </div>
-                <button class="btn btn-ghost btn-sm" id="btn-debug" title="WS лог" style="font-size:11px;padding:5px 10px">WS лог</button>
+                <button class="btn btn-ghost btn-sm" id="btn-console" title="Консоль" style="font-size:11px;padding:5px 10px">📋</button>
+                <button class="btn btn-ghost btn-sm" id="btn-debug" title="WS лог" style="font-size:11px;padding:5px 10px">WS</button>
                 <button class="btn btn-ghost btn-sm" id="btn-logout">Выйти</button>
             </header>
             <nav class="sidebar">
@@ -302,28 +398,20 @@ const app = {
             a.addEventListener('click', () => this.navigate(a.dataset.page))
         );
         document.getElementById('btn-debug').addEventListener('click', () => this.toggleDebug());
+        document.getElementById('btn-console').addEventListener('click', () => this.toggleConsole());
 
-        // Топбар-кнопки сервера и компиляции
-        document.getElementById('tb-server-btn').addEventListener('click', async () => {
-            const isOn = this.state.server === 'on';
-            const url  = isOn ? '/api/server/stop' : '/api/server/start';
-            try {
-                await API.post(url);
-                this.state.server = isOn ? 'off' : 'on';
-                this._updateTopbarActions();
-                this._pages['server']?.onState?.();
-                app.toast(isOn ? '🔴 Сервер остановлен' : '🟢 Сервер запущен', isOn ? 'info' : 'success');
-            } catch (e) { app.toast('Ошибка: ' + e.message, 'error'); }
-        });
-
-        document.getElementById('tb-compile-btn').addEventListener('click', async () => {
-            if (this.state.compile) { app.toast('Компиляция уже выполняется', 'info'); return; }
-            try {
-                await API.post('/api/compile');
-                this.state.compile = true;
-                this._pages['server']?.onState?.();
-                app.toast('🔨 Компиляция запущена', 'info');
-            } catch (e) { app.toast('Ошибка: ' + e.message, 'error'); }
+        // Кнопка сервера в топбаре
+        document.getElementById('topbar-actions').addEventListener('click', async e => {
+            if (e.target.id === 'tb-server-btn') {
+                const isOn = this.state.server === 'on';
+                try {
+                    await API.post(isOn ? '/api/server/stop' : '/api/server/start');
+                    this.state.server = isOn ? 'off' : 'on';
+                    this._updateTopbarActions();
+                    this._pages['server']?.onState?.();
+                    app.toast(isOn ? '🔴 Сервер остановлен' : '🟢 Сервер запущен', isOn ? 'info' : 'success');
+                } catch (e) { app.toast('Ошибка: ' + e.message, 'error'); }
+            }
         });
 
         document.getElementById('btn-logout').addEventListener('click', async () => {

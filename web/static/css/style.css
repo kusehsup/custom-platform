@@ -631,6 +631,86 @@ input::placeholder { color: var(--text-3); }
     background: #141416 !important;
 }
 
+/* ─── Widget system ──────────────────────────────────────────── */
+
+.widget {
+    position: fixed;
+    z-index: 9000;
+    display: flex;
+    flex-direction: column;
+    background: rgba(10,10,12,0.92);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    backdrop-filter: blur(12px);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+    overflow: hidden;
+    min-width: 240px;
+    min-height: 150px;
+}
+
+.widget-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 10px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    cursor: grab;
+    user-select: none;
+    background: rgba(255,255,255,0.03);
+}
+.widget-header:active { cursor: grabbing; }
+
+.widget-title {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-2);
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    flex: 1;
+}
+
+.widget-controls {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.widget-opacity {
+    width: 60px;
+    height: 3px;
+    cursor: pointer;
+    accent-color: var(--accent);
+}
+
+.widget-close {
+    background: none;
+    border: none;
+    color: var(--text-2);
+    cursor: pointer;
+    font-size: 13px;
+    padding: 2px 4px;
+    line-height: 1;
+    border-radius: 4px;
+    transition: background .15s;
+}
+.widget-close:hover { background: rgba(255,255,255,0.08); color: var(--text); }
+
+.widget-body {
+    flex: 1;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.widget-resize {
+    position: absolute;
+    bottom: 0; right: 0;
+    width: 14px; height: 14px;
+    cursor: se-resize;
+    background: linear-gradient(135deg, transparent 50%, var(--border) 50%);
+}
+
 /* ─── Debug widget ───────────────────────────────────────────── */
 
 #debug-widget {

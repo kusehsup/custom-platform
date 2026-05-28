@@ -325,8 +325,62 @@ app.register('server', {
         </div>`;
 
         document.body.appendChild(modal);
-        modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+        modal.addEventListener('click', e => {
+            if (e.target === modal) { modal.remove(); return; }
+            // Клик по ссылке файл(строка) → переход в редактор
+            const link = e.target.closest('.compile-file-link');
+            if (link) {
+                const fileName = link.dataset.file;
+                const line     = parseInt(link.dataset.line);
+                modal.remove();
+                this._navigateToFileLine(fileName, line);
+            }
+        });
         document.getElementById('compile-modal-close').addEventListener('click', () => modal.remove());
+    },
+
+    _navigateToFileLine(fileName, line) {
+        // Ищем файл по имени в списке доступных файлов
+        const filesPage = app._pages['files'];
+        if (!filesPage) { app.navigate('files'); return; }
+
+        app.navigate('files');
+        // Ждём рендера страницы файлов
+        setTimeout(() => {
+            const files = filesPage._files || {};
+            const fileId = Object.keys(files).find(id =>
+                (files[id].fullPath || '').endsWith(fileName) ||
+                files[id].fullPath === fileName
+            );
+            if (!fileId) { app.toast(`Файл ${fileName} не найден в доступных`, 'error'); return; }
+            filesPage._openFile(fileId).then(() => {
+                // После загрузки файла ищем нужную часть и прыгаем на строку
+                setTimeout(() => {
+                    const parts = filesPage._parts || [];
+                    // Находим часть которая содержит нужную строку
+                    let bestIdx = 0;
+                    for (let i = 0; i < parts.length; i++) {
+                        const pLine = parts[i].line || 1;
+                        if (pLine <= line) bestIdx = i;
+                    }
+                    if (bestIdx !== filesPage._activePartIdx) {
+                        filesPage._activePartIdx = bestIdx;
+                        filesPage._renderPartTabs();
+                        filesPage._loadPartIntoEditor(bestIdx);
+                    }
+                    // Прыгаем на строку в Monaco
+                    setTimeout(() => {
+                        const editor = filesPage._editor;
+                        if (!editor) return;
+                        const part = parts[bestIdx];
+                        const editorLine = line - (part?.line || 1) + 1;
+                        editor.revealLineInCenter(editorLine);
+                        editor.setPosition({ lineNumber: editorLine, column: 1 });
+                        editor.focus();
+                    }, 300);
+                }, 500);
+            });
+        }, 200);
     },
 
     _colorizeText(text, prevText) {
@@ -352,7 +406,15 @@ app.register('server', {
                 ? `<span style="display:inline-block;background:${isErr ? '#7F1D1D' : '#78350F'};color:${isErr ? '#FCA5A5' : '#FDE68A'};font-size:10px;padding:1px 5px;border-radius:3px;margin-right:6px;vertical-align:middle;font-weight:600">NEW</span>`
                 : '';
 
-            return `<span class="${cls}">${badge}${safe}</span>`;
+            // Делаем filename(line) кликабельным
+            const linked = safe.replace(
+                /(\.\.\/)?([\w\/\-\.]+\.(pwn|inc))\((\d+)\)/g,
+                (match, _dd, file, _ext, line) => {
+                    return `<a class="compile-file-link" data-file="${file}" data-line="${line}" style="color:inherit;text-decoration:underline;text-underline-offset:2px;cursor:pointer" title="Перейти к ${file}:${line}">${match}</a>`;
+                }
+            );
+
+            return `<span class="${cls}">${badge}${linked}</span>`;
         }).join('\n');
     },
 
