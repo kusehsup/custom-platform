@@ -370,18 +370,18 @@ const app = {
         <div class="layout">
             <header class="topbar">
                 <span class="topbar-logo"><span>⚡</span>CustomPlatform</span>
-                <span style="flex:1"></span>
                 <div id="topbar-actions" class="topbar-actions hidden">
                     <button class="btn btn-sm" id="tb-server-btn">—</button>
                     <span class="topbar-compile-wrap" id="tb-compile-wrap">
                         <button class="btn btn-ghost btn-sm" id="tb-compile-btn">🔨 Компилировать</button>
                     </span>
                 </div>
-                <span style="flex:1"></span>
-                <button class="btn btn-ghost btn-sm" id="btn-console" title="Консоль" style="font-size:11px;padding:5px 10px">📋</button>
-                <button class="btn btn-ghost btn-sm" id="btn-debug" title="WS лог" style="font-size:11px;padding:5px 10px">WS</button>
-                <span id="ws-status" class="ws-status ws-offline" title="Подключение..."></span>
-                <button class="btn btn-ghost btn-sm" id="btn-logout">Выйти</button>
+                <div style="margin-left:auto;display:flex;align-items:center;gap:6px">
+                    <button class="btn btn-ghost btn-sm" id="btn-console" title="Консоль" style="font-size:11px;padding:5px 10px">📋</button>
+                    <button class="btn btn-ghost btn-sm" id="btn-debug" title="WS лог" style="font-size:11px;padding:5px 10px">WS</button>
+                    <span id="ws-status" class="ws-status ws-offline" title="Подключение..."></span>
+                    <button class="btn btn-ghost btn-sm" id="btn-logout">Выйти</button>
+                </div>
             </header>
             <nav class="sidebar">
                 <span class="sidebar-section">Управление</span>
