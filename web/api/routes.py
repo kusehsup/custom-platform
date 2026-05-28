@@ -271,6 +271,16 @@ async def debug_appdata(login: str = Depends(get_current_user)):
     return {'keys': keys, 'queries_val': str(client._app_data.get('queries', 'NOT_FOUND'))[:200]}
 
 
+@router.get('/api/debug/file/{file_id}')
+async def debug_file(file_id: str, login: str = Depends(get_current_user)):
+    client = _require_client(login)
+    parts = client.code.get(file_id, [])
+    return {
+        'parts_count': len(parts),
+        'parts': [{'line': p.get('line'), 'hash': p.get('hash'), 'content_len': len(p.get('content', ''))} for p in parts]
+    }
+
+
 @router.post('/api/notify/query_accepted')
 async def notify_query_accepted(body: NotifyQueryRequest, login: str = Depends(get_current_user)):
     from config import BOT_TOKEN
