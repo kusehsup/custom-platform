@@ -19,6 +19,24 @@ const app = {
         main.innerHTML = '';
         const page = this._pages[name];
         if (page) page.render(main);
+        // Показываем кнопки только вне страницы сервера
+        this._updateTopbarActions();
+    },
+
+    _updateTopbarActions() {
+        const wrap = document.getElementById('topbar-actions');
+        if (!wrap) return;
+        const onServer = this._current === 'server';
+        wrap.classList.toggle('hidden', onServer);
+        if (onServer) return;
+        const btn = document.getElementById('tb-server-btn');
+        const isOn = this.state.server === 'on';
+        if (btn) {
+            btn.textContent = isOn ? '⏹ Стоп' : '▶ Запустить';
+            btn.className   = isOn ? 'btn btn-danger btn-sm' : 'btn btn-success btn-sm';
+        }
+        const cbtn = document.getElementById('tb-compile-btn');
+        if (cbtn) cbtn.disabled = !!this.state.compile;
     },
 
     // ── Debug widget ──────────────────────────────────────────────────
@@ -144,10 +162,12 @@ const app = {
             this._logWS(`  server=${msg.server} compile=${msg.compile}`, 'info');
             this._pages['server']?.onState?.();
             this._pages['files']?.onFilesUpdate?.();
+            this._updateTopbarActions();
         } else if (msg.type === 'log') {
             this._pages['server']?.onLog?.(msg.data);
         } else if (msg.type === 'compile_result') {
             this.state.compile = false;
+            this._updateTopbarActions();
             this._pages['server']?.onCompileResult?.(msg.data);
             // Уведомления
             const s = this._getSettings();
@@ -259,6 +279,10 @@ const app = {
             <header class="topbar">
                 <span class="topbar-logo"><span>⚡</span>CustomPlatform</span>
                 <span id="ws-status" class="ws-status ws-offline" title="Подключение..."></span>
+                <div id="topbar-actions" class="topbar-actions hidden">
+                    <button class="btn btn-sm" id="tb-server-btn">—</button>
+                    <button class="btn btn-ghost btn-sm" id="tb-compile-btn">🔨 Компилировать</button>
+                </div>
                 <button class="btn btn-ghost btn-sm" id="btn-debug" title="WS лог" style="font-size:11px;padding:5px 10px">WS лог</button>
                 <button class="btn btn-ghost btn-sm" id="btn-logout">Выйти</button>
             </header>
@@ -278,6 +302,30 @@ const app = {
             a.addEventListener('click', () => this.navigate(a.dataset.page))
         );
         document.getElementById('btn-debug').addEventListener('click', () => this.toggleDebug());
+
+        // Топбар-кнопки сервера и компиляции
+        document.getElementById('tb-server-btn').addEventListener('click', async () => {
+            const isOn = this.state.server === 'on';
+            const url  = isOn ? '/api/server/stop' : '/api/server/start';
+            try {
+                await API.post(url);
+                this.state.server = isOn ? 'off' : 'on';
+                this._updateTopbarActions();
+                this._pages['server']?.onState?.();
+                app.toast(isOn ? '🔴 Сервер остановлен' : '🟢 Сервер запущен', isOn ? 'info' : 'success');
+            } catch (e) { app.toast('Ошибка: ' + e.message, 'error'); }
+        });
+
+        document.getElementById('tb-compile-btn').addEventListener('click', async () => {
+            if (this.state.compile) { app.toast('Компиляция уже выполняется', 'info'); return; }
+            try {
+                await API.post('/api/compile');
+                this.state.compile = true;
+                this._pages['server']?.onState?.();
+                app.toast('🔨 Компиляция запущена', 'info');
+            } catch (e) { app.toast('Ошибка: ' + e.message, 'error'); }
+        });
+
         document.getElementById('btn-logout').addEventListener('click', async () => {
             await API.post('/api/logout').catch(() => {});
             API.clearToken();
