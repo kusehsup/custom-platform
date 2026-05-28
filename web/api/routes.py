@@ -37,7 +37,7 @@ class SaveCodeRequest(BaseModel):
     file_id: str
     code: str
     part_index: int
-    hash: str
+    hash: str | None = None
 
 
 class GetLineRequest(BaseModel):
@@ -214,7 +214,13 @@ async def save_code(body: SaveCodeRequest, login: str = Depends(get_current_user
     client.on('save_finish', on_save_finish)
     try:
         file_id = int(body.file_id) if body.file_id.isdigit() else body.file_id
-        await client._emit('set_code', file_id, body.code, body.part_index, body.hash, '')
+        # Если hash не передан — берём из кэша
+        save_hash = body.hash
+        if not save_hash:
+            parts = client.code.get(body.file_id, [])
+            if body.part_index < len(parts):
+                save_hash = parts[body.part_index].get('hash', '')
+        await client._emit('set_code', file_id, body.code, body.part_index, save_hash or '', '')
         new_hash = await asyncio.wait_for(future, timeout=10)
     except ConnectionError as e:
         raise HTTPException(status_code=503, detail=str(e))

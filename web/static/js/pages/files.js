@@ -394,7 +394,7 @@ app.register('files', {
     async _save() {
         if (!this._activeFileId || !this._parts?.length) return;
         const part = this._parts[this._activePartIdx];
-        if (!part?.hash) { app.toast('Эта часть доступна только для чтения', 'info'); return; }
+        if (!part) return;
 
         const btn = document.getElementById('btn-save');
         if (btn) { btn.disabled = true; btn.textContent = 'Сохраняем...'; }
