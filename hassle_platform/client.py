@@ -69,8 +69,12 @@ class PlatformClient:
         self._connected = False
         self._reconnecting = False
         self._reconnect_event = asyncio.Event()
-        self._reconnect_event.set()  # изначально «не переподключаемся»
+        self._reconnect_event.set()
         self._task: asyncio.Task | None = None
+        self._ping_task: asyncio.Task | None = None
+        self._ping_interval: float = 20.0
+        self._ping_timeout: float = 5.0
+        self._last_pong: float = 0.0
 
     # ------------------------------------------------------------------ #
     #  Публичные свойства                                                  #
@@ -130,13 +134,23 @@ class PlatformClient:
                 log.error(f'connect: ошибка proxy: {e}')
                 return False
         self._ws = await websockets.connect(WS_URL, **kwargs)
-        await self._ws.recv()   # Engine.IO handshake
+        # Engine.IO handshake — читаем pingInterval
+        handshake_raw = await self._ws.recv()
+        try:
+            import json as _json
+            handshake = _json.loads(handshake_raw[1:])
+            self._ping_interval = handshake.get('pingInterval', 25000) / 1000
+            self._ping_timeout  = handshake.get('pingTimeout',  5000)  / 1000
+        except Exception:
+            self._ping_interval = 20.0
+            self._ping_timeout  = 5.0
         await self._ws.send('40')
         raw = await self._ws.recv()
         if raw != '40':
             return False
         self._connected = True
         self._task = asyncio.create_task(self._receive_loop())
+        self._ping_task = asyncio.create_task(self._ping_loop())
         return True
 
     async def _reconnect(self):
@@ -171,6 +185,8 @@ class PlatformClient:
 
     async def disconnect(self):
         self._connected = False
+        if self._ping_task:
+            self._ping_task.cancel()
         if self._task:
             self._task.cancel()
         if self._ws:
@@ -375,7 +391,28 @@ class PlatformClient:
             raise ConnectionError('Нет соединения с платформой')
 
 
+    async def _ping_loop(self):
+        """Шлём Engine.IO ping ('2') каждые ping_interval секунд чтобы платформа не закрыла соединение."""
+        import logging
+        log = logging.getLogger('platform.client')
+        try:
+            while self._connected:
+                # Шлём на 2 секунды раньше чем pingInterval
+                await asyncio.sleep(max(self._ping_interval - 2, 5))
+                if not self._connected or not self._ws:
+                    break
+                try:
+                    await self._ws.send('2')
+                    log.warning('ping_loop: sent ping (2)')
+                except Exception as e:
+                    log.error(f'ping_loop: ошибка отправки ping: {e}')
+                    break
+        except asyncio.CancelledError:
+            pass
+
     async def _receive_loop(self):
+        import logging
+        log = logging.getLogger('platform.client')
         try:
             async for raw in self._ws:
                 if raw == '2':
@@ -394,6 +431,8 @@ class PlatformClient:
         except (websockets.ConnectionClosed, asyncio.CancelledError):
             pass
         finally:
+            if self._ping_task:
+                self._ping_task.cancel()
             if self._login:
                 self._connected = False
                 asyncio.create_task(self._reconnect())
