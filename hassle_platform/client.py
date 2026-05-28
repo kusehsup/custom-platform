@@ -417,6 +417,7 @@ class PlatformClient:
                 if raw == '2':
                     await self._ws.send('3')
                     continue
+                log.warning(f'RAW: {raw[:300]}')
                 if not raw.startswith('4'):
                     continue
                 event, args = _decode(raw)
