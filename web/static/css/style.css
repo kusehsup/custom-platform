@@ -387,7 +387,7 @@ input::placeholder { color: var(--text-3); }
 }
 
 .compile-out .line-err  { color: #F87171; }
-.compile-out .line-warn { color: #FBBF24; }
+.compile-out .line-warn { color: #C8D3F5; }
 .compile-out .line-ok   { color: #34D399; }
 .compile-out .line-new  { animation: highlight-in 2s ease-out forwards; }
 
