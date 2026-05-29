@@ -637,63 +637,188 @@ app.register('files', {
 
     // ── Встроенный поиск ─────────────────────────────────────────────
     _searchInited: false,
+    _sqLastResult: null,   // сохранённый результат поиска
+    _sqBookmarks: [],      // закладки на блоки
+
+    // ── История поисковых запросов ────────────────────────────────────
+    _sqHistKey: 'sq_history',
+    _sqHistMax: 20,
+
+    _sqLoadHist() { try { return JSON.parse(localStorage.getItem(this._sqHistKey) || '[]'); } catch { return []; } },
+    _sqPushHist(text) {
+        let h = this._sqLoadHist().filter(t => t !== text);
+        h.unshift(text);
+        if (h.length > this._sqHistMax) h = h.slice(0, this._sqHistMax);
+        try { localStorage.setItem(this._sqHistKey, JSON.stringify(h)); } catch {}
+    },
+
+    // ── Закладки ─────────────────────────────────────────────────────
+    _sqBmKey: 'sq_bookmarks',
+    _sqLoadBm() { try { return JSON.parse(localStorage.getItem(this._sqBmKey) || '[]'); } catch { return []; } },
+    _sqSaveBm(bms) { try { localStorage.setItem(this._sqBmKey, JSON.stringify(bms)); } catch {} },
+    _sqAddBm(fileId, path, name, fileName) {
+        const bms = this._sqLoadBm();
+        const key = `${fileId}:${path}`;
+        if (!bms.find(b => b.key === key)) {
+            bms.unshift({ key, fileId, path, name, fileName, ts: Date.now() });
+            if (bms.length > 30) bms.pop();
+            this._sqSaveBm(bms);
+            app.toast('🔖 Закладка добавлена', 'success');
+        } else {
+            app.toast('Уже в закладках', 'info');
+        }
+        this._sqRenderBookmarks();
+    },
+    _sqRemoveBm(key) {
+        this._sqSaveBm(this._sqLoadBm().filter(b => b.key !== key));
+        this._sqRenderBookmarks();
+    },
+    _sqRenderBookmarks() {
+        const el = document.getElementById('sq-bookmarks');
+        if (!el) return;
+        const bms = this._sqLoadBm();
+        if (!bms.length) { el.innerHTML = '<div style="padding:8px 0;color:var(--text-3);font-size:12px">Нет закладок</div>'; return; }
+        el.innerHTML = bms.map(b => `
+        <div class="sq-bm-item">
+            <span class="sq-bm-name" data-key="${b.key}" data-file="${b.fileId}" data-path='${b.path}' data-name="${this._esc(b.name)}">${this._esc(b.name || b.fileName)}</span>
+            <span class="sq-bm-file">${this._esc(b.fileName || '')}</span>
+            <button class="sq-bm-del" data-key="${b.key}">✕</button>
+        </div>`).join('');
+        el.querySelectorAll('.sq-bm-name').forEach(n => n.addEventListener('click', () => {
+            this._sqGetCode('edit', { file: n.dataset.file, path: n.dataset.path, name: n.dataset.name, lines: '0' });
+        }));
+        el.querySelectorAll('.sq-bm-del').forEach(b => b.addEventListener('click', e => {
+            e.stopPropagation(); this._sqRemoveBm(b.dataset.key);
+        }));
+    },
 
     _initSearch() {
         const root = document.getElementById('search-root');
         if (!root || this._searchInited) return;
         this._searchInited = true;
-        root.innerHTML = `<div class="card">
+
+        const favIds = this._loadFavs();
+        const favOpts = favIds.map(id => {
+            const f = this._files[id];
+            return f ? `<option value="${id}">${this._esc(f.fullPath)}</option>` : '';
+        }).join('');
+
+        root.innerHTML = `
+        <div class="card">
             <div class="card-header"><span class="card-title">Поиск по коду</span></div>
             <div style="display:flex;flex-direction:column;gap:10px">
-                <div style="display:flex;gap:8px">
-                    <input type="text" id="sq-text" placeholder="Поисковый запрос..." style="flex:1" />
+                <div style="position:relative;display:flex;gap:8px">
+                    <div style="flex:1;position:relative">
+                        <input type="text" id="sq-text" placeholder="Поисковый запрос..." style="width:100%" autocomplete="off" />
+                        <div id="sq-hist-drop" class="sq-hist-drop hidden"></div>
+                    </div>
                     <button class="btn btn-primary" id="sq-btn">Найти</button>
                 </div>
-                <label style="display:flex;align-items:center;gap:6px;color:var(--text-2);font-size:13px;cursor:pointer">
-                    <input type="checkbox" id="sq-regexp" /> Регулярное выражение
-                </label>
-                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px;color:var(--text-2)">
-                    <span>Диапазон строк:</span>
-                    <input type="text" id="sq-from" placeholder="от" style="width:70px;padding:5px 10px" />
+                <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;font-size:13px;color:var(--text-2)">
+                    <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                        <input type="checkbox" id="sq-regexp" /> Regexp
+                    </label>
+                    <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                        <input type="checkbox" id="sq-fav-only" />
+                        ⭐ Только избранные
+                    </label>
+                    <span>Строки:</span>
+                    <input type="text" id="sq-from" placeholder="от" style="width:60px;padding:5px 8px" />
                     <span>—</span>
-                    <input type="text" id="sq-to"   placeholder="до" style="width:70px;padding:5px 10px" />
-                    <span>в файле</span>
-                    <select id="sq-file" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);padding:6px 10px;font-size:13px;outline:none;max-width:240px">
+                    <input type="text" id="sq-to" placeholder="до" style="width:60px;padding:5px 8px" />
+                    <span>в файле:</span>
+                    <select id="sq-file" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);padding:5px 8px;font-size:13px;outline:none;max-width:220px">
                         <option value="-1">Все файлы</option>
+                        ${Object.entries(this._files).map(([id, f]) => `<option value="${id}">${this._esc(f.fullPath)}</option>`).join('')}
                     </select>
                 </div>
-                <div style="border-top:1px solid var(--border);padding-top:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px;color:var(--text-2)">
-                    <span>Получить строку:</span>
-                    <select id="sq-line-file" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);padding:6px 10px;font-size:13px;outline:none;max-width:240px"></select>
-                    <input type="text" id="sq-line-num" placeholder="Номер строки" style="width:120px;padding:5px 10px" />
+                <div style="border-top:1px solid var(--border);padding-top:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px;color:var(--text-2)">
+                    <span>Строка напрямую:</span>
+                    <select id="sq-line-file" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);padding:5px 8px;font-size:13px;outline:none;max-width:200px">
+                        ${Object.entries(this._files).map(([id, f]) => `<option value="${id}">${this._esc(f.fullPath)}</option>`).join('')}
+                    </select>
+                    <input type="text" id="sq-line-num" placeholder="Номер строки" style="width:110px;padding:5px 8px" />
                     <button class="btn btn-ghost btn-sm" id="sq-get-line">Получить</button>
                 </div>
             </div>
         </div>
+
+        <div class="card" style="padding:0;overflow:hidden">
+            <div style="display:flex;align-items:center;gap:8px;padding:10px 16px;border-bottom:1px solid var(--border)">
+                <span class="card-title" style="margin:0">🔖 Закладки</span>
+            </div>
+            <div id="sq-bookmarks" style="padding:8px 16px;max-height:120px;overflow-y:auto"></div>
+        </div>
+
         <div id="sq-results-wrap" class="card hidden" style="padding:0;overflow:hidden">
-            <div style="display:flex;align-items:center;gap:10px;padding:14px 20px;border-bottom:1px solid var(--border)">
+            <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--border)">
                 <span class="card-title" style="margin:0">Результаты</span>
                 <span id="sq-count" style="color:var(--text-2);font-size:13px"></span>
             </div>
             <div id="sq-results" style="padding:8px 0"></div>
-        </div>
-        `;
+        </div>`;
 
-        // Заполняем селекты файлов
-        Object.entries(this._files).forEach(([id, f]) => {
-            const mk = () => { const o = document.createElement('option'); o.value = id; o.textContent = f.fullPath; return o; };
-            document.getElementById('sq-file').appendChild(mk());
-            document.getElementById('sq-line-file').appendChild(mk());
+        this._sqRenderBookmarks();
+
+        // История — показываем при фокусе
+        const textEl = document.getElementById('sq-text');
+        const histDrop = document.getElementById('sq-hist-drop');
+        textEl.addEventListener('focus', () => this._sqShowHist());
+        textEl.addEventListener('input', () => this._sqShowHist());
+        textEl.addEventListener('keydown', e => { if (e.key === 'Enter') { histDrop.classList.add('hidden'); this._sqSearch(); } if (e.key === 'Escape') histDrop.classList.add('hidden'); });
+        document.addEventListener('click', e => { if (!e.target.closest('#sq-text') && !e.target.closest('#sq-hist-drop')) histDrop.classList.add('hidden'); }, true);
+
+        // Фильтр "только избранные"
+        document.getElementById('sq-fav-only').addEventListener('change', e => {
+            const sel = document.getElementById('sq-file');
+            if (e.target.checked) {
+                // Оставляем только избранные в селекте
+                Array.from(sel.options).forEach(o => {
+                    o.hidden = o.value !== '-1' && !favIds.includes(o.value);
+                });
+                sel.value = '-1';
+            } else {
+                Array.from(sel.options).forEach(o => o.hidden = false);
+            }
         });
 
         document.getElementById('sq-btn').addEventListener('click', () => this._sqSearch());
-        document.getElementById('sq-text').addEventListener('keydown', e => { if (e.key === 'Enter') this._sqSearch(); });
         document.getElementById('sq-get-line').addEventListener('click', () => this._sqGetLine());
+
+        // Восстанавливаем последний результат
+        if (this._sqLastResult) {
+            const wrap = document.getElementById('sq-results-wrap');
+            const el   = document.getElementById('sq-results');
+            wrap.classList.remove('hidden');
+            this._sqRender(this._sqLastResult, el);
+        }
+    },
+
+    _sqShowHist() {
+        const drop = document.getElementById('sq-hist-drop');
+        if (!drop) return;
+        const val  = document.getElementById('sq-text').value.toLowerCase();
+        const hist = this._sqLoadHist().filter(t => !val || t.toLowerCase().includes(val));
+        if (!hist.length) { drop.classList.add('hidden'); return; }
+        drop.classList.remove('hidden');
+        drop.innerHTML = hist.slice(0, 8).map(t =>
+            `<div class="sq-hist-item" data-val="${this._esc(t)}">${this._esc(t)}</div>`
+        ).join('');
+        drop.querySelectorAll('.sq-hist-item').forEach(item => {
+            item.addEventListener('click', () => {
+                document.getElementById('sq-text').value = item.dataset.val;
+                drop.classList.add('hidden');
+                this._sqSearch();
+            });
+        });
     },
 
     async _sqSearch() {
         const text = document.getElementById('sq-text').value.trim();
         if (!text) return;
+        this._sqPushHist(text);
+        document.getElementById('sq-hist-drop')?.classList.add('hidden');
+
         const btn = document.getElementById('sq-btn');
         btn.disabled = true; btn.textContent = '⏳';
         const wrap = document.getElementById('sq-results-wrap');
@@ -708,6 +833,7 @@ app.register('files', {
                 start_line: document.getElementById('sq-from').value.trim(),
                 end_line:   document.getElementById('sq-to').value.trim(),
             });
+            this._sqLastResult = res.result;  // сохраняем для восстановления
             this._sqRender(res.result, el);
         } catch (e) {
             el.innerHTML = `<div style="padding:20px;color:var(--red);font-size:13px">${e.message}</div>`;
@@ -717,15 +843,16 @@ app.register('files', {
     },
 
     _sqRender(result, el) {
-        if (!result || result === 'too_much') { el.innerHTML = '<div style="padding:20px;color:var(--yellow);font-size:13px;text-align:center">Слишком много результатов</div>'; return; }
+        if (!result || result === 'too_much') { el.innerHTML = '<div style="padding:20px;color:var(--yellow);font-size:13px;text-align:center">Слишком много результатов — уточните запрос</div>'; return; }
         if (result === 'regex_incorrect')     { el.innerHTML = '<div style="padding:20px;color:var(--red);font-size:13px;text-align:center">Некорректное регулярное выражение</div>'; return; }
         let html = ''; let total = 0;
         for (const [fileId, fileData] of Object.entries(result)) {
             if (!fileData || !Object.keys(fileData).length) continue;
             total++;
+            const fileName = this._files[fileId]?.fullPath || '';
             html += `<div class="sr-file">
-                <div class="sr-file-name">${this._esc(this._files[fileId]?.fullPath || '#'+fileId)}</div>
-                <div class="sr-blocks">${this._sqBlocks(fileId, fileData, [])}</div>
+                <div class="sr-file-name">${this._esc(fileName || '#'+fileId)}</div>
+                <div class="sr-blocks">${this._sqBlocks(fileId, fileData, [], fileName)}</div>
             </div>`;
         }
         if (!html) { el.innerHTML = '<div style="padding:20px;color:var(--text-3);font-size:13px;text-align:center">Ничего не найдено</div>'; return; }
@@ -736,14 +863,46 @@ app.register('files', {
         );
         el.querySelectorAll('[data-sqaction="preview"]').forEach(b => b.addEventListener('click', () => this._sqGetCode('preview', b.dataset)));
         el.querySelectorAll('[data-sqaction="edit"]').forEach(b =>   b.addEventListener('click', () => this._sqGetCode('edit',    b.dataset)));
+        // Закладки
+        el.querySelectorAll('.sq-bm-add').forEach(b => b.addEventListener('click', () => {
+            this._sqAddBm(b.dataset.file, b.dataset.path, b.dataset.name, b.dataset.fname);
+        }));
+        // Быстрый переход в редактор
+        el.querySelectorAll('.sq-go-btn').forEach(b => b.addEventListener('click', () => {
+            const line = parseInt(b.dataset.line);
+            const fid  = b.dataset.fileid;
+            this._switchTab('files');
+            this._openFile(fid).then(() => {
+                setTimeout(() => {
+                    const parts = this._parts || [];
+                    let bestIdx = 0;
+                    parts.forEach((p, i) => { if ((p.line || 1) <= line) bestIdx = i; });
+                    if (bestIdx !== this._activePartIdx) {
+                        this._activePartIdx = bestIdx;
+                        this._renderPartTabs();
+                        this._loadPartIntoEditor(bestIdx);
+                    }
+                    setTimeout(() => {
+                        const editor = this._editor;
+                        if (!editor) return;
+                        const editorLine = line - ((parts[bestIdx]?.line || 1)) + 1;
+                        editor.revealLineInCenter(Math.max(1, editorLine));
+                        editor.setPosition({ lineNumber: Math.max(1, editorLine), column: 1 });
+                        editor.focus();
+                    }, 400);
+                }, 600);
+            });
+        }));
     },
 
-    _sqBlocks(fileId, blocks, parentPath) {
+    _sqBlocks(fileId, blocks, parentPath, fileName) {
         const sorted = Object.keys(blocks).sort((a, b) => +a - +b);
         let html = '';
         for (let i = 0; i < sorted.length; i++) {
             const id = sorted[i]; const block = blocks[id];
             const path = JSON.stringify([...parentPath, +id]);
+            const bmBtn = `<button class="btn btn-ghost btn-sm sq-bm-add" data-file="${fileId}" data-path='${path}' data-name="${this._esc(block.name||'')}" data-fname="${this._esc(fileName||'')}" title="Добавить в закладки">🔖</button>`;
+
             if (block.children) {
                 html += `<div class="sr-block">
                     <div class="sr-block-row">
@@ -752,10 +911,11 @@ app.register('files', {
                             ${block.name ? `<span class="sr-name">${this._esc(block.name)}</span>` : ''}
                             <span class="sr-lines${block.lines > 100 ? '" style="color:var(--yellow)' : ''}">[Строк: ${block.lines}]</span>
                         </span>
+                        ${bmBtn}
                         <button class="btn btn-ghost btn-sm" data-sqaction="edit" data-file="${fileId}" data-path='${path}' data-name="${this._esc(block.name||'')}" data-lines="${block.lines||0}">Получить код</button>
                     </div>
                     <div class="sr-block-children hidden">
-                        <div class="sr-brace">{</div>${this._sqBlocks(fileId, block.children, [...parentPath, +id])}<div class="sr-brace">}</div>
+                        <div class="sr-brace">{</div>${this._sqBlocks(fileId, block.children, [...parentPath, +id], fileName)}<div class="sr-brace">}</div>
                     </div>
                 </div>`;
             } else {
@@ -763,8 +923,18 @@ app.register('files', {
                             block.type === 'text'          ? `[Текст] ${this._esc(block.name||'')}` :
                             block.type === 'other'         ? `[Прочее] ${this._esc(block.name||'')}` :
                             this._esc(block.name||'');
+                // Проверяем доступ для быстрого перехода
+                const lineNum = +id;
+                const accessFileId = Object.keys(this._files).find(fid =>
+                    this._files[fid].fullPath === fileName || this._files[fid].fullPath.endsWith('/' + fileName)
+                );
+                const goBtn = accessFileId
+                    ? `<button class="btn btn-ghost btn-sm sq-go-btn" data-fileid="${accessFileId}" data-line="${lineNum}" title="Открыть в редакторе">→</button>`
+                    : '';
                 html += `<div class="sr-block"><div class="sr-block-row">
                     <span class="sr-leaf" id="sr-${fileId}-${id}"><span class="sr-id">[${id}]</span> ${label}</span>
+                    ${goBtn}
+                    ${bmBtn}
                     ${block.type !== 'condition' ? `<button class="btn btn-ghost btn-sm" data-sqaction="preview" data-file="${fileId}" data-path='${path}' data-name="${this._esc(block.name||'')}" data-leaf="sr-${fileId}-${id}">Посмотреть</button>` : ''}
                     <button class="btn btn-ghost btn-sm" data-sqaction="edit" data-file="${fileId}" data-path='${path}' data-name="${this._esc(block.name||'')}">Получить код</button>
                 </div></div>`;
