@@ -50,6 +50,7 @@ app.register('files', {
                 </div>
                 <div id="tab-editor" class="editor-tab-content">
                     <div class="editor-topbar">
+                        <button class="btn btn-ghost btn-sm" id="btn-zen" title="Скрыть/показать дерево файлов">◧</button>
                         <span class="editor-filename" id="editor-filename">Выберите файл</span>
                         <button class="btn btn-ghost btn-sm hidden" id="btn-goto" title="Перейти к строке (Ctrl+G)" style="font-family:var(--mono);font-size:11px">:N</button>
                         <button class="btn btn-ghost btn-sm hidden" id="btn-save">💾 Сохранить</button>
@@ -97,6 +98,12 @@ app.register('files', {
         document.getElementById('btn-save').addEventListener('click',    () => this._save());
         document.getElementById('btn-discard').addEventListener('click', () => this._discard());
         document.getElementById('btn-goto').addEventListener('click',    () => this._showGotoLine());
+        document.getElementById('btn-zen').addEventListener('click',     () => this._toggleZen());
+
+        // Восстанавливаем zen-режим
+        if (localStorage.getItem('editor_zen') === '1') {
+            document.querySelector('.files-layout')?.classList.add('zen-mode');
+        }
         document.querySelectorAll('.etab').forEach(btn =>
             btn.addEventListener('click', () => this._switchTab(btn.dataset.tab))
         );
@@ -281,20 +288,20 @@ app.register('files', {
 
         const tabBar = document.createElement('div');
         tabBar.id = 'part-tabs';
-        tabBar.className = 'part-tabs-sidebar';
+        tabBar.className = 'part-tabs-horizontal';
 
         this._parts.forEach((part, i) => {
             const btn = document.createElement('div');
-            btn.className = 'part-tab-item' + (i === this._activePartIdx ? ' active' : '');
+            btn.className = 'ptab' + (i === this._activePartIdx ? ' active' : '');
+            btn.title = `Строка ${part.line}: ${part.content?.split('\n')[0]?.trim() || ''}`;
 
             const lineNum = document.createElement('span');
-            lineNum.className = 'part-tab-line';
+            lineNum.className = 'ptab-line';
             lineNum.textContent = part.line;
 
             const label = document.createElement('span');
-            label.className = 'part-tab-label';
+            label.className = 'ptab-label';
             label.textContent = this._partLabel(part);
-            label.title = `Строка ${part.line}: ${part.content?.split('\n')[0]?.trim() || ''}`;
 
             btn.appendChild(lineNum);
             btn.appendChild(label);
@@ -310,12 +317,23 @@ app.register('files', {
             tabBar.appendChild(btn);
         });
 
-        // Вставляем в editor-area как боковую панель
-        const area = document.querySelector('.editor-area');
+        // Вставляем между topbar/statusbar и editor-area как горизонтальную полосу сверху
+        const area   = document.querySelector('.editor-area');
+        const sb     = document.getElementById('editor-statusbar');
         if (area) {
             area.style.display = 'flex';
+            area.style.flexDirection = 'column';
             area.insertBefore(tabBar, area.firstChild);
         }
+    },
+
+    // Zen mode — скрывает дерево файлов
+    _toggleZen() {
+        const layout = document.querySelector('.files-layout');
+        if (!layout) return;
+        const zen = layout.classList.toggle('zen-mode');
+        try { localStorage.setItem('editor_zen', zen ? '1' : '0'); } catch {}
+        setTimeout(() => this._editor?.layout(), 250);
     },
 
     _loadPartIntoEditor(partIdx) {

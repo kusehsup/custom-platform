@@ -385,11 +385,13 @@ const app = {
             </header>
             <nav class="sidebar">
                 <span class="sidebar-section">Управление</span>
-                <a data-page="server"><span class="icon">🖥</span>Сервер</a>
+                <a data-page="server" title="Сервер"><span class="icon">🖥</span><span class="label">Сервер</span></a>
                 <span class="sidebar-section">Код</span>
-                <a data-page="files"><span class="icon">📁</span>Файлы</a>
+                <a data-page="files" title="Файлы"><span class="icon">📁</span><span class="label">Файлы</span></a>
                 <span class="sidebar-section">Прочее</span>
-                <a data-page="settings"><span class="icon">⚙️</span>Настройки</a>
+                <a data-page="settings" title="Настройки"><span class="icon">⚙️</span><span class="label">Настройки</span></a>
+                <div style="flex:1"></div>
+                <button id="sidebar-toggle" class="sidebar-toggle-btn" title="Свернуть/развернуть"><span class="label">«</span><span class="icon">»</span></button>
             </nav>
             <main class="main" id="main"></main>
         </div>
@@ -398,6 +400,18 @@ const app = {
         document.querySelectorAll('.sidebar a').forEach(a =>
             a.addEventListener('click', () => this.navigate(a.dataset.page))
         );
+
+        // Состояние сворачивания
+        if (localStorage.getItem('sidebar_collapsed') === '1') {
+            document.querySelector('.layout')?.classList.add('sidebar-collapsed');
+        }
+        document.getElementById('sidebar-toggle')?.addEventListener('click', () => {
+            const layout = document.querySelector('.layout');
+            const collapsed = layout.classList.toggle('sidebar-collapsed');
+            try { localStorage.setItem('sidebar_collapsed', collapsed ? '1' : '0'); } catch {}
+            // Перерисовываем Monaco если он есть
+            setTimeout(() => this._pages['files']?._editor?.layout(), 250);
+        });
         document.getElementById('btn-debug').addEventListener('click', () => this.toggleDebug());
         document.getElementById('btn-console').addEventListener('click', () => this.toggleConsole());
 

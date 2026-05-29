@@ -87,9 +87,10 @@ body {
 
 .layout {
     display: grid;
-    grid-template-columns: 220px 1fr;
+    grid-template-columns: 200px 1fr;
     grid-template-rows: 52px 1fr;
     height: 100vh;
+    transition: grid-template-columns .2s ease;
     overflow: hidden;
 }
 
@@ -400,12 +401,13 @@ input::placeholder { color: var(--text-3); }
 
 .files-layout {
     display: grid;
-    grid-template-columns: 280px 1fr;
+    grid-template-columns: 240px 1fr;
     gap: 0;
     height: calc(100vh - 52px - 56px);
     overflow: hidden;
     margin: -28px -32px;
     border-top: 1px solid var(--border);
+    transition: grid-template-columns .2s ease;
 }
 
 .file-tree {
@@ -889,47 +891,103 @@ mark.sq-hl { background: rgba(251,191,36,0.2); color: var(--yellow); border-radi
     font-family: var(--mono);
 }
 
-/* ─── Part tabs sidebar ──────────────────────────────────────── */
+/* ─── Collapsible sidebar ────────────────────────────────────── */
 
-.part-tabs-sidebar {
-    width: 180px;
-    flex-shrink: 0;
-    background: var(--bg);
-    border-right: 1px solid var(--border);
-    overflow-y: auto;
+.sidebar {
+    transition: width .2s ease;
     display: flex;
     flex-direction: column;
-    padding: 6px 0;
 }
 
-.part-tab-item {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    padding: 8px 12px;
+.layout.sidebar-collapsed .sidebar { width: 48px !important; }
+.layout.sidebar-collapsed { grid-template-columns: 48px 1fr !important; }
+
+.layout.sidebar-collapsed .sidebar .label,
+.layout.sidebar-collapsed .sidebar-section { display: none; }
+
+.layout.sidebar-collapsed .sidebar a {
+    justify-content: center;
+    padding: 10px 0;
+}
+
+.layout.sidebar-collapsed .sidebar a .icon {
+    margin: 0;
+    font-size: 16px;
+}
+
+.sidebar-toggle-btn {
+    background: none;
+    border: none;
+    color: var(--text-3);
     cursor: pointer;
-    border-left: 2px solid transparent;
+    padding: 10px 14px;
+    text-align: left;
+    font-size: 14px;
+    transition: background .15s, color .15s;
+    margin-top: auto;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.sidebar-toggle-btn:hover { background: rgba(255,255,255,0.04); color: var(--text); }
+.sidebar-toggle-btn .icon { display: none; font-size: 16px; }
+.sidebar-toggle-btn .label { font-size: 14px; }
+
+.layout.sidebar-collapsed .sidebar-toggle-btn .icon { display: inline; }
+.layout.sidebar-collapsed .sidebar-toggle-btn .label { display: none; }
+.layout.sidebar-collapsed .sidebar-toggle-btn { justify-content: center; padding: 10px 0; }
+
+/* ─── Horizontal part tabs ───────────────────────────────────── */
+
+.part-tabs-horizontal {
+    display: flex;
+    gap: 1px;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+    flex-shrink: 0;
+    padding: 0;
+    scrollbar-width: thin;
+}
+
+.ptab {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
     transition: background .1s, border-color .1s;
     user-select: none;
+    flex-shrink: 0;
+    max-width: 220px;
+    background: var(--surface);
 }
 
-.part-tab-item:hover { background: rgba(255,255,255,0.04); }
+.ptab:hover { background: rgba(255,255,255,0.04); }
 
-.part-tab-item.active {
-    background: rgba(59,130,246,0.08);
-    border-left-color: var(--accent);
+.ptab.active {
+    background: var(--bg);
+    border-bottom-color: var(--accent);
 }
 
-.part-tab-line {
+.ptab-line {
     font-family: var(--mono);
-    font-size: 10.5px;
+    font-size: 10px;
     color: var(--text-3);
     font-weight: 600;
+    background: var(--surface2);
+    padding: 1px 6px;
+    border-radius: 3px;
+    flex-shrink: 0;
 }
 
-.part-tab-item.active .part-tab-line { color: var(--accent); }
+.ptab.active .ptab-line {
+    background: rgba(59,130,246,0.15);
+    color: var(--accent);
+}
 
-.part-tab-label {
+.ptab-label {
     font-family: var(--mono);
     font-size: 11px;
     color: var(--text-2);
@@ -939,7 +997,16 @@ mark.sq-hl { background: rgba(251,191,36,0.2); color: var(--yellow); border-radi
     line-height: 1.4;
 }
 
-.part-tab-item.active .part-tab-label { color: var(--text); }
+.ptab.active .ptab-label { color: var(--text); }
+
+/* ─── Zen mode (hide file tree) ──────────────────────────────── */
+
+.files-layout.zen-mode {
+    grid-template-columns: 0 1fr !important;
+}
+.files-layout.zen-mode .file-tree {
+    display: none;
+}
 
 /* ─── History modal ──────────────────────────────────────────── */
 
