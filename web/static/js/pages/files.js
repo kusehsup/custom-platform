@@ -37,7 +37,6 @@ app.register('files', {
 
         root.innerHTML = `
         <div class="files-layout">
-            <button class="zen-restore-btn" id="btn-zen-restore" title="Показать дерево файлов">📁</button>
             <div class="file-tree">
                 <div class="file-tree-search">
                     <input type="search" id="file-search" placeholder="Поиск файла..." />
@@ -51,7 +50,6 @@ app.register('files', {
                 </div>
                 <div id="tab-editor" class="editor-tab-content">
                     <div class="editor-topbar">
-                        <button class="btn btn-ghost btn-sm" id="btn-zen" title="Скрыть/показать дерево файлов">◧</button>
                         <span class="editor-filename" id="editor-filename">Выберите файл</span>
                         <button class="btn btn-ghost btn-sm hidden" id="btn-goto" title="Перейти к строке (Ctrl+G)" style="font-family:var(--mono);font-size:11px">:N</button>
                         <button class="btn btn-ghost btn-sm hidden" id="btn-save">💾 Сохранить</button>
@@ -99,14 +97,6 @@ app.register('files', {
         document.getElementById('btn-save').addEventListener('click',    () => this._save());
         document.getElementById('btn-discard').addEventListener('click', () => this._discard());
         document.getElementById('btn-goto').addEventListener('click',    () => this._showGotoLine());
-        document.getElementById('btn-zen').addEventListener('click',         () => this._toggleZen());
-        document.getElementById('btn-zen-restore').addEventListener('click', () => this._toggleZen());
-
-        // Восстанавливаем zen-режим
-        if (localStorage.getItem('editor_zen') === '1') {
-            document.querySelector('.files-layout')?.classList.add('zen-mode');
-            document.getElementById('btn-zen')?.classList.add('zen-active');
-        }
         document.querySelectorAll('.etab').forEach(btn =>
             btn.addEventListener('click', () => this._switchTab(btn.dataset.tab))
         );
@@ -330,15 +320,6 @@ app.register('files', {
         }
     },
 
-    // Zen mode — скрывает дерево файлов
-    _toggleZen() {
-        const layout = document.querySelector('.files-layout');
-        if (!layout) return;
-        const zen = layout.classList.toggle('zen-mode');
-        document.getElementById('btn-zen')?.classList.toggle('zen-active', zen);
-        try { localStorage.setItem('editor_zen', zen ? '1' : '0'); } catch {}
-        setTimeout(() => this._editor?.layout(), 250);
-    },
 
     _loadPartIntoEditor(partIdx) {
         const part = this._parts[partIdx];

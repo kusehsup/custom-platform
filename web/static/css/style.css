@@ -999,42 +999,6 @@ mark.sq-hl { background: rgba(251,191,36,0.2); color: var(--yellow); border-radi
 
 .ptab.active .ptab-label { color: var(--text); }
 
-/* ─── Zen mode (hide file tree) ──────────────────────────────── */
-
-.files-layout.zen-mode {
-    grid-template-columns: 0 1fr !important;
-    position: relative;
-}
-.files-layout.zen-mode .file-tree {
-    display: none;
-}
-
-/* Плавающая кнопка возврата дерева файлов */
-.zen-restore-btn {
-    position: absolute;
-    top: 8px;
-    left: 8px;
-    z-index: 100;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    color: var(--text-2);
-    cursor: pointer;
-    padding: 6px 10px;
-    border-radius: var(--radius-sm);
-    font-size: 14px;
-    line-height: 1;
-    display: none;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-    transition: background .15s, color .15s;
-}
-.zen-restore-btn:hover { background: var(--surface2); color: var(--text); }
-.files-layout.zen-mode .zen-restore-btn { display: block; }
-
-/* Кнопка ◧ в активном zen-режиме */
-#btn-zen.zen-active {
-    color: var(--accent);
-    background: rgba(59,130,246,0.1);
-}
 
 /* ─── History modal ──────────────────────────────────────────── */
 
