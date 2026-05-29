@@ -51,10 +51,18 @@ app.register('files', {
                 <div id="tab-editor" class="editor-tab-content">
                     <div class="editor-topbar">
                         <span class="editor-filename" id="editor-filename">Выберите файл</span>
+                        <button class="btn btn-ghost btn-sm hidden" id="btn-goto" title="Перейти к строке (Ctrl+G)" style="font-family:var(--mono);font-size:11px">:N</button>
                         <button class="btn btn-ghost btn-sm hidden" id="btn-save">💾 Сохранить</button>
                         <button class="btn btn-ghost btn-sm hidden" id="btn-discard">✕ Сбросить</button>
                         <button class="btn btn-ghost btn-sm hidden" id="btn-history" title="История изменений">🕐 История</button>
                         <button class="btn btn-ghost btn-sm hidden" id="btn-del-toggle" title="Удалить доступ к строкам">🗑</button>
+                    </div>
+                    <div id="editor-statusbar" class="editor-statusbar hidden">
+                        <span id="sb-pos">Стр 1, Кол 1</span>
+                        <span class="sb-sep">·</span>
+                        <span id="sb-lines">0 строк</span>
+                        <span class="sb-sep">·</span>
+                        <span id="sb-context" style="color:var(--text-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:300px"></span>
                     </div>
                     <div id="delete-access-bar" class="hidden del-access-bar">
                         <span class="del-bar-label">Удалить доступ к строкам:</span>
@@ -88,6 +96,7 @@ app.register('files', {
         );
         document.getElementById('btn-save').addEventListener('click',    () => this._save());
         document.getElementById('btn-discard').addEventListener('click', () => this._discard());
+        document.getElementById('btn-goto').addEventListener('click',    () => this._showGotoLine());
         document.querySelectorAll('.etab').forEach(btn =>
             btn.addEventListener('click', () => this._switchTab(btn.dataset.tab))
         );
@@ -214,8 +223,10 @@ app.register('files', {
         document.getElementById('btn-save')?.classList.add('hidden');
         document.getElementById('btn-discard')?.classList.add('hidden');
         // Показываем кнопку удаления доступа, панель скрыта по умолчанию
+        document.getElementById('btn-goto')?.classList.remove('hidden');
         document.getElementById('btn-history')?.classList.remove('hidden');
         document.getElementById('btn-del-toggle')?.classList.remove('hidden');
+        document.getElementById('editor-statusbar')?.classList.remove('hidden');
         document.getElementById('delete-access-bar')?.classList.add('hidden');
 
         try {
@@ -254,8 +265,17 @@ app.register('files', {
         this._loadPartIntoEditor(0);
     },
 
+    // Извлекаем значимое название из кода части
+    _partLabel(part) {
+        if (!part.content) return `[${part.line}]`;
+        const firstLine = part.content.split('\n').find(l => l.trim()) || '';
+        // Берём первые значимые слова (убираем отступы, ограничиваем длину)
+        const clean = firstLine.trim().replace(/\s+/g, ' ');
+        const label = clean.length > 28 ? clean.slice(0, 28) + '…' : clean;
+        return label || `[${part.line}]`;
+    },
+
     _renderPartTabs() {
-        // Удаляем старые вкладки частей если есть
         document.getElementById('part-tabs')?.remove();
         if (this._parts.length <= 1) return;
 
@@ -266,9 +286,9 @@ app.register('files', {
         this._parts.forEach((part, i) => {
             const btn = document.createElement('button');
             btn.className = 'btn btn-ghost btn-sm' + (i === this._activePartIdx ? ' part-tab-active' : '');
-            btn.style.cssText = 'font-family:var(--mono);font-size:12px;padding:4px 10px';
-            btn.textContent = `[${part.line}]`;
-            btn.title = `Строка ${part.line}`;
+            btn.style.cssText = 'font-family:var(--mono);font-size:11px;padding:4px 10px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+            btn.textContent = this._partLabel(part);
+            btn.title = `Строка ${part.line}: ${part.content?.split('\n')[0]?.trim() || ''}`;
             btn.addEventListener('click', () => {
                 // Сохраняем черновик текущей части перед переключением
                 if (this._editor && this._modified) {
@@ -402,6 +422,24 @@ app.register('files', {
         });
 
         this._editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => this._save());
+        this._editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyG, () => this._showGotoLine());
+
+        // Статусбар — позиция курсора
+        this._editor.onDidChangeCursorPosition(e => {
+            const pos = e.position;
+            const part = this._parts?.[this._activePartIdx];
+            const realLine = (part?.line || 1) + pos.lineNumber - 1;
+            const sb = document.getElementById('sb-pos');
+            if (sb) sb.textContent = `Стр ${realLine}, Кол ${pos.column}`;
+        });
+
+        // Статусбар — количество строк
+        this._editor.onDidChangeModelContent(() => {
+            const model = this._editor.getModel();
+            if (!model) return;
+            const linesEl = document.getElementById('sb-lines');
+            if (linesEl) linesEl.textContent = `${model.getLineCount()} строк`;
+        });
 
         const ro = new ResizeObserver(() => this._editor?.layout());
         ro.observe(container);
@@ -580,6 +618,45 @@ app.register('files', {
         if (!this._activeFileId) return;
         this._modified = false;
         this._loadPartIntoEditor(this._activePartIdx);
+    },
+
+    _showGotoLine() {
+        if (!this._editor) return;
+        const part = this._parts?.[this._activePartIdx];
+        const startLine = part?.line || 1;
+
+        const modal = document.createElement('div');
+        modal.style.cssText = 'position:fixed;inset:0;z-index:10000;display:flex;align-items:flex-start;justify-content:center;padding-top:120px;background:rgba(0,0,0,0.5)';
+        modal.innerHTML = `
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);padding:16px;width:320px;display:flex;flex-direction:column;gap:10px;box-shadow:0 8px 32px rgba(0,0,0,0.5)">
+            <div style="font-size:13px;font-weight:500;color:var(--text)">Перейти к строке</div>
+            <input id="goto-input" type="number" placeholder="Номер строки..." style="width:100%;padding:8px 12px;font-size:13px;font-family:var(--mono)" autofocus />
+            <div style="font-size:12px;color:var(--text-3)">Диапазон: ${startLine} – ${startLine + (this._editor.getModel()?.getLineCount() || 1) - 1}</div>
+            <div style="display:flex;gap:8px;justify-content:flex-end">
+                <button class="btn btn-ghost btn-sm" id="goto-cancel">Отмена</button>
+                <button class="btn btn-primary btn-sm" id="goto-ok">Перейти</button>
+            </div>
+        </div>`;
+        document.body.appendChild(modal);
+
+        const input = modal.querySelector('#goto-input');
+        setTimeout(() => input?.focus(), 50);
+
+        const go = () => {
+            const realLine = parseInt(input.value);
+            if (!isNaN(realLine)) {
+                const editorLine = Math.max(1, realLine - startLine + 1);
+                this._editor.revealLineInCenter(editorLine);
+                this._editor.setPosition({ lineNumber: editorLine, column: 1 });
+                this._editor.focus();
+            }
+            modal.remove();
+        };
+
+        modal.querySelector('#goto-ok').addEventListener('click', go);
+        modal.querySelector('#goto-cancel').addEventListener('click', () => modal.remove());
+        input.addEventListener('keydown', e => { if (e.key === 'Enter') go(); if (e.key === 'Escape') modal.remove(); });
+        modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
     },
 
     async _deleteAccess() {
