@@ -38,6 +38,7 @@ class SaveCodeRequest(BaseModel):
     code: str
     part_index: int
     hash: str | None = None
+    html: str = ''
 
 
 class GetLineRequest(BaseModel):
@@ -183,7 +184,8 @@ async def get_file_code(file_id: str, login: str = Depends(get_current_user)):
 @router.post('/api/code/get')
 async def get_code(body: GetCodeRequest, login: str = Depends(get_current_user)):
     client = _require_client(login)
-    _check_access(client, body.file_id)
+    # Не проверяем _check_access — get_code это запрос доступа к коду,
+    # платформа сама решает давать его или нет
     try:
         result = await client.get_code_ack(
             body.type,
