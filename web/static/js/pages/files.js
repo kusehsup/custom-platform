@@ -969,21 +969,24 @@ app.register('files', {
 
             if (type === 'preview') {
                 if (result === 'overlimit') { app.toast('Превышен лимит просмотра', 'error'); return; }
-                // Показываем код прямо в строке результата
-                const code = typeof result === 'string' ? result : (result?.code ?? '');
-                const line = result?.line ?? '';
-                if (leaf) {
-                    const el = document.getElementById(leaf);
-                    if (el) el.innerHTML = `<span class="sr-id">[${line}]</span> <span style="color:var(--text);white-space:pre-wrap">${this._esc(code)}</span>`;
+                // null = таймаут но данные могут быть в update_code — просто убираем кнопку
+                if (result !== null) {
+                    const code = typeof result === 'string' ? result : (result?.code ?? '');
+                    const line = result?.line ?? '';
+                    if (leaf) {
+                        const el = document.getElementById(leaf);
+                        if (el) el.innerHTML = `<span class="sr-id">[${line}]</span> <span style="color:var(--text);white-space:pre-wrap">${this._esc(code)}</span>`;
+                    }
                 }
-                btn?.remove();  // просмотрели — кнопка больше не нужна
+                btn?.remove();
             } else {
                 if (result === 'access') {
                     app.toast('✅ Доступ разрешён', 'success');
+                } else if (result === 'pending' || result === null) {
+                    app.toast('⏳ Запрос направлен модераторам', 'info');
                 } else {
                     app.toast('⏳ Запрос направлен модераторам', 'info');
                 }
-                // В обоих случаях запрос уже сделан — убираем обе кнопки блока
                 const row = btn?.closest('.sr-block-row');
                 if (row) row.querySelectorAll('[data-sqaction]').forEach(b => b.remove());
             }

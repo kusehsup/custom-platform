@@ -186,15 +186,18 @@ async def get_code(body: GetCodeRequest, login: str = Depends(get_current_user))
     client = _require_client(login)
     # Не проверяем _check_access — get_code это запрос доступа к коду,
     # платформа сама решает давать его или нет
+    file_id_int = int(body.file_id) if body.file_id.isdigit() else body.file_id
     try:
         result = await client.get_code_ack(
-            body.type,
-            int(body.file_id) if body.file_id.isdigit() else body.file_id,
-            body.code_path,
-            body.query_name,
+            body.type, file_id_int, body.code_path, body.query_name,
         )
     except asyncio.TimeoutError:
-        raise HTTPException(status_code=504, detail='Сервер не ответил')
+        if body.type == 'preview':
+            # Для preview таймаут нормален — платформа уже ответила через update_code
+            # Возвращаем пустой результат, фронт уже получил данные через WS
+            return {'result': None}
+        # Для edit таймаут означает запрос на модерацию — тоже нормально
+        return {'result': 'pending'}
     return {'result': result}
 
 
