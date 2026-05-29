@@ -281,14 +281,23 @@ app.register('files', {
 
         const tabBar = document.createElement('div');
         tabBar.id = 'part-tabs';
-        tabBar.style.cssText = 'display:flex;gap:2px;padding:4px 12px;background:var(--surface);border-bottom:1px solid var(--border);overflow-x:auto;flex-shrink:0';
+        tabBar.className = 'part-tabs-sidebar';
 
         this._parts.forEach((part, i) => {
-            const btn = document.createElement('button');
-            btn.className = 'btn btn-ghost btn-sm' + (i === this._activePartIdx ? ' part-tab-active' : '');
-            btn.style.cssText = 'font-family:var(--mono);font-size:11px;padding:4px 10px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
-            btn.textContent = this._partLabel(part);
-            btn.title = `Строка ${part.line}: ${part.content?.split('\n')[0]?.trim() || ''}`;
+            const btn = document.createElement('div');
+            btn.className = 'part-tab-item' + (i === this._activePartIdx ? ' active' : '');
+
+            const lineNum = document.createElement('span');
+            lineNum.className = 'part-tab-line';
+            lineNum.textContent = part.line;
+
+            const label = document.createElement('span');
+            label.className = 'part-tab-label';
+            label.textContent = this._partLabel(part);
+            label.title = `Строка ${part.line}: ${part.content?.split('\n')[0]?.trim() || ''}`;
+
+            btn.appendChild(lineNum);
+            btn.appendChild(label);
             btn.addEventListener('click', () => {
                 // Сохраняем черновик текущей части перед переключением
                 if (this._editor && this._modified) {
@@ -301,9 +310,12 @@ app.register('files', {
             tabBar.appendChild(btn);
         });
 
-        // Вставляем после editor-topbar
-        const topbar = document.querySelector('.editor-topbar');
-        topbar?.after(tabBar);
+        // Вставляем в editor-area как боковую панель
+        const area = document.querySelector('.editor-area');
+        if (area) {
+            area.style.display = 'flex';
+            area.insertBefore(tabBar, area.firstChild);
+        }
     },
 
     _loadPartIntoEditor(partIdx) {
@@ -549,54 +561,76 @@ app.register('files', {
             hour: '2-digit', minute: '2-digit', second: '2-digit'
         });
 
+        const lang = this._getLang(file?.fullPath || '');
+
         modal.innerHTML = `
-        <div style="display:flex;flex-direction:column;width:100%;max-width:900px;margin:auto;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;max-height:90vh">
-            <div style="display:flex;align-items:center;gap:12px;padding:16px 20px;border-bottom:1px solid var(--border);flex-shrink:0">
-                <span style="font-size:13px;font-weight:600;color:var(--text)">История: ${this._esc(file?.fullPath || '')}${part ? ` [${part.line}]` : ''}</span>
+        <div style="display:flex;flex-direction:column;width:100%;max-width:1100px;margin:auto;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;max-height:92vh">
+            <div style="display:flex;align-items:center;gap:12px;padding:13px 20px;border-bottom:1px solid var(--border);flex-shrink:0">
+                <span style="font-size:13px;font-weight:600;color:var(--text)">История: <span style="font-family:var(--mono);color:var(--text-2)">${this._esc(file?.fullPath || '')}${part ? ` [${part.line}]` : ''}</span></span>
                 <span style="flex:1"></span>
-                <span style="font-size:12px;color:var(--text-2)">${hist.length} версий</span>
-                <button id="hist-close" style="background:none;border:none;color:var(--text-2);cursor:pointer;font-size:18px;padding:4px">✕</button>
+                <span id="hist-meta" style="font-size:12px;color:var(--text-2)"></span>
+                <button class="btn btn-ghost btn-sm hidden" id="hist-restore">↩ Восстановить</button>
+                <button id="hist-close" style="background:none;border:none;color:var(--text-2);cursor:pointer;font-size:18px;padding:4px 8px">✕</button>
             </div>
-            <div style="display:grid;grid-template-columns:220px 1fr;flex:1;overflow:hidden;min-height:0">
-                <div id="hist-list" style="border-right:1px solid var(--border);overflow-y:auto;padding:8px 0">
+            <div style="display:grid;grid-template-columns:200px 1fr;flex:1;overflow:hidden;min-height:0">
+                <div id="hist-list" style="border-right:1px solid var(--border);overflow-y:auto;padding:6px 0;background:var(--bg)">
                     ${hist.length === 0
-                        ? '<div style="padding:16px;color:var(--text-3);font-size:13px">Нет сохранённых версий</div>'
+                        ? '<div style="padding:16px;color:var(--text-3);font-size:13px">Нет версий</div>'
                         : hist.map((h, i) => `
-                        <div class="hist-item" data-idx="${i}" style="padding:10px 16px;cursor:pointer;border-bottom:1px solid var(--border);transition:background .1s">
-                            <div style="font-size:12.5px;font-weight:500;color:var(--text)">${fmt(h.ts)}</div>
-                            <div style="font-size:11px;color:var(--text-3);margin-top:2px;font-family:var(--mono)">строка ${h.startLine}</div>
+                        <div class="hist-item" data-idx="${i}">
+                            <div class="hist-item-ts">${fmt(h.ts)}</div>
+                            <div class="hist-item-line">строка ${h.startLine}</div>
                         </div>`).join('')
                     }
                 </div>
-                <div style="display:flex;flex-direction:column;overflow:hidden;min-height:0">
-                    <div id="hist-toolbar" style="display:flex;gap:8px;padding:8px 12px;border-bottom:1px solid var(--border);flex-shrink:0" class="hidden">
-                        <button class="btn btn-ghost btn-sm" id="hist-restore">↩ Восстановить эту версию</button>
-                        <span id="hist-meta" style="font-size:12px;color:var(--text-2);align-self:center"></span>
-                    </div>
-                    <pre id="hist-preview" style="flex:1;overflow:auto;padding:14px 16px;font-family:var(--mono);font-size:12.5px;line-height:1.7;color:#C8D3F5;background:#0D0D0F;margin:0;white-space:pre-wrap;word-break:break-all">
-                        <span style="color:var(--text-3)">← Выберите версию</span>
-                    </pre>
+                <div style="display:flex;flex-direction:column;overflow:hidden;min-height:0;background:#0D0D0F">
+                    <div id="hist-editor-empty" style="display:flex;align-items:center;justify-content:center;flex:1;color:var(--text-3);font-size:13px">← Выберите версию</div>
+                    <div id="hist-editor-wrap" style="flex:1;display:none;position:relative"></div>
                 </div>
             </div>
         </div>`;
 
         document.body.appendChild(modal);
 
-        let selectedHist = null;
+        let histViewer = null;
+
+        const showVersion = (content, ts, startLine) => {
+            document.getElementById('hist-editor-empty').style.display = 'none';
+            const wrap = document.getElementById('hist-editor-wrap');
+            wrap.style.display = 'block';
+            document.getElementById('hist-meta').textContent = fmt(ts);
+            document.getElementById('hist-restore').classList.remove('hidden');
+
+            if (histViewer) {
+                histViewer.setValue(content);
+                histViewer.updateOptions({ lineNumbers: n => String((startLine || 1) + n - 1) });
+            } else if (window.monaco) {
+                histViewer = monaco.editor.create(wrap, {
+                    value: content,
+                    language: lang,
+                    theme: 'custom-dark',
+                    readOnly: true,
+                    fontSize: 13,
+                    fontFamily: "'Cascadia Code','Consolas',monospace",
+                    minimap: { enabled: false },
+                    scrollBeyondLastLine: false,
+                    automaticLayout: true,
+                    lineNumbers: n => String((startLine || 1) + n - 1),
+                    renderLineHighlight: 'line',
+                    wordWrap: 'off',
+                });
+            }
+        };
 
         modal.querySelectorAll('.hist-item').forEach(item => {
-            item.addEventListener('mouseenter', () => { item.style.background = 'rgba(255,255,255,0.04)'; });
-            item.addEventListener('mouseleave', () => { item.style.background = selectedHist === item ? 'rgba(59,130,246,0.1)' : ''; });
             item.addEventListener('click', () => {
-                modal.querySelectorAll('.hist-item').forEach(i => i.style.background = '');
-                item.style.background = 'rgba(59,130,246,0.1)';
-                selectedHist = item;
+                modal.querySelectorAll('.hist-item').forEach(i => i.classList.remove('active'));
+                item.classList.add('active');
                 const h = hist[parseInt(item.dataset.idx)];
-                document.getElementById('hist-preview').textContent = h.content;
-                document.getElementById('hist-toolbar').classList.remove('hidden');
-                document.getElementById('hist-meta').textContent = fmt(h.ts);
+                showVersion(h.content, h.ts, h.startLine);
+
                 document.getElementById('hist-restore').onclick = () => {
-                    if (!confirm('Восстановить эту версию? Текущие несохранённые изменения будут потеряны.')) return;
+                    if (!confirm('Восстановить эту версию?')) return;
                     this._settingContent = true;
                     this._editor.setValue(h.content);
                     this._settingContent = false;
@@ -604,14 +638,23 @@ app.register('files', {
                     document.getElementById('editor-filename').className = 'editor-filename modified';
                     document.getElementById('btn-save')?.classList.remove('hidden');
                     document.getElementById('btn-discard')?.classList.remove('hidden');
+                    if (histViewer) { histViewer.dispose(); histViewer = null; }
                     modal.remove();
                     app.toast('↩ Версия восстановлена — не забудь сохранить', 'info');
                 };
             });
         });
 
-        modal.querySelector('#hist-close').addEventListener('click', () => modal.remove());
-        modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+        modal.querySelector('#hist-close').addEventListener('click', () => {
+            if (histViewer) { histViewer.dispose(); histViewer = null; }
+            modal.remove();
+        });
+        modal.addEventListener('click', e => {
+            if (e.target === modal) {
+                if (histViewer) { histViewer.dispose(); histViewer = null; }
+                modal.remove();
+            }
+        });
     },
 
     _discard() {
