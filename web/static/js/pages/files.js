@@ -128,9 +128,11 @@ app.register('files', {
         try {
             const data = await API.get('/api/files');
             this._files        = data.files;
-            this._allFiles     = data.all_files || data.files;  // все файлы для поиска
+            this._allFiles     = data.all_files || data.files;
             this._projectFiles = data.project_files.map(String);
             this._renderFileList('');
+            // Загружаем части всех доступных файлов для проверки диапазонов в поиске
+            this._sqLoadAccessibleRanges();
         } catch (e) {
             const list = document.getElementById('file-list');
             if (list) list.innerHTML = `<div style="padding:16px;color:var(--red);font-size:13px">${e.message}</div>`;
@@ -905,6 +907,41 @@ app.register('files', {
         return n;
     },
 
+    // Проверяем попадает ли строка line в доступные части файла
+    // Использует кэш _sqAccessibleRanges который строится из client.code
+    _sqLineAccessible(fileId, line) {
+        const ranges = this._sqAccessibleRanges?.[fileId];
+        if (!ranges) return false;
+        return ranges.some(([start, end]) => line >= start && line <= end);
+    },
+
+    // Строим карту доступных диапазонов из данных кода
+    async _sqLoadAccessibleRanges() {
+        // Загружаем code-данные для всех доступных файлов чтобы знать диапазоны строк
+        const filesData = {};
+        await Promise.all(
+            Object.keys(this._files).map(async fileId => {
+                try {
+                    const data = await API.get(`/api/file/${fileId}/code`);
+                    if (data.code) filesData[fileId] = data.code;
+                } catch {}
+            })
+        );
+        this._sqBuildAccessibleRanges(filesData);
+    },
+
+    _sqBuildAccessibleRanges(filesData) {
+        this._sqAccessibleRanges = {};
+        for (const [fileId, parts] of Object.entries(filesData)) {
+            if (!Array.isArray(parts) || !parts.length) continue;
+            this._sqAccessibleRanges[fileId] = parts.map(part => {
+                const start = part.line || 1;
+                const end   = start + (part.content || '').split('\n').length - 1;
+                return [start, end];
+            });
+        }
+    },
+
     _sqHighlight(text) {
         if (!this._sqQuery) return this._esc(text);
         const safe  = this._esc(text);
@@ -948,7 +985,8 @@ app.register('files', {
                 else if (block.type === 'text')     typeTag = 'Текст';
                 else if (block.type === 'other')    typeTag = 'Прочее';
 
-                const goBtn = accessFid
+                // Кнопка перехода только если строка попадает в доступный диапазон
+                const goBtn = accessFid && this._sqLineAccessible(accessFid, +id)
                     ? `<button class="sq-act-btn sq-go-btn" data-fileid="${accessFid}" data-line="${id}" title="Открыть в редакторе">↗</button>`
                     : '';
 
