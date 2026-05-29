@@ -128,6 +128,7 @@ app.register('files', {
         try {
             const data = await API.get('/api/files');
             this._files        = data.files;
+            this._allFiles     = data.all_files || data.files;  // все файлы для поиска
             this._projectFiles = data.project_files.map(String);
             this._renderFileList('');
         } catch (e) {
@@ -856,7 +857,10 @@ app.register('files', {
         for (const [fileId, fileData] of Object.entries(result)) {
             if (!fileData || !Object.keys(fileData).length) continue;
             totalFiles++;
-            const fileName   = this._files[fileId]?.fullPath || ('#' + fileId);
+            // Ищем имя сначала в доступных, потом во всех файлах
+            const fileName   = this._files[fileId]?.fullPath
+                            || this._allFiles?.[fileId]?.fullPath
+                            || ('#' + fileId);
             const blockCount = this._sqCountBlocks(fileData);
             totalBlocks += blockCount;
 

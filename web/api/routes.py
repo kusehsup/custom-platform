@@ -162,7 +162,11 @@ async def get_files(login: str = Depends(get_current_user)):
     accessible = {fid: all_files[fid] for fid in accessible_ids if fid in all_files}
     # Сохраняем порядок из project_files платформы (str-ified)
     ordered = [str(pid) for pid in client.project_files if str(pid) in accessible_ids]
-    return {'files': accessible, 'project_files': ordered}
+    return {
+        'files': accessible,
+        'project_files': ordered,
+        'all_files': all_files,   # все файлы для поиска (имена)
+    }
 
 
 @router.get('/api/file/{file_id}/code')
