@@ -321,6 +321,11 @@ const app = {
                 <p>Сервер был перезапущен.<br>Войдите снова для продолжения.</p>
             </div>
             <input type="password" id="rc-pass" placeholder="Пароль" autocomplete="current-password" />
+            <div id="rc-totp-wrap" style="display:none">
+                <input type="text" id="rc-totp" placeholder="000000"
+                    autocomplete="one-time-code" inputmode="numeric" maxlength="6"
+                    class="totp-input" />
+            </div>
             <div class="auth-error" id="rc-error"></div>
             <button class="btn btn-primary btn-full" id="rc-btn">Переподключиться</button>
         </div>`;
@@ -330,25 +335,37 @@ const app = {
         const login = this._getLoginFromToken();
 
         const doReconnect = async () => {
-            const password = document.getElementById('rc-pass').value;
+            const password  = document.getElementById('rc-pass').value;
+            const totpCode  = document.getElementById('rc-totp')?.value.trim() || '';
             const err = document.getElementById('rc-error');
             const btn = document.getElementById('rc-btn');
             if (!password) { err.textContent = 'Введите пароль'; return; }
             btn.disabled = true; btn.textContent = 'Подключение...'; err.textContent = '';
             try {
-                const data = await API.post('/api/login', { login, password });
+                const data = await API.post('/api/login', { login, password, totp_code: totpCode });
                 API.setToken(data.token);
                 const s = await API.get('/api/status');
                 this.state = { server: s.server, compile: s.compile };
                 this._showApp();
             } catch (e) {
-                err.textContent = e.message;
+                if (e.message === 'TOTP_REQUIRED') {
+                    const totpWrap = document.getElementById('rc-totp-wrap');
+                    totpWrap.style.display = 'block';
+                    document.getElementById('rc-totp').focus();
+                    err.textContent = 'Введите код из Google Authenticator';
+                } else {
+                    err.textContent = e.message;
+                }
                 btn.disabled = false; btn.textContent = 'Переподключиться';
             }
         };
 
         document.getElementById('rc-btn').addEventListener('click', doReconnect);
         document.getElementById('rc-pass').addEventListener('keydown', e => { if (e.key === 'Enter') doReconnect(); });
+        document.getElementById('rc-totp').addEventListener('keydown', e => { if (e.key === 'Enter') doReconnect(); });
+        document.getElementById('rc-totp').addEventListener('input', e => {
+            if (e.target.value.replace(/\D/g, '').length === 6) doReconnect();
+        });
     },
 
     _getLoginFromToken() {
