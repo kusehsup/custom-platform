@@ -13,6 +13,17 @@ const DbPage = {
     _orderDir: 'ASC',
     _pkCol: '',
     _view: 'query',  // 'query' | 'browse' | 'structure'
+    _tableSearch: '',
+    _FAV_KEY: 'db_fav_tables',
+
+    _loadFavs()     { try { return JSON.parse(localStorage.getItem(this._FAV_KEY) || '[]'); } catch { return []; } },
+    _saveFavs(f)    { try { localStorage.setItem(this._FAV_KEY, JSON.stringify(f)); } catch {} },
+    _isFav(t)       { return this._loadFavs().includes(t); },
+    _toggleFav(t)   {
+        let favs = this._loadFavs();
+        favs = favs.includes(t) ? favs.filter(f => f !== t) : [...favs, t];
+        this._saveFavs(favs);
+    },
 
     render(el) {
         el.innerHTML = `
@@ -22,6 +33,9 @@ const DbPage = {
                     <span>🗄</span>
                     <span style="flex:1;font-size:12px;color:var(--text-2);font-family:var(--mono)">crmp_cloud</span>
                     <button id="db-reload" title="Обновить" style="background:none;border:none;color:var(--text-3);cursor:pointer;font-size:14px;padding:2px 4px">↻</button>
+                </div>
+                <div style="padding:6px 8px;border-bottom:1px solid var(--border);flex-shrink:0">
+                    <input id="db-table-search" type="search" placeholder="Поиск таблицы..." style="width:100%;padding:5px 9px;font-size:12px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);outline:none" />
                 </div>
                 <div class="db-table-list" id="db-table-list">
                     <div style="padding:12px 14px;color:var(--text-3);font-size:12px">Загрузка...</div>
@@ -73,10 +87,13 @@ const DbPage = {
         </div>`;
 
         this._db = 'crmp_cloud';
+        this._tableSearch = '';
         this._loadTables(el);
 
-        el.querySelector('#db-reload').addEventListener('click', () => {
-            this._loadTables(el);
+        el.querySelector('#db-reload').addEventListener('click', () => this._loadTables(el));
+        el.querySelector('#db-table-search').addEventListener('input', e => {
+            this._tableSearch = e.target.value.toLowerCase();
+            this._renderTableList(el);
         });
         el.querySelector('#db-run').addEventListener('click', () => this._runQuery(el));
         el.querySelector('#db-clear-sql').addEventListener('click', () => {
@@ -148,27 +165,68 @@ const DbPage = {
         try {
             const res = await API.get(`/api/db/tables?database=${encodeURIComponent(this._db)}`);
             this._tables = res.tables;
-            list.innerHTML = res.tables.map(t => `
-            <div class="db-table-item ${t === this._table ? 'active' : ''}" data-table="${this._esc(t)}">
-                <span>⊞</span> ${this._esc(t)}
-            </div>`).join('') || '<div style="padding:12px 14px;color:var(--text-3);font-size:12px">Таблиц нет</div>';
-            list.querySelectorAll('.db-table-item').forEach(item => {
-                item.addEventListener('click', () => {
-                    this._table = item.dataset.table;
-                    this._offset = 0;
-                    this._orderBy = '';
-                    list.querySelectorAll('.db-table-item').forEach(i => i.classList.remove('active'));
-                    item.classList.add('active');
-                    el.querySelector('#db-info').textContent = `${this._db} › ${this._table}`;
-                    // Автоматически переходим в browse
-                    this._switchView(el, 'browse');
-                });
-            });
+            this._renderTableList(el);
             this._setStatus(`${res.tables.length} таблиц в ${this._db}`, 'ok');
         } catch (e) {
             list.innerHTML = `<div style="padding:12px;color:var(--red);font-size:12px">${e.message}</div>`;
             this._setStatus('Ошибка: ' + e.message, 'err');
         }
+    },
+
+    _renderTableList(el) {
+        const list = el.querySelector('#db-table-list');
+        if (!list) return;
+        const q    = this._tableSearch;
+        const favs = this._loadFavs();
+
+        const favTables = favs.filter(t => this._tables.includes(t) && (!q || t.toLowerCase().includes(q)));
+        const allTables = this._tables.filter(t => !favs.includes(t) && (!q || t.toLowerCase().includes(q)));
+
+        const mkItem = t => `
+        <div class="db-table-item ${t === this._table ? 'active' : ''}" data-table="${this._esc(t)}">
+            <span style="color:var(--text-3);font-size:11px">⊞</span>
+            <span style="flex:1;overflow:hidden;text-overflow:ellipsis">${this._esc(t)}</span>
+            <span class="db-fav-btn" data-table="${this._esc(t)}" title="Избранное" style="opacity:${favs.includes(t)?'1':'0'};color:var(--yellow);font-size:12px;flex-shrink:0;cursor:pointer;padding:0 2px">★</span>
+        </div>`;
+
+        let html = '';
+        if (favTables.length) {
+            html += `<div style="padding:5px 14px 3px;font-size:10px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:.06em">⭐ Избранное</div>`;
+            html += favTables.map(mkItem).join('');
+            if (allTables.length) html += `<div style="height:1px;background:var(--border);margin:4px 0"></div>`;
+        }
+        html += allTables.map(mkItem).join('');
+        if (!html) html = '<div style="padding:12px 14px;color:var(--text-3);font-size:12px">Ничего не найдено</div>';
+
+        list.innerHTML = html;
+
+        list.querySelectorAll('.db-table-item').forEach(item => {
+            item.addEventListener('click', e => {
+                if (e.target.classList.contains('db-fav-btn')) return;
+                this._table = item.dataset.table;
+                this._offset = 0;
+                this._orderBy = '';
+                el.querySelector('#db-info').textContent = `${this._db} › ${this._table}`;
+                this._switchView(el, 'browse');
+            });
+            // Показываем звёздочку при hover через JS (CSS hover не меняет opacity дочернего)
+            item.addEventListener('mouseenter', () => {
+                const star = item.querySelector('.db-fav-btn');
+                if (star && !this._isFav(item.dataset.table)) star.style.opacity = '0.4';
+            });
+            item.addEventListener('mouseleave', () => {
+                const star = item.querySelector('.db-fav-btn');
+                if (star && !this._isFav(item.dataset.table)) star.style.opacity = '0';
+            });
+        });
+
+        list.querySelectorAll('.db-fav-btn').forEach(btn => {
+            btn.addEventListener('click', e => {
+                e.stopPropagation();
+                this._toggleFav(btn.dataset.table);
+                this._renderTableList(el);
+            });
+        });
     },
 
     async _runQuery(el) {
