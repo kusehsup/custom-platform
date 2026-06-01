@@ -392,6 +392,7 @@ app.register('files', {
         const container = document.getElementById('monaco-editor');
         if (!container || this._editor) return;
 
+        window._monacoThemeDefined = true;
         monaco.editor.defineTheme('custom-dark', {
             base: 'vs-dark', inherit: true, rules: [],
             colors: {

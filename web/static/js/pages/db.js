@@ -188,6 +188,19 @@ const DbPage = {
         if (!container) return;
         const create = () => {
             if (this._sqlEditor) return;
+            // Регистрируем тему если ещё не определена (files.js мог не загружаться)
+            if (!window._monacoThemeDefined) {
+                monaco.editor.defineTheme('custom-dark', {
+                    base: 'vs-dark', inherit: true, rules: [],
+                    colors: {
+                        'editor.background': '#141416',
+                        'editor.lineHighlightBackground': '#1C1C1F',
+                        'editorLineNumber.foreground': '#48484A',
+                        'editorGutter.background': '#141416',
+                    },
+                });
+                window._monacoThemeDefined = true;
+            }
             const theme = localStorage.getItem('theme') === 'light' ? 'vs' : 'custom-dark';
             this._sqlEditor = monaco.editor.create(container, {
                 value: '',
