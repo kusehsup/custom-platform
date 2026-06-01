@@ -5,6 +5,15 @@ const TodoPage = {
     _items: null,
     _scanning: false,
     _searchQ: '',
+    _abortController: null,
+
+    abort() {
+        if (this._abortController) {
+            this._abortController.abort();
+            this._abortController = null;
+        }
+        this._scanning = false;
+    },
 
     render(el) {
         el.innerHTML = `
@@ -59,6 +68,8 @@ const TodoPage = {
     async _scan(el) {
         if (this._scanning) return;
         this._scanning = true;
+        this._abortController = new AbortController();
+        const signal = this._abortController.signal;
 
         const list     = el?.querySelector('#todo-list');
         const summary  = el?.querySelector('#todo-summary');
@@ -111,35 +122,36 @@ const TodoPage = {
         // Остальные грузим асинхронно пачками по 5
         const BATCH = 5;
         for (let i = 0; i < toFetch.length; i += BATCH) {
+            if (signal.aborted) { this._scanning = false; return; }
             const batch = toFetch.slice(i, i + BATCH);
             await Promise.all(batch.map(async fileId => {
+                if (signal.aborted) return;
                 try {
                     const data = await API.get(`/api/file/${fileId}/code`);
+                    if (signal.aborted) return;
                     if (data.code?.length) {
-                        // Кладём в кэш filesPage
                         if (!filesPage._codeParts) filesPage._codeParts = {};
                         filesPage._codeParts[fileId] = data.code;
                         this._scanParts(fileId, data.code, accessible, allFiles, items);
                     }
                 } catch {}
                 done++;
-                // Обновляем прогресс и промежуточный список если страница ещё открыта
                 const prog = document.getElementById('todo-progress');
                 if (prog) prog.textContent = `${done}/${fileIds.length}`;
             }));
 
-            // Промежуточный рендер каждые 2 пачки
             if (i % (BATCH * 2) === 0) {
                 this._items = [...items];
                 this._renderList(el);
                 this._updateBadge();
-                // Даём браузеру отрисоваться
                 await new Promise(r => setTimeout(r, 0));
             }
         }
 
+        if (signal.aborted) { this._scanning = false; return; }
         this._items = items;
         this._scanning = false;
+        this._abortController = null;
         if (progress) progress.textContent = '';
         this._renderList(el);
         this._updateBadge();

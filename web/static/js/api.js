@@ -53,6 +53,8 @@ const API = {
     clearToken() {
         this._token = null;
         localStorage.removeItem('token');
+        // Останавливаем фоновые процессы
+        if (typeof TodoPage !== 'undefined') TodoPage.abort();
     },
 
     hasToken() { return !!this._token; },
