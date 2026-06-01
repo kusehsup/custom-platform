@@ -13,6 +13,7 @@ app.register('files', {
     _modified: false,
     _settingContent: false,
     _pendingContent: undefined,
+    _codeParts: {},  // кэш частей для TODO-сканера
 
     // ── Избранное ─────────────────────────────────────────────────────
     _loadFavs()       { try { return JSON.parse(localStorage.getItem(FAV_KEY) || '[]'); } catch { return []; } },
@@ -255,6 +256,9 @@ app.register('files', {
             }));
         }
         this._parts         = parts;
+        // Кэшируем части для TODO-сканера
+        if (!this._codeParts) this._codeParts = {};
+        this._codeParts[fileId] = parts;
         // Сохраняем локальные правки в памяти (на случай переключения частей)
         this._partDrafts    = {};
         this._activePartIdx = 0;
@@ -554,6 +558,7 @@ app.register('files', {
         const hist    = this._loadHistory(fileId, partIdx);
         const file    = this._files[fileId];
         const part    = this._parts?.[partIdx];
+        const currentCode = this._editor?.getValue() || part?.content || '';
 
         const modal = document.createElement('div');
         modal.id = 'history-modal';
@@ -567,11 +572,12 @@ app.register('files', {
         const lang = this._getLang(file?.fullPath || '');
 
         modal.innerHTML = `
-        <div style="display:flex;flex-direction:column;width:100%;max-width:1100px;margin:auto;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;max-height:92vh">
+        <div style="display:flex;flex-direction:column;width:100%;max-width:1200px;margin:auto;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;max-height:92vh">
             <div style="display:flex;align-items:center;gap:12px;padding:13px 20px;border-bottom:1px solid var(--border);flex-shrink:0">
                 <span style="font-size:13px;font-weight:600;color:var(--text)">История: <span style="font-family:var(--mono);color:var(--text-2)">${this._esc(file?.fullPath || '')}${part ? ` [${part.line}]` : ''}</span></span>
                 <span style="flex:1"></span>
                 <span id="hist-meta" style="font-size:12px;color:var(--text-2)"></span>
+                <button class="btn btn-ghost btn-sm hidden" id="hist-diff-btn" title="Сравнить с текущим">⟺ Diff</button>
                 <button class="btn btn-ghost btn-sm hidden" id="hist-restore">↩ Восстановить</button>
                 <button id="hist-close" style="background:none;border:none;color:var(--text-2);cursor:pointer;font-size:18px;padding:4px 8px">✕</button>
             </div>
@@ -596,18 +602,32 @@ app.register('files', {
         document.body.appendChild(modal);
 
         let histViewer = null;
+        let diffViewer = null;
+        let currentEntry = null;
+        let isDiff = false;
 
-        const showVersion = (content, ts, startLine) => {
+        const destroyViewers = () => {
+            if (histViewer) { histViewer.dispose(); histViewer = null; }
+            if (diffViewer) { diffViewer.dispose(); diffViewer = null; }
+        };
+
+        const showVersion = (h) => {
+            currentEntry = h;
+            const { content, ts, startLine } = h;
             document.getElementById('hist-editor-empty').style.display = 'none';
             const wrap = document.getElementById('hist-editor-wrap');
             wrap.style.display = 'block';
             document.getElementById('hist-meta').textContent = fmt(ts);
             document.getElementById('hist-restore').classList.remove('hidden');
+            document.getElementById('hist-diff-btn').classList.remove('hidden');
 
-            if (histViewer) {
-                histViewer.setValue(content);
-                histViewer.updateOptions({ lineNumbers: n => String((startLine || 1) + n - 1) });
-            } else if (window.monaco) {
+            if (isDiff) {
+                showDiff(h);
+                return;
+            }
+
+            destroyViewers();
+            if (window.monaco) {
                 histViewer = monaco.editor.create(wrap, {
                     value: content,
                     language: lang,
@@ -625,12 +645,47 @@ app.register('files', {
             }
         };
 
+        const showDiff = (h) => {
+            if (!window.monaco) return;
+            const { content, startLine } = h;
+            const wrap = document.getElementById('hist-editor-wrap');
+            wrap.style.display = 'block';
+            document.getElementById('hist-editor-empty').style.display = 'none';
+
+            destroyViewers();
+            const origModel    = monaco.editor.createModel(content, lang);
+            const modifiedModel = monaco.editor.createModel(currentCode, lang);
+            diffViewer = monaco.editor.createDiffEditor(wrap, {
+                theme: 'custom-dark',
+                readOnly: true,
+                fontSize: 13,
+                fontFamily: "'Cascadia Code','Consolas',monospace",
+                minimap: { enabled: false },
+                scrollBeyondLastLine: false,
+                automaticLayout: true,
+                renderSideBySide: true,
+                originalEditable: false,
+            });
+            diffViewer.setModel({ original: origModel, modified: modifiedModel });
+        };
+
+        const diffBtn = modal.querySelector('#hist-diff-btn');
+        diffBtn.addEventListener('click', () => {
+            isDiff = !isDiff;
+            diffBtn.textContent = isDiff ? '📄 Просмотр' : '⟺ Diff';
+            diffBtn.title = isDiff ? 'Обычный просмотр' : 'Сравнить с текущим';
+            if (currentEntry) {
+                if (isDiff) showDiff(currentEntry);
+                else showVersion({ ...currentEntry });
+            }
+        });
+
         modal.querySelectorAll('.hist-item').forEach(item => {
             item.addEventListener('click', () => {
                 modal.querySelectorAll('.hist-item').forEach(i => i.classList.remove('active'));
                 item.classList.add('active');
                 const h = hist[parseInt(item.dataset.idx)];
-                showVersion(h.content, h.ts, h.startLine);
+                showVersion(h);
 
                 document.getElementById('hist-restore').onclick = () => {
                     if (!confirm('Восстановить эту версию?')) return;
@@ -641,7 +696,7 @@ app.register('files', {
                     document.getElementById('editor-filename').className = 'editor-filename modified';
                     document.getElementById('btn-save')?.classList.remove('hidden');
                     document.getElementById('btn-discard')?.classList.remove('hidden');
-                    if (histViewer) { histViewer.dispose(); histViewer = null; }
+                    destroyViewers();
                     modal.remove();
                     app.toast('↩ Версия восстановлена — не забудь сохранить', 'info');
                 };
@@ -649,12 +704,12 @@ app.register('files', {
         });
 
         modal.querySelector('#hist-close').addEventListener('click', () => {
-            if (histViewer) { histViewer.dispose(); histViewer = null; }
+            destroyViewers();
             modal.remove();
         });
         modal.addEventListener('click', e => {
             if (e.target === modal) {
-                if (histViewer) { histViewer.dispose(); histViewer = null; }
+                destroyViewers();
                 modal.remove();
             }
         });

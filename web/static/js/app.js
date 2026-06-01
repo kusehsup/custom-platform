@@ -388,6 +388,9 @@ const app = {
                 <a data-page="server" title="Сервер"><span class="icon">🖥</span><span class="label">Сервер</span></a>
                 <span class="sidebar-section">Код</span>
                 <a data-page="files" title="Файлы"><span class="icon">📁</span><span class="label">Файлы</span></a>
+                <span class="sidebar-section">Инструменты</span>
+                <a data-page="todo" title="TODO трекер"><span class="icon">✅</span><span class="label">TODO</span></a>
+                <a data-page="db" title="База данных"><span class="icon">🗄</span><span class="label">База данных</span></a>
                 <span class="sidebar-section">Прочее</span>
                 <a data-page="settings" title="Настройки"><span class="icon">⚙️</span><span class="label">Настройки</span></a>
                 <div style="flex:1"></div>

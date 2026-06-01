@@ -16,9 +16,11 @@ from fastapi.responses import FileResponse, JSONResponse
 from pathlib import Path
 
 from .api.routes import router
+from .api.db_routes import router as db_router
 
 app = FastAPI(title='CustomPlatform')
 app.include_router(router)
+app.include_router(db_router)
 
 
 @app.exception_handler(ConnectionError)
