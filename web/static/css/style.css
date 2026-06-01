@@ -1321,6 +1321,25 @@ mark.palette-hl {
 .ws-restore-btn:hover { background: rgba(59,130,246,0.12); color: var(--accent); border-color: var(--accent); }
 .ws-del-btn:hover     { background: rgba(248,113,113,0.1);  color: var(--red);    border-color: var(--red); }
 
+/* ─── Sidebar badge ──────────────────────────────────────────── */
+
+.sidebar-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    border-radius: 99px;
+    font-size: 10px;
+    font-weight: 700;
+    background: rgba(248,113,113,0.18);
+    color: var(--red);
+    margin-left: auto;
+    letter-spacing: 0;
+    flex-shrink: 0;
+}
+
 /* ─── TODO tracker ───────────────────────────────────────────── */
 
 .todo-wrap {

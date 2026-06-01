@@ -389,7 +389,7 @@ const app = {
                 <span class="sidebar-section">Код</span>
                 <a data-page="files" title="Файлы"><span class="icon">📁</span><span class="label">Файлы</span></a>
                 <span class="sidebar-section">Инструменты</span>
-                <a data-page="todo" title="TODO трекер"><span class="icon">✅</span><span class="label">TODO</span></a>
+                <a data-page="todo" title="TODO трекер"><span class="icon">✅</span><span class="label">TODO</span><span id="todo-badge" class="sidebar-badge hidden"></span></a>
                 <a data-page="db" title="База данных"><span class="icon">🗄</span><span class="label">База данных</span></a>
                 <span class="sidebar-section">Прочее</span>
                 <a data-page="settings" title="Настройки"><span class="icon">⚙️</span><span class="label">Настройки</span></a>
@@ -442,6 +442,8 @@ const app = {
         this.connectWS();
         this.navigate('server');
         this._registerCommands();
+        // Фоновое сканирование TODO после загрузки файлов
+        this._bgScanTodo();
     },
 
     _registerCommands() {
@@ -468,6 +470,22 @@ const app = {
         }});
         P.register({ id: 'todo',          title: 'TODO: Показать список',      icon: '✅', group: 'Прочее', run: () => this._pages['todo']?.open?.() || this.navigate('todo') });
         P.register({ id: 'db',            title: 'База данных',                icon: '🗄', group: 'Прочее', run: () => this.navigate('db') });
+    },
+
+    async _bgScanTodo() {
+        await new Promise(r => setTimeout(r, 3000));  // ждём пока платформа отдаст данные
+        const filesPage = this._pages['files'];
+        if (!filesPage) return;
+        // Загружаем список файлов если ещё не загружен
+        if (!filesPage._files || !Object.keys(filesPage._files).length) {
+            try { await filesPage._loadFiles(); } catch { return; }
+        }
+        const todo = this._pages['todo'];
+        if (todo && !todo._scanning && todo._items === null) {
+            // null-заглушка el — _scan работает через document.getElementById для badge/progress
+            const nullEl = { querySelector: () => null, querySelectorAll: () => [] };
+            todo._scan(nullEl);
+        }
     },
 
     _doCompile() {
