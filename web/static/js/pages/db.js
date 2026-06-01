@@ -20,13 +20,11 @@ const DbPage = {
             <div class="db-sidebar">
                 <div class="db-sidebar-header">
                     <span>🗄</span>
-                    <select id="db-sel" style="flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-xs);color:var(--text);padding:3px 6px;font-size:12px;outline:none">
-                        <option value="">— база данных —</option>
-                    </select>
+                    <span style="flex:1;font-size:12px;color:var(--text-2);font-family:var(--mono)">crmp_cloud</span>
                     <button id="db-reload" title="Обновить" style="background:none;border:none;color:var(--text-3);cursor:pointer;font-size:14px;padding:2px 4px">↻</button>
                 </div>
                 <div class="db-table-list" id="db-table-list">
-                    <div style="padding:12px 14px;color:var(--text-3);font-size:12px">Выберите базу данных</div>
+                    <div style="padding:12px 14px;color:var(--text-3);font-size:12px">Загрузка...</div>
                 </div>
             </div>
             <div class="db-main">
@@ -74,16 +72,11 @@ const DbPage = {
             </div>
         </div>`;
 
-        this._loadDatabases(el);
+        this._db = 'crmp_cloud';
+        this._loadTables(el);
 
-        el.querySelector('#db-sel').addEventListener('change', e => {
-            this._db = e.target.value;
-            this._table = '';
-            if (this._db) this._loadTables(el);
-        });
         el.querySelector('#db-reload').addEventListener('click', () => {
-            if (this._db) this._loadTables(el);
-            else this._loadDatabases(el);
+            this._loadTables(el);
         });
         el.querySelector('#db-run').addEventListener('click', () => this._runQuery(el));
         el.querySelector('#db-clear-sql').addEventListener('click', () => {

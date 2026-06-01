@@ -13,8 +13,9 @@ router = APIRouter(prefix='/api/db', tags=['db'])
 
 DB_HOST     = '37.187.157.171'
 DB_PORT     = 3306
-DB_USER     = 'root'
+DB_USER     = 'crmp_cloud'
 DB_PASS     = 'fL7oV4dZ4o'
+DB_NAME     = 'crmp_cloud'
 PROXY_HOST  = '127.0.0.1'
 PROXY_PORT  = 10808
 
@@ -66,6 +67,7 @@ def _db_connect_sync() -> pymysql.Connection:
             port=DB_PORT,
             user=DB_USER,
             password=DB_PASS,
+            database=DB_NAME,
             charset='utf8mb4',
             autocommit=True,
             connect_timeout=10,
