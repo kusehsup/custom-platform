@@ -16,3 +16,6 @@ input data/
 # Временные файлы
 *.log
 probe.py
+
+# TOTP секрет — не должен попасть в репозиторий
+web/totp.json
