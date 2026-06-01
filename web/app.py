@@ -13,6 +13,7 @@ if sys.platform == 'win32':
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 from pathlib import Path
 
 from .api.routes import router
@@ -23,6 +24,17 @@ app = FastAPI(title='CustomPlatform')
 app.include_router(router)
 app.include_router(db_router)
 app.include_router(totp_router)
+
+
+class NoCacheAPIMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        if request.url.path.startswith('/api/'):
+            response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate'
+            response.headers['Pragma'] = 'no-cache'
+        return response
+
+app.add_middleware(NoCacheAPIMiddleware)
 
 
 @app.exception_handler(ConnectionError)
