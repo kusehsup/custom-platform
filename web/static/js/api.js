@@ -14,12 +14,6 @@ const API = {
             headers: this._headers(),
             body: body ? JSON.stringify(body) : undefined,
         });
-        if (res.status === 401) {
-            this.clearToken();
-            app.toast('Сессия истекла, войдите снова', 'error');
-            setTimeout(() => app._showAuth(), 1500);
-            throw new Error('Сессия истекла');
-        }
         if (res.status === 503 && _retry < 3) {
             // Платформа переподключается — ждём и повторяем
             app.toast('⏳ Переподключение к платформе...', 'info');
@@ -32,6 +26,14 @@ const API = {
             throw new Error(`HTTP ${res.status}: ${text.slice(0, 200)}`);
         }
         const data = await res.json();
+        if (res.status === 401) {
+            // TOTP_REQUIRED — не сбрасываем сессию, пробрасываем дальше
+            if (data.detail === 'TOTP_REQUIRED') throw new Error('TOTP_REQUIRED');
+            this.clearToken();
+            app.toast('Сессия истекла, войдите снова', 'error');
+            setTimeout(() => app._showAuth(), 1500);
+            throw new Error('Сессия истекла');
+        }
         if (!res.ok) throw new Error(data.detail || 'Ошибка запроса');
         return data;
     },
