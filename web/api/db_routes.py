@@ -52,18 +52,26 @@ def _socks5_connect_sync(proxy_host: str, proxy_port: int, target_host: str, tar
 
 
 def _db_connect_sync() -> pymysql.Connection:
-    sock = _socks5_connect_sync(PROXY_HOST, PROXY_PORT, DB_HOST, DB_PORT)
-    return pymysql.connect(
-        host=DB_HOST,
-        port=DB_PORT,
-        user=DB_USER,
-        password=DB_PASS,
-        charset='utf8mb4',
-        autocommit=True,
-        connect_timeout=10,
-        defer_connect=False,
-        sock=sock,
-    )
+    # Подменяем socket.create_connection чтобы pymysql использовал наш SOCKS5 туннель
+    raw_sock = _socks5_connect_sync(PROXY_HOST, PROXY_PORT, DB_HOST, DB_PORT)
+    original_create_connection = socket.create_connection
+
+    def _patched_create_connection(*args, **kwargs):
+        return raw_sock
+
+    socket.create_connection = _patched_create_connection
+    try:
+        return pymysql.connect(
+            host=DB_HOST,
+            port=DB_PORT,
+            user=DB_USER,
+            password=DB_PASS,
+            charset='utf8mb4',
+            autocommit=True,
+            connect_timeout=10,
+        )
+    finally:
+        socket.create_connection = original_create_connection
 
 
 
