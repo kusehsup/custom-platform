@@ -207,11 +207,13 @@ body {
 
 .main {
     overflow-y: auto;
+    overflow-x: hidden;
     padding: 28px 32px;
     display: flex;
     flex-direction: column;
     gap: 20px;
     background: var(--bg);
+    min-height: 0;
 }
 
 /* ─── Cards ──────────────────────────────────────────────────── */
@@ -430,13 +432,18 @@ input::placeholder { color: var(--text-3); }
 
 /* ─── File tree ──────────────────────────────────────────────── */
 
+.main--fullscreen {
+    padding: 0 !important;
+    overflow: hidden !important;
+    gap: 0 !important;
+}
+
 .files-layout {
     display: grid;
     grid-template-columns: 240px 1fr;
     gap: 0;
-    height: calc(100vh - 52px - 56px);
+    height: 100%;
     overflow: hidden;
-    margin: -28px -32px;
     border-top: 1px solid var(--border);
     transition: grid-template-columns .2s ease;
 }
@@ -1679,7 +1686,6 @@ mark.palette-hl {
     .files-layout {
         grid-template-columns: 1fr;
         grid-template-rows: 200px 1fr;
-        margin: -16px;
     }
     .file-tree { border-right: none; border-bottom: 1px solid var(--border); }
 }

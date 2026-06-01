@@ -33,8 +33,9 @@ app.register('files', {
         this._modified      = false;
         this._activeFileId  = null;
         this._activeTab     = 'files';
-        this._searchInited  = false;   // сброс флага поиска
-        this._editor        = null;    // Monaco пересоздаётся при каждом рендере
+        this._searchInited  = false;
+        this._editor        = null;
+        root.classList.add('main--fullscreen');
 
         root.innerHTML = `
         <div class="files-layout">

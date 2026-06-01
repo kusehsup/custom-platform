@@ -16,10 +16,10 @@ const app = {
         );
         const main = document.getElementById('main');
         if (!main) return;
+        main.classList.remove('main--fullscreen');
         main.innerHTML = '';
         const page = this._pages[name];
         if (page) page.render(main);
-        // Показываем кнопки только вне страницы сервера
         this._updateTopbarActions();
     },
 
