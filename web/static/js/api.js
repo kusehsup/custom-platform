@@ -26,6 +26,11 @@ const API = {
             await new Promise(r => setTimeout(r, 3000));
             return this._fetch(method, url, body, _retry + 1);
         }
+        const ct = res.headers.get('content-type') || '';
+        if (!ct.includes('application/json')) {
+            const text = await res.text();
+            throw new Error(`HTTP ${res.status}: ${text.slice(0, 200)}`);
+        }
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || 'Ошибка запроса');
         return data;

@@ -4,8 +4,10 @@
 """
 import json
 from pathlib import Path
+from typing import Optional
 
-_PATH = Path(__file__).parent.parent.parent / 'totp.json'
+# Кладём рядом с web/api/ → web/totp.json
+_PATH = Path(__file__).parent.parent / 'totp.json'
 
 
 def _read() -> dict:
@@ -19,7 +21,7 @@ def _write(data: dict):
     _PATH.write_text(json.dumps(data, indent=2))
 
 
-def get_secret() -> str | None:
+def get_secret() -> Optional[str]:
     return _read().get('secret')
 
 
