@@ -379,6 +379,7 @@ const app = {
                 <div style="margin-left:auto;display:flex;align-items:center;gap:6px">
                     <button class="btn btn-ghost btn-sm" id="btn-console" title="Консоль" style="font-size:11px;padding:5px 10px">📋</button>
                     <button class="btn btn-ghost btn-sm" id="btn-debug" title="WS лог" style="font-size:11px;padding:5px 10px">WS</button>
+                    <button class="btn btn-ghost btn-sm" id="btn-theme" title="Переключить тему" style="font-size:14px;padding:5px 8px">🌙</button>
                     <span id="ws-status" class="ws-status ws-offline" title="Подключение..."></span>
                     <button class="btn btn-ghost btn-sm" id="btn-logout">Выйти</button>
                 </div>
@@ -417,6 +418,7 @@ const app = {
         });
         document.getElementById('btn-debug').addEventListener('click', () => this.toggleDebug());
         document.getElementById('btn-console').addEventListener('click', () => this.toggleConsole());
+        document.getElementById('btn-theme').addEventListener('click', () => this.toggleTheme());
 
         // Кнопка сервера в топбаре
         document.getElementById('topbar-actions').addEventListener('click', async e => {
@@ -439,10 +441,10 @@ const app = {
             this._showAuth();
         });
 
+        this._applyTheme(localStorage.getItem('theme') || 'dark');
         this.connectWS();
         this.navigate('server');
         this._registerCommands();
-        // Фоновое сканирование TODO после загрузки файлов
         this._bgScanTodo();
     },
 
@@ -470,6 +472,22 @@ const app = {
         }});
         P.register({ id: 'todo',          title: 'TODO: Показать список',      icon: '✅', group: 'Прочее', run: () => this._pages['todo']?.open?.() || this.navigate('todo') });
         P.register({ id: 'db',            title: 'База данных',                icon: '🗄', group: 'Прочее', run: () => this.navigate('db') });
+    },
+
+    _applyTheme(theme) {
+        document.body.classList.toggle('light', theme === 'light');
+        const btn = document.getElementById('btn-theme');
+        if (btn) btn.textContent = theme === 'light' ? '🌙' : '☀️';
+        if (typeof monaco !== 'undefined') {
+            monaco.editor.setTheme(theme === 'light' ? 'vs' : 'custom-dark');
+        }
+    },
+
+    toggleTheme() {
+        const cur = localStorage.getItem('theme') || 'dark';
+        const next = cur === 'dark' ? 'light' : 'dark';
+        try { localStorage.setItem('theme', next); } catch {}
+        this._applyTheme(next);
     },
 
     async _bgScanTodo() {

@@ -24,6 +24,29 @@
 
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
 
+/* ─── Light theme ────────────────────────────────────────────── */
+body.light {
+    --bg:        #F5F5F7;
+    --surface:   #FFFFFF;
+    --surface2:  #F0F0F2;
+    --surface3:  #E5E5EA;
+    --border:    #D1D1D6;
+    --accent:    #2563EB;
+    --accent-dim:#1D4ED8;
+    --green:     #059669;
+    --red:       #DC2626;
+    --yellow:    #D97706;
+    --text:      #1C1C1E;
+    --text-2:    #48484A;
+    --text-3:    #8E8E93;
+}
+body.light .sidebar a:hover { background: rgba(0,0,0,0.05); }
+body.light .sidebar a.active { background: rgba(37,99,235,0.1); }
+body.light .btn-ghost { color: var(--text-2); }
+body.light .btn-ghost:hover { background: rgba(0,0,0,0.06); }
+body.light .monaco-editor .margin,
+body.light .monaco-editor-background { background: var(--surface2) !important; }
+
 html, body { height: 100%; }
 
 body {
@@ -1536,6 +1559,12 @@ mark.palette-hl {
     flex: 1;
     overflow: auto;
     padding: 0;
+    display: flex;
+    flex-direction: column;
+}
+.db-result-inner {
+    flex: 1;
+    overflow: auto;
 }
 
 .db-table-result {

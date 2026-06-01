@@ -113,7 +113,7 @@ const DbPage = {
 
                 <div id="db-query-panel">
                     <div class="db-query-wrap">
-                        <textarea class="db-query-input" id="db-sql" placeholder="SELECT * FROM table LIMIT 100;"></textarea>
+                        <div id="db-sql-editor" style="height:120px;border:1px solid var(--border);border-radius:var(--radius-sm);overflow:hidden"></div>
                         <div style="display:flex;gap:8px;margin-top:8px;align-items:center;flex-wrap:wrap">
                             <button class="btn btn-primary btn-sm" id="db-run">▶ Выполнить</button>
                             <button class="btn btn-ghost btn-sm" id="db-clear-sql">Очистить</button>
@@ -153,6 +153,31 @@ const DbPage = {
         this._el = el;
         this._loadTables(el);
 
+        // Monaco SQL редактор
+        const theme = localStorage.getItem('theme') === 'light' ? 'vs' : 'custom-dark';
+        this._sqlEditor = monaco.editor.create(el.querySelector('#db-sql-editor'), {
+            value: '',
+            language: 'sql',
+            theme,
+            minimap: { enabled: false },
+            lineNumbers: 'off',
+            scrollBeyondLastLine: false,
+            wordWrap: 'on',
+            fontSize: 13,
+            fontFamily: 'var(--mono)',
+            padding: { top: 8, bottom: 8 },
+            suggestOnTriggerCharacters: true,
+            quickSuggestions: true,
+            scrollbar: { vertical: 'hidden', horizontal: 'hidden' },
+            overviewRulerLanes: 0,
+            renderLineHighlight: 'none',
+            contextmenu: false,
+        });
+        this._sqlEditor.addCommand(
+            monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter,
+            () => this._runQuery(el)
+        );
+
         el.querySelector('#db-reload').addEventListener('click', () => this._loadTables(el));
         el.querySelector('#db-log-btn').addEventListener('click', () => this.toggleLog());
         el.querySelector('#db-table-search').addEventListener('input', e => {
@@ -161,15 +186,9 @@ const DbPage = {
         });
         el.querySelector('#db-run').addEventListener('click', () => this._runQuery(el));
         el.querySelector('#db-clear-sql').addEventListener('click', () => {
-            el.querySelector('#db-sql').value = '';
+            this._sqlEditor.setValue('');
         });
         el.querySelector('#db-hist-btn').addEventListener('click', () => this._showHistModal(el));
-        el.querySelector('#db-sql').addEventListener('keydown', e => {
-            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-                e.preventDefault();
-                this._runQuery(el);
-            }
-        });
         el.querySelector('#db-prev').addEventListener('click', () => {
             if (this._offset >= this._limit) { this._offset -= this._limit; this._browse(el); }
         });
@@ -219,7 +238,7 @@ const DbPage = {
             btn.addEventListener('click', e => {
                 e.stopPropagation();
                 const sql = hist[parseInt(btn.dataset.idx)];
-                el.querySelector('#db-sql').value = sql;
+                this._sqlEditor?.setValue(sql);
                 modal.remove();
             });
         });
@@ -227,7 +246,7 @@ const DbPage = {
             item.addEventListener('click', e => {
                 if (e.target.classList.contains('dbh-use')) return;
                 const sql = hist[parseInt(item.dataset.idx)];
-                el.querySelector('#db-sql').value = sql;
+                this._sqlEditor?.setValue(sql);
                 modal.remove();
             });
             item.addEventListener('mouseenter', () => item.style.background = 'rgba(255,255,255,0.03)');
@@ -328,7 +347,7 @@ const DbPage = {
     },
 
     async _runQuery(el) {
-        const sql = el.querySelector('#db-sql').value.trim();
+        const sql = this._sqlEditor?.getValue().trim() || '';
         if (!sql) return;
         const result = el.querySelector('#db-query-result');
         result.innerHTML = '<div style="padding:20px;color:var(--text-2);font-size:13px;text-align:center">Выполнение...</div>';
@@ -340,10 +359,19 @@ const DbPage = {
             const ms = Date.now() - t0;
             this._pushHist(sql);
             if (res.kind === 'select') {
-                // Сохраняем результат для inline-редактирования
                 this._queryResult = { columns: res.columns, rows: res.rows, sql };
-                result.innerHTML = this._renderTable(res.columns, res.rows, true, null);
+                result.innerHTML = `
+                    <div style="display:flex;gap:6px;padding:6px 8px;border-bottom:1px solid var(--border);flex-shrink:0;align-items:center">
+                        <span style="font-size:12px;color:var(--text-3);flex:1">${res.rows.length} строк · ${ms}мс</span>
+                        <button class="btn btn-ghost btn-sm" id="db-export-csv" style="font-size:11px">↓ CSV</button>
+                        <button class="btn btn-ghost btn-sm" id="db-export-sql" style="font-size:11px">↓ SQL</button>
+                    </div>
+                    <div class="db-result-inner">${this._renderTable(res.columns, res.rows, true, null)}</div>`;
                 this._bindCellEditQuery(result, el, res.columns, res.rows);
+                result.querySelector('#db-export-csv').addEventListener('click', () =>
+                    this._exportCSV(res.columns, res.rows));
+                result.querySelector('#db-export-sql').addEventListener('click', () =>
+                    this._exportSQL(res.columns, res.rows, sql));
                 this._setStatus(`${res.rows.length} строк · ${ms}мс`, 'ok');
                 this._pushLog({ ts: Date.now(), sql, ok: true, ms, rows: res.rows.length });
             } else {
@@ -360,6 +388,41 @@ const DbPage = {
         } finally {
             btn.disabled = false;
         }
+    },
+
+    _exportCSV(columns, rows) {
+        const escape = v => {
+            const s = v === null || v === undefined ? '' : String(v);
+            return s.includes(',') || s.includes('"') || s.includes('\n')
+                ? `"${s.replace(/"/g, '""')}"` : s;
+        };
+        const lines = [columns.map(escape).join(',')];
+        for (const row of rows) {
+            const vals = Array.isArray(row) ? row : Object.values(row);
+            lines.push(vals.map(escape).join(','));
+        }
+        this._download('export.csv', lines.join('\r\n'), 'text/csv;charset=utf-8;');
+    },
+
+    _exportSQL(columns, rows, querySql) {
+        const tableMatch = querySql.match(/\bFROM\s+`?(\w+)`?/i);
+        const table = tableMatch?.[1] || 'export';
+        const lines = rows.map(row => {
+            const vals = (Array.isArray(row) ? row : Object.values(row))
+                .map(v => v === null ? 'NULL' : `'${String(v).replace(/'/g, "''")}'`);
+            return `INSERT INTO \`${table}\` (\`${columns.join('`, `')}\`) VALUES (${vals.join(', ')});`;
+        });
+        this._download(`${table}.sql`, lines.join('\n'), 'text/plain;charset=utf-8;');
+    },
+
+    _download(filename, content, mime) {
+        const blob = new Blob([content], { type: mime });
+        const url  = URL.createObjectURL(blob);
+        const a    = document.createElement('a');
+        a.href = url; a.download = filename;
+        document.body.appendChild(a); a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
     },
 
     async _browse(el) {
