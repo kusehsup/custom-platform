@@ -438,7 +438,61 @@ const app = {
 
         this.connectWS();
         this.navigate('server');
+        this._registerCommands();
+    },
+
+    _registerCommands() {
+        if (!window.Palette || Palette._commands.length) return;
+        const P = Palette;
+        P.register({ id: 'nav.server',   title: 'Перейти: Сервер',     icon: '🖥', group: 'Навигация', run: () => this.navigate('server') });
+        P.register({ id: 'nav.files',    title: 'Перейти: Файлы',      icon: '📁', group: 'Навигация', run: () => this.navigate('files') });
+        P.register({ id: 'nav.settings', title: 'Перейти: Настройки',  icon: '⚙️', group: 'Навигация', run: () => this.navigate('settings') });
+        P.register({ id: 'srv.start',    title: 'Сервер: Запустить',   icon: '▶',  group: 'Сервер', hint: 'Ctrl+Shift+S', when: () => this.state.server !== 'on', run: async () => { await API.post('/api/server/start'); this.state.server='on'; this._updateTopbarActions(); this._pages['server']?.onState?.(); app.toast('🟢 Сервер запущен', 'success'); } });
+        P.register({ id: 'srv.stop',     title: 'Сервер: Остановить',  icon: '⏹', group: 'Сервер', when: () => this.state.server === 'on', run: async () => { await API.post('/api/server/stop'); this.state.server='off'; this._updateTopbarActions(); this._pages['server']?.onState?.(); app.toast('🔴 Сервер остановлен', 'info'); } });
+        P.register({ id: 'compile',      title: 'Компилировать',       icon: '🔨', group: 'Сервер', hint: 'Ctrl+Shift+B', run: () => this._doCompile() });
+        P.register({ id: 'view.console', title: 'Виджет: Консоль',     icon: '📋', group: 'Виджеты', run: () => this.toggleConsole() });
+        P.register({ id: 'view.wslog',   title: 'Виджет: WS Log',      icon: '📡', group: 'Виджеты', run: () => this.toggleDebug() });
+        P.register({ id: 'sidebar.toggle', title: 'Свернуть/Развернуть сайдбар', icon: '◧', group: 'Интерфейс', run: () => document.getElementById('sidebar-toggle')?.click() });
+        P.register({ id: 'logout',       title: 'Выйти',               icon: '🚪', group: 'Прочее', run: () => document.getElementById('btn-logout')?.click() });
+        // Команды редактора
+        P.register({ id: 'editor.goto',  title: 'Редактор: Перейти к строке', icon: ':N', hint: 'Ctrl+G', group: 'Редактор', when: () => this._pages['files']?._activeFileId, run: () => this._pages['files']?._showGotoLine() });
+        P.register({ id: 'editor.save',  title: 'Редактор: Сохранить файл',   icon: '💾', hint: 'Ctrl+S', group: 'Редактор', when: () => this._pages['files']?._activeFileId, run: () => this._pages['files']?._save() });
+        P.register({ id: 'editor.history', title: 'Редактор: История изменений', icon: '🕐', group: 'Редактор', when: () => this._pages['files']?._activeFileId, run: () => this._pages['files']?._showHistory() });
+        P.register({ id: 'workspace',     title: 'Workspace: Управление',      icon: '🗂', group: 'Прочее', run: () => Workspace.showManager() });
+        P.register({ id: 'ws.save',       title: 'Workspace: Сохранить текущий', icon: '💼', group: 'Прочее', run: () => {
+            const name = prompt('Имя workspace:');
+            if (name) Workspace.saveCurrent(name) ? app.toast(`💾 Workspace "${name}" сохранён`, 'success') : app.toast('Нет открытого файла', 'error');
+        }});
+        P.register({ id: 'todo',          title: 'TODO: Показать список',      icon: '✅', group: 'Прочее', run: () => this._pages['todo']?.open?.() || this.navigate('todo') });
+        P.register({ id: 'db',            title: 'База данных',                icon: '🗄', group: 'Прочее', run: () => this.navigate('db') });
+    },
+
+    _doCompile() {
+        if (this.state.compile) { app.toast('Компиляция уже выполняется', 'info'); return; }
+        API.post('/api/compile').then(() => {
+            this.state.compile = true;
+            this._updateTopbarActions();
+            this._pages['server']?.onState?.();
+            app.toast('🔨 Компиляция запущена', 'info');
+        }).catch(e => app.toast('Ошибка: ' + e.message, 'error'));
     },
 };
 
 window.app = app;
+
+// Глобальные хоткеи
+document.addEventListener('keydown', e => {
+    if (!app._ws) return;
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'b') {
+        e.preventDefault(); app._doCompile();
+    } else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        const isOn = app.state.server === 'on';
+        API.post(isOn ? '/api/server/stop' : '/api/server/start').then(() => {
+            app.state.server = isOn ? 'off' : 'on';
+            app._updateTopbarActions();
+            app._pages['server']?.onState?.();
+            app.toast(isOn ? '🔴 Сервер остановлен' : '🟢 Сервер запущен', isOn ? 'info' : 'success');
+        }).catch(err => app.toast('Ошибка: ' + err.message, 'error'));
+    }
+});
