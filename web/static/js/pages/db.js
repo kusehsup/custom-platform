@@ -4,7 +4,6 @@ const DbPage = {
     _db: '',
     _table: '',
     _tables: [],
-    _databases: [],
     _cols: [],
     _total: 0,
     _offset: 0,
@@ -12,19 +11,80 @@ const DbPage = {
     _orderBy: '',
     _orderDir: 'ASC',
     _pkCol: '',
-    _view: 'query',  // 'query' | 'browse' | 'structure'
+    _view: 'query',
     _tableSearch: '',
-    _FAV_KEY: 'db_fav_tables',
+    _queryResult: null,  // последний результат SELECT для редактирования
 
-    _loadFavs()     { try { return JSON.parse(localStorage.getItem(this._FAV_KEY) || '[]'); } catch { return []; } },
-    _saveFavs(f)    { try { localStorage.setItem(this._FAV_KEY, JSON.stringify(f)); } catch {} },
-    _isFav(t)       { return this._loadFavs().includes(t); },
-    _toggleFav(t)   {
+    _FAV_KEY:  'db_fav_tables',
+    _HIST_KEY: 'db_query_hist',
+    _LOG_KEY:  'db_query_log',
+    _HIST_MAX: 10,
+    _LOG_MAX:  200,
+
+    // ── Избранные таблицы ─────────────────────────────────────────
+    _loadFavs()   { try { return JSON.parse(localStorage.getItem(this._FAV_KEY) || '[]'); } catch { return []; } },
+    _saveFavs(f)  { try { localStorage.setItem(this._FAV_KEY, JSON.stringify(f)); } catch {} },
+    _isFav(t)     { return this._loadFavs().includes(t); },
+    _toggleFav(t) {
         let favs = this._loadFavs();
         favs = favs.includes(t) ? favs.filter(f => f !== t) : [...favs, t];
         this._saveFavs(favs);
     },
 
+    // ── История запросов ──────────────────────────────────────────
+    _loadHist()  { try { return JSON.parse(localStorage.getItem(this._HIST_KEY) || '[]'); } catch { return []; } },
+    _pushHist(sql) {
+        let h = this._loadHist().filter(s => s !== sql);
+        h.unshift(sql);
+        if (h.length > this._HIST_MAX) h = h.slice(0, this._HIST_MAX);
+        try { localStorage.setItem(this._HIST_KEY, JSON.stringify(h)); } catch {}
+    },
+
+    // ── Лог запросов ─────────────────────────────────────────────
+    _loadLog()  { try { return JSON.parse(localStorage.getItem(this._LOG_KEY) || '[]'); } catch { return []; } },
+    _pushLog(entry) {
+        let log = this._loadLog();
+        log.unshift(entry);
+        if (log.length > this._LOG_MAX) log = log.slice(0, this._LOG_MAX);
+        try { localStorage.setItem(this._LOG_KEY, JSON.stringify(log)); } catch {}
+        this._renderLogWidget();
+    },
+    _renderLogWidget() {
+        const el = document.getElementById('db-log-body');
+        if (!el) return;
+        const log = this._loadLog();
+        el.innerHTML = log.map(e => {
+            const color = e.ok ? 'var(--green)' : 'var(--red)';
+            const ts = new Date(e.ts).toLocaleTimeString('ru-RU');
+            return `<div style="padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.04)">
+                <div style="display:flex;gap:6px;align-items:center">
+                    <span style="color:var(--text-3);font-size:10px;flex-shrink:0">${ts}</span>
+                    <span style="color:${color};font-size:10px;flex-shrink:0">${e.ok ? '✓' : '✗'}</span>
+                    <span style="color:var(--text-3);font-size:10px;flex-shrink:0">${e.ms}мс</span>
+                    ${e.rows != null ? `<span style="color:var(--text-3);font-size:10px">${e.rows} стр.</span>` : ''}
+                </div>
+                <div style="color:var(--text-2);font-size:11px;font-family:var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px" title="${this._esc(e.sql)}">${this._esc(e.sql)}</div>
+                ${e.err ? `<div style="color:var(--red);font-size:10px;margin-top:2px">${this._esc(e.err)}</div>` : ''}
+            </div>`;
+        }).join('') || '<div style="color:var(--text-3);font-size:12px;padding:8px 0">Нет запросов</div>';
+    },
+
+    toggleLog() {
+        if (!document.getElementById('widget-dblog')) {
+            Widgets.create({
+                id: 'widget-dblog',
+                title: '🗄 DB Log',
+                content: '<div id="db-log-body" style="overflow-y:auto;flex:1;padding:6px 10px;font-family:var(--mono)"></div>',
+                width: 420, height: 340,
+                defaultPos: { right: 24, bottom: 80 },
+            });
+            this._renderLogWidget();
+        } else {
+            Widgets.toggle('widget-dblog');
+        }
+    },
+
+    // ── Render ────────────────────────────────────────────────────
     render(el) {
         el.innerHTML = `
         <div class="db-layout">
@@ -32,6 +92,7 @@ const DbPage = {
                 <div class="db-sidebar-header">
                     <span>🗄</span>
                     <span style="flex:1;font-size:12px;color:var(--text-2);font-family:var(--mono)">crmp_cloud</span>
+                    <button id="db-log-btn" title="Лог запросов" style="background:none;border:none;color:var(--text-3);cursor:pointer;font-size:12px;padding:2px 5px">📋</button>
                     <button id="db-reload" title="Обновить" style="background:none;border:none;color:var(--text-3);cursor:pointer;font-size:14px;padding:2px 4px">↻</button>
                 </div>
                 <div style="padding:6px 8px;border-bottom:1px solid var(--border);flex-shrink:0">
@@ -53,9 +114,10 @@ const DbPage = {
                 <div id="db-query-panel">
                     <div class="db-query-wrap">
                         <textarea class="db-query-input" id="db-sql" placeholder="SELECT * FROM table LIMIT 100;"></textarea>
-                        <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
+                        <div style="display:flex;gap:8px;margin-top:8px;align-items:center;flex-wrap:wrap">
                             <button class="btn btn-primary btn-sm" id="db-run">▶ Выполнить</button>
                             <button class="btn btn-ghost btn-sm" id="db-clear-sql">Очистить</button>
+                            <button class="btn btn-ghost btn-sm" id="db-hist-btn" title="История запросов">🕐 История</button>
                             <span style="flex:1"></span>
                             <span style="font-size:12px;color:var(--text-3)">Ctrl+Enter — выполнить</span>
                         </div>
@@ -88,9 +150,11 @@ const DbPage = {
 
         this._db = 'crmp_cloud';
         this._tableSearch = '';
+        this._el = el;
         this._loadTables(el);
 
         el.querySelector('#db-reload').addEventListener('click', () => this._loadTables(el));
+        el.querySelector('#db-log-btn').addEventListener('click', () => this.toggleLog());
         el.querySelector('#db-table-search').addEventListener('input', e => {
             this._tableSearch = e.target.value.toLowerCase();
             this._renderTableList(el);
@@ -99,6 +163,7 @@ const DbPage = {
         el.querySelector('#db-clear-sql').addEventListener('click', () => {
             el.querySelector('#db-sql').value = '';
         });
+        el.querySelector('#db-hist-btn').addEventListener('click', () => this._showHistModal(el));
         el.querySelector('#db-sql').addEventListener('keydown', e => {
             if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
                 e.preventDefault();
@@ -106,16 +171,10 @@ const DbPage = {
             }
         });
         el.querySelector('#db-prev').addEventListener('click', () => {
-            if (this._offset >= this._limit) {
-                this._offset -= this._limit;
-                this._browse(el);
-            }
+            if (this._offset >= this._limit) { this._offset -= this._limit; this._browse(el); }
         });
         el.querySelector('#db-next').addEventListener('click', () => {
-            if (this._offset + this._limit < this._total) {
-                this._offset += this._limit;
-                this._browse(el);
-            }
+            if (this._offset + this._limit < this._total) { this._offset += this._limit; this._browse(el); }
         });
 
         ['query', 'browse', 'structure'].forEach(view => {
@@ -125,10 +184,62 @@ const DbPage = {
         this._switchView(el, 'query');
     },
 
+    // ── История запросов — модал ──────────────────────────────────
+    _showHistModal(el) {
+        const hist = this._loadHist();
+        const modal = document.createElement('div');
+        modal.style.cssText = 'position:fixed;inset:0;z-index:50000;display:flex;align-items:flex-start;justify-content:center;padding-top:80px;background:rgba(0,0,0,0.6);backdrop-filter:blur(4px)';
+        modal.innerHTML = `
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);width:100%;max-width:640px;overflow:hidden;box-shadow:0 24px 80px rgba(0,0,0,0.6)">
+            <div style="display:flex;align-items:center;gap:10px;padding:13px 18px;border-bottom:1px solid var(--border)">
+                <span style="font-size:13px;font-weight:600;color:var(--text)">🕐 История запросов</span>
+                <span style="flex:1"></span>
+                <button id="dbh-clear" class="btn btn-ghost btn-sm" style="color:var(--red)">Очистить</button>
+                <button id="dbh-close" style="background:none;border:none;color:var(--text-2);cursor:pointer;font-size:18px;padding:2px 6px">✕</button>
+            </div>
+            <div style="max-height:480px;overflow-y:auto">
+                ${hist.length === 0
+                    ? '<div style="padding:20px;color:var(--text-3);font-size:13px;text-align:center">История пуста</div>'
+                    : hist.map((sql, i) => `
+                    <div class="dbh-item" data-idx="${i}" style="display:flex;align-items:flex-start;gap:10px;padding:10px 18px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .08s">
+                        <div style="flex:1;font-family:var(--mono);font-size:12px;color:var(--text-2);white-space:pre-wrap;word-break:break-all">${this._esc(sql)}</div>
+                        <button class="btn btn-ghost btn-sm dbh-use" data-idx="${i}" style="flex-shrink:0;font-size:11px">Вставить</button>
+                    </div>`).join('')
+                }
+            </div>
+        </div>`;
+        document.body.appendChild(modal);
+
+        modal.querySelector('#dbh-close').addEventListener('click', () => modal.remove());
+        modal.querySelector('#dbh-clear')?.addEventListener('click', () => {
+            try { localStorage.removeItem(this._HIST_KEY); } catch {}
+            modal.remove();
+        });
+        modal.querySelectorAll('.dbh-use').forEach(btn => {
+            btn.addEventListener('click', e => {
+                e.stopPropagation();
+                const sql = hist[parseInt(btn.dataset.idx)];
+                el.querySelector('#db-sql').value = sql;
+                modal.remove();
+            });
+        });
+        modal.querySelectorAll('.dbh-item').forEach(item => {
+            item.addEventListener('click', e => {
+                if (e.target.classList.contains('dbh-use')) return;
+                const sql = hist[parseInt(item.dataset.idx)];
+                el.querySelector('#db-sql').value = sql;
+                modal.remove();
+            });
+            item.addEventListener('mouseenter', () => item.style.background = 'rgba(255,255,255,0.03)');
+            item.addEventListener('mouseleave', () => item.style.background = '');
+        });
+        modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+    },
+
     _switchView(el, view) {
         this._view = view;
         ['query', 'browse', 'structure'].forEach(v => {
-            const btn = el.querySelector(`#dbt-${v}`);
+            const btn   = el.querySelector(`#dbt-${v}`);
             const panel = el.querySelector(`#db-${v}-panel`);
             if (btn) btn.classList.toggle('active', v === view);
             if (panel) {
@@ -146,19 +257,6 @@ const DbPage = {
         if (view === 'structure' && this._table) this._loadStructure(el);
     },
 
-    async _loadDatabases(el) {
-        try {
-            const res = await API.get('/api/db/databases');
-            this._databases = res.databases;
-            const sel = el.querySelector('#db-sel');
-            sel.innerHTML = '<option value="">— база данных —</option>' +
-                res.databases.map(d => `<option value="${this._esc(d)}">${this._esc(d)}</option>`).join('');
-            this._setStatus(`${res.databases.length} баз данных`, 'ok');
-        } catch (e) {
-            this._setStatus('Ошибка подключения: ' + e.message, 'err');
-        }
-    },
-
     async _loadTables(el) {
         const list = el.querySelector('#db-table-list');
         list.innerHTML = '<div style="padding:12px 14px;color:var(--text-3);font-size:12px">Загрузка...</div>';
@@ -166,7 +264,7 @@ const DbPage = {
             const res = await API.get(`/api/db/tables?database=${encodeURIComponent(this._db)}`);
             this._tables = res.tables;
             this._renderTableList(el);
-            this._setStatus(`${res.tables.length} таблиц в ${this._db}`, 'ok');
+            this._setStatus(`${res.tables.length} таблиц`, 'ok');
         } catch (e) {
             list.innerHTML = `<div style="padding:12px;color:var(--red);font-size:12px">${e.message}</div>`;
             this._setStatus('Ошибка: ' + e.message, 'err');
@@ -186,7 +284,8 @@ const DbPage = {
         <div class="db-table-item ${t === this._table ? 'active' : ''}" data-table="${this._esc(t)}">
             <span style="color:var(--text-3);font-size:11px">⊞</span>
             <span style="flex:1;overflow:hidden;text-overflow:ellipsis">${this._esc(t)}</span>
-            <span class="db-fav-btn" data-table="${this._esc(t)}" title="Избранное" style="opacity:${favs.includes(t)?'1':'0'};color:var(--yellow);font-size:12px;flex-shrink:0;cursor:pointer;padding:0 2px">★</span>
+            <span class="db-fav-btn" data-table="${this._esc(t)}" title="Избранное"
+                style="opacity:${favs.includes(t)?'1':'0'};color:var(--yellow);font-size:12px;flex-shrink:0;cursor:pointer;padding:0 2px">★</span>
         </div>`;
 
         let html = '';
@@ -209,7 +308,6 @@ const DbPage = {
                 el.querySelector('#db-info').textContent = `${this._db} › ${this._table}`;
                 this._switchView(el, 'browse');
             });
-            // Показываем звёздочку при hover через JS (CSS hover не меняет opacity дочернего)
             item.addEventListener('mouseenter', () => {
                 const star = item.querySelector('.db-fav-btn');
                 if (star && !this._isFav(item.dataset.table)) star.style.opacity = '0.4';
@@ -240,18 +338,25 @@ const DbPage = {
         try {
             const res = await API.post('/api/db/query', { sql, database: this._db });
             const ms = Date.now() - t0;
+            this._pushHist(sql);
             if (res.kind === 'select') {
-                result.innerHTML = this._renderTable(res.columns, res.rows);
+                // Сохраняем результат для inline-редактирования
+                this._queryResult = { columns: res.columns, rows: res.rows, sql };
+                result.innerHTML = this._renderTable(res.columns, res.rows, true, null);
+                this._bindCellEditQuery(result, el, res.columns, res.rows);
                 this._setStatus(`${res.rows.length} строк · ${ms}мс`, 'ok');
+                this._pushLog({ ts: Date.now(), sql, ok: true, ms, rows: res.rows.length });
             } else {
+                this._queryResult = null;
                 result.innerHTML = `<div style="padding:20px;color:var(--green);font-size:13px">OK · затронуто ${res.affected} строк · ${ms}мс</div>`;
                 this._setStatus(`OK · ${res.affected} строк · ${ms}мс`, 'ok');
-                // Обновляем browse если открыта та же БД
+                this._pushLog({ ts: Date.now(), sql, ok: true, ms, rows: null });
                 if (this._view === 'browse' && this._table) this._browse(el);
             }
         } catch (e) {
             result.innerHTML = `<div style="padding:20px;color:var(--red);font-size:13px;font-family:var(--mono);white-space:pre-wrap">${this._esc(e.message)}</div>`;
             this._setStatus('Ошибка запроса', 'err');
+            this._pushLog({ ts: Date.now(), sql, ok: false, ms: Date.now() - t0, err: e.message });
         } finally {
             btn.disabled = false;
         }
@@ -261,15 +366,14 @@ const DbPage = {
         if (!this._db || !this._table) return;
         const result = el.querySelector('#db-browse-result');
         result.innerHTML = '<div style="padding:20px;color:var(--text-2);font-size:13px;text-align:center">Загрузка...</div>';
+        const t0 = Date.now();
         try {
             const res = await API.post('/api/db/browse', {
-                database: this._db,
-                table: this._table,
-                limit: this._limit,
-                offset: this._offset,
-                order_by: this._orderBy,
-                order_dir: this._orderDir,
+                database: this._db, table: this._table,
+                limit: this._limit, offset: this._offset,
+                order_by: this._orderBy, order_dir: this._orderDir,
             });
+            const ms = Date.now() - t0;
             this._total = res.total;
             this._cols  = res.columns;
             this._pkCol = res.columns[0] || '';
@@ -279,10 +383,12 @@ const DbPage = {
             el.querySelector('#db-browse-info').textContent = `${this._db} › ${this._table}`;
             el.querySelector('#db-prev').disabled = this._offset === 0;
             el.querySelector('#db-next').disabled = to >= res.total;
-            result.innerHTML = this._renderTable(res.columns, res.rows, true);
-            this._setStatus(`${res.total} строк всего`, 'ok');
+            result.innerHTML = this._renderTable(res.columns, res.rows, true, this._orderBy);
+            this._setStatus(`${res.total} строк · ${ms}мс`, 'ok');
             this._bindCellEdit(result, el);
             this._bindSortHeaders(result, el);
+            const sql = `SELECT * FROM \`${this._table}\` LIMIT ${this._limit} OFFSET ${this._offset}`;
+            this._pushLog({ ts: Date.now(), sql, ok: true, ms, rows: res.rows.length });
         } catch (e) {
             result.innerHTML = `<div style="padding:20px;color:var(--red);font-size:13px">${this._esc(e.message)}</div>`;
             this._setStatus('Ошибка загрузки', 'err');
@@ -294,10 +400,7 @@ const DbPage = {
         const result = el.querySelector('#db-structure-result');
         result.innerHTML = '<div style="padding:20px;color:var(--text-2);font-size:13px;text-align:center">Загрузка...</div>';
         try {
-            const res = await API.post('/api/db/structure', {
-                database: this._db,
-                table: this._table,
-            });
+            const res = await API.post('/api/db/structure', { database: this._db, table: this._table });
             result.innerHTML = `
             <div style="padding:12px 16px;font-size:12px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:.06em">Столбцы</div>
             ${this._renderTable(res.columns_headers, res.columns)}
@@ -309,23 +412,23 @@ const DbPage = {
         }
     },
 
-    _renderTable(columns, rows, editable = false) {
+    _renderTable(columns, rows, editable = false, orderBy = null) {
         if (!columns.length) return '<div style="padding:20px;color:var(--text-3);font-size:13px;text-align:center">Нет данных</div>';
-        const thClass = editable ? 'style="cursor:pointer;user-select:none" data-sort' : '';
         const headerHtml = columns.map(c => {
-            const arrow = editable && c === this._orderBy ? (this._orderDir === 'ASC' ? ' ↑' : ' ↓') : '';
-            return `<th ${editable ? `data-col="${this._esc(c)}"` : ''}>${this._esc(String(c))}${arrow}</th>`;
+            const arrow = editable && orderBy != null && c === orderBy
+                ? (this._orderDir === 'ASC' ? ' ↑' : ' ↓') : '';
+            return `<th ${editable ? `data-col="${this._esc(c)}" style="cursor:pointer;user-select:none"` : ''}>${this._esc(String(c))}${arrow}</th>`;
         }).join('');
         const bodyHtml = rows.map((row, ri) => {
             const cells = (Array.isArray(row) ? row : Object.values(row)).map((val, ci) => {
                 const isNull = val === null || val === undefined;
                 const isNum  = !isNull && typeof val === 'number';
                 const display = isNull ? 'NULL' : String(val);
-                const cls    = isNull ? 'db-null' : isNum ? 'db-num' : 'db-str';
-                const editAttrs = editable
-                    ? `data-ri="${ri}" data-ci="${ci}" data-col="${this._esc(columns[ci])}" data-orig="${this._esc(display)}" class="${cls}" style="cursor:pointer" title="Двойной клик для редактирования"`
+                const cls = isNull ? 'db-null' : isNum ? 'db-num' : 'db-str';
+                const attrs = editable
+                    ? `data-ri="${ri}" data-ci="${ci}" data-col="${this._esc(columns[ci])}" data-orig="${this._esc(display)}" class="${cls}" style="cursor:pointer" title="Двойной клик — редактировать"`
                     : `class="${cls}"`;
-                return `<td ${editAttrs}>${this._esc(display)}</td>`;
+                return `<td ${attrs}>${this._esc(display)}</td>`;
             }).join('');
             return `<tr>${cells}</tr>`;
         }).join('');
@@ -336,71 +439,99 @@ const DbPage = {
         result.querySelectorAll('th[data-col]').forEach(th => {
             th.addEventListener('click', () => {
                 const col = th.dataset.col;
-                if (this._orderBy === col) {
-                    this._orderDir = this._orderDir === 'ASC' ? 'DESC' : 'ASC';
-                } else {
-                    this._orderBy  = col;
-                    this._orderDir = 'ASC';
-                }
-                this._offset = 0;
+                this._orderBy  = this._orderBy === col && this._orderDir === 'ASC' ? col : col;
+                this._orderDir = this._orderBy === col && this._orderDir === 'ASC' ? 'DESC' : 'ASC';
+                this._orderBy  = col;
+                this._offset   = 0;
                 this._browse(el);
             });
         });
     },
 
+    // Редактирование ячеек в режиме browse (знаем таблицу + pk)
     _bindCellEdit(result, el) {
         result.querySelectorAll('td[data-col]').forEach(td => {
             td.addEventListener('dblclick', e => {
                 e.stopPropagation();
-                const col  = td.dataset.col;
-                const orig = td.dataset.orig;
-                const ri   = parseInt(td.dataset.ri);
-
-                // Находим pk value из первого столбца той же строки
-                const row    = td.parentElement;
-                const pkCell = row.querySelector('td');
-                const pkVal  = pkCell?.dataset.orig ?? '';
-
-                const rect = td.getBoundingClientRect();
-                const input = document.createElement('input');
-                input.className = 'db-cell-edit';
-                input.value = orig === 'NULL' ? '' : orig;
-                input.style.left   = rect.left + 'px';
-                input.style.top    = rect.top  + 'px';
-                input.style.width  = Math.max(rect.width, 160) + 'px';
-                document.body.appendChild(input);
-                input.focus();
-                input.select();
-
-                const commit = async () => {
-                    input.remove();
-                    const newVal = input.value;
-                    if (newVal === orig || (orig === 'NULL' && newVal === '')) return;
-                    try {
-                        await API.post('/api/db/cell', {
-                            database: this._db,
-                            table:    this._table,
-                            pk_col:   this._pkCol,
-                            pk_val:   pkVal,
-                            col,
-                            value:    newVal === '' ? null : newVal,
-                        });
-                        td.textContent = newVal === '' ? 'NULL' : newVal;
-                        td.dataset.orig = newVal === '' ? 'NULL' : newVal;
-                        td.className = newVal === '' ? 'db-null' : 'db-str';
-                        this._setStatus(`Обновлено ${col} = ${newVal}`, 'ok');
-                    } catch (err) {
-                        this._setStatus('Ошибка: ' + err.message, 'err');
-                        app.toast('Ошибка обновления: ' + err.message, 'error');
-                    }
-                };
-
-                input.addEventListener('blur', commit);
-                input.addEventListener('keydown', e => {
-                    if (e.key === 'Enter') { e.preventDefault(); commit(); }
-                    if (e.key === 'Escape') { input.remove(); }
+                const pkCell = td.parentElement.querySelector('td');
+                this._openCellEditor(td, async (newVal) => {
+                    await API.post('/api/db/cell', {
+                        database: this._db, table: this._table,
+                        pk_col: this._pkCol, pk_val: pkCell?.dataset.orig ?? '',
+                        col: td.dataset.col,
+                        value: newVal === '' ? null : newVal,
+                    });
+                    this._pushLog({ ts: Date.now(), sql: `UPDATE \`${this._table}\` SET \`${td.dataset.col}\` = '${newVal}'`, ok: true, ms: 0 });
+                    this._setStatus(`Обновлено ${td.dataset.col}`, 'ok');
                 });
             });
+        });
+    },
+
+    // Редактирование ячеек в результате произвольного SELECT
+    // Пытаемся угадать таблицу из SQL, pk — первый столбец
+    _bindCellEditQuery(result, el, columns, rows) {
+        const sql = this._queryResult?.sql || '';
+        // Извлекаем имя таблицы из FROM
+        const tableMatch = sql.match(/\bFROM\s+`?(\w+)`?/i);
+        const table = tableMatch?.[1] || '';
+        const pkCol = columns[0] || '';
+
+        result.querySelectorAll('td[data-col]').forEach(td => {
+            td.addEventListener('dblclick', e => {
+                e.stopPropagation();
+                if (!table) { app.toast('Таблица не определена из запроса', 'error'); return; }
+                const pkCell = td.parentElement.querySelector('td');
+                this._openCellEditor(td, async (newVal) => {
+                    await API.post('/api/db/cell', {
+                        database: this._db, table,
+                        pk_col: pkCol, pk_val: pkCell?.dataset.orig ?? '',
+                        col: td.dataset.col,
+                        value: newVal === '' ? null : newVal,
+                    });
+                    this._pushLog({ ts: Date.now(), sql: `UPDATE \`${table}\` SET \`${td.dataset.col}\` = '${newVal}'`, ok: true, ms: 0 });
+                    this._setStatus(`Обновлено ${td.dataset.col}`, 'ok');
+                });
+            });
+        });
+    },
+
+    // Общий inline-редактор ячейки
+    _openCellEditor(td, onCommit) {
+        const orig = td.dataset.orig;
+        const rect = td.getBoundingClientRect();
+        const input = document.createElement('input');
+        input.className = 'db-cell-edit';
+        input.value = orig === 'NULL' ? '' : orig;
+        input.style.left  = rect.left + 'px';
+        input.style.top   = rect.top  + 'px';
+        input.style.width = Math.max(rect.width, 160) + 'px';
+        document.body.appendChild(input);
+        input.focus();
+        input.select();
+
+        let committed = false;
+        const commit = async () => {
+            if (committed) return;
+            committed = true;
+            input.remove();
+            const newVal = input.value;
+            if (newVal === orig || (orig === 'NULL' && newVal === '')) return;
+            try {
+                await onCommit(newVal);
+                td.textContent = newVal === '' ? 'NULL' : newVal;
+                td.dataset.orig = newVal === '' ? 'NULL' : newVal;
+                td.className = newVal === '' ? 'db-null' : 'db-str';
+            } catch (err) {
+                this._setStatus('Ошибка: ' + err.message, 'err');
+                app.toast('Ошибка обновления: ' + err.message, 'error');
+            }
+        };
+
+        input.addEventListener('blur', commit);
+        input.addEventListener('keydown', e => {
+            if (e.key === 'Enter')  { e.preventDefault(); commit(); }
+            if (e.key === 'Escape') { committed = true; input.remove(); }
         });
     },
 
