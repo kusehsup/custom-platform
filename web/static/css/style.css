@@ -236,6 +236,14 @@ input:focus {
     border-color: var(--accent);
 }
 
+.totp-input {
+    letter-spacing: 0.35em;
+    font-size: 22px !important;
+    text-align: center;
+    font-family: var(--mono) !important;
+    padding: 12px 14px !important;
+}
+
 input::placeholder { color: var(--text-3); }
 
 /* ─── Buttons ────────────────────────────────────────────────── */

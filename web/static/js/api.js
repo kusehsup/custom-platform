@@ -1,5 +1,6 @@
 const API = {
     _token: localStorage.getItem('token'),
+    _loggingOut: false,
 
     _headers() {
         return {
@@ -29,9 +30,12 @@ const API = {
         if (res.status === 401) {
             // TOTP_REQUIRED — не сбрасываем сессию, пробрасываем дальше
             if (data.detail === 'TOTP_REQUIRED') throw new Error('TOTP_REQUIRED');
-            this.clearToken();
-            app.toast('Сессия истекла, войдите снова', 'error');
-            setTimeout(() => app._showAuth(), 1500);
+            if (!this._loggingOut) {
+                this._loggingOut = true;
+                this.clearToken();
+                app.toast('Сессия истекла, войдите снова', 'error');
+                setTimeout(() => { app._showAuth(); this._loggingOut = false; }, 1500);
+            }
             throw new Error('Сессия истекла');
         }
         if (!res.ok) throw new Error(data.detail || 'Ошибка запроса');

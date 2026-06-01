@@ -10,9 +10,9 @@ app.register('login', {
                 <input type="text" id="inp-login" placeholder="Логин" autocomplete="username" />
                 <input type="password" id="inp-pass" placeholder="Пароль" autocomplete="current-password" />
                 <div id="totp-wrap" style="display:none">
-                    <input type="text" id="inp-totp" placeholder="Код из Google Authenticator"
+                    <input type="text" id="inp-totp" placeholder="000000"
                         autocomplete="one-time-code" inputmode="numeric" maxlength="6"
-                        style="letter-spacing:0.25em;font-size:20px;text-align:center;font-family:var(--mono)" />
+                        class="totp-input" />
                 </div>
                 <div class="auth-error" id="auth-error"></div>
                 <button class="btn btn-primary btn-full" id="btn-login">Войти</button>
