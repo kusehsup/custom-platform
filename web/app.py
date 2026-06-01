@@ -17,10 +17,12 @@ from pathlib import Path
 
 from .api.routes import router
 from .api.db_routes import router as db_router
+from .api.totp_routes import router as totp_router
 
 app = FastAPI(title='CustomPlatform')
 app.include_router(router)
 app.include_router(db_router)
+app.include_router(totp_router)
 
 
 @app.exception_handler(ConnectionError)

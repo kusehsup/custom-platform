@@ -1,10 +1,12 @@
 import asyncio
-from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, Request
 from pydantic import BaseModel
 
 from hassle_platform import PlatformClient
 from .auth import create_token, get_current_user, decode_token
 from .sessions import get_session, set_session, remove_session
+from .totp_routes import check_rate_limit, reset_rate_limit
+from . import totp_store
 
 router = APIRouter()
 
@@ -12,11 +14,6 @@ router = APIRouter()
 # ------------------------------------------------------------------ #
 #  Схемы                                                               #
 # ------------------------------------------------------------------ #
-
-class LoginRequest(BaseModel):
-    login: str
-    password: str
-
 
 class SearchRequest(BaseModel):
     text: str
@@ -66,8 +63,26 @@ class NotifyQueryRequest(BaseModel):
 #  Авторизация                                                         #
 # ------------------------------------------------------------------ #
 
+class LoginRequest(BaseModel):
+    login: str
+    password: str
+    totp_code: str = ''
+
+
 @router.post('/api/login')
-async def login(body: LoginRequest):
+async def login(body: LoginRequest, request: Request):
+    ip = request.client.host
+    check_rate_limit(ip)
+
+    # Проверяем TOTP если включён
+    if totp_store.is_enabled():
+        if not body.totp_code:
+            raise HTTPException(status_code=401, detail='TOTP_REQUIRED')
+        import pyotp
+        secret = totp_store.get_secret()
+        if not pyotp.TOTP(secret).verify(body.totp_code, valid_window=1):
+            raise HTTPException(status_code=401, detail='Неверный код аутентификатора')
+
     client = PlatformClient()
     try:
         connected = await client.connect()
@@ -82,6 +97,7 @@ async def login(body: LoginRequest):
         await client.disconnect()
         raise HTTPException(status_code=401, detail=error or 'Неверный логин или пароль')
 
+    reset_rate_limit(ip)
     set_session(body.login, client)
     token = create_token(body.login)
     return {'token': token}
