@@ -572,7 +572,7 @@ app.register('files', {
         const lang = this._getLang(file?.fullPath || '');
 
         modal.innerHTML = `
-        <div style="display:flex;flex-direction:column;width:100%;max-width:1200px;margin:auto;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;max-height:92vh">
+        <div style="display:flex;flex-direction:column;width:100%;max-width:1400px;height:88vh;margin:auto;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden">
             <div style="display:flex;align-items:center;gap:12px;padding:13px 20px;border-bottom:1px solid var(--border);flex-shrink:0">
                 <span style="font-size:13px;font-weight:600;color:var(--text)">История: <span style="font-family:var(--mono);color:var(--text-2)">${this._esc(file?.fullPath || '')}${part ? ` [${part.line}]` : ''}</span></span>
                 <span style="flex:1"></span>
