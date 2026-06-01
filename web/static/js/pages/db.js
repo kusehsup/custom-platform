@@ -153,30 +153,9 @@ const DbPage = {
         this._el = el;
         this._loadTables(el);
 
-        // Monaco SQL редактор
-        const theme = localStorage.getItem('theme') === 'light' ? 'vs' : 'custom-dark';
-        this._sqlEditor = monaco.editor.create(el.querySelector('#db-sql-editor'), {
-            value: '',
-            language: 'sql',
-            theme,
-            minimap: { enabled: false },
-            lineNumbers: 'off',
-            scrollBeyondLastLine: false,
-            wordWrap: 'on',
-            fontSize: 13,
-            fontFamily: 'var(--mono)',
-            padding: { top: 8, bottom: 8 },
-            suggestOnTriggerCharacters: true,
-            quickSuggestions: true,
-            scrollbar: { vertical: 'hidden', horizontal: 'hidden' },
-            overviewRulerLanes: 0,
-            renderLineHighlight: 'none',
-            contextmenu: false,
-        });
-        this._sqlEditor.addCommand(
-            monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter,
-            () => this._runQuery(el)
-        );
+        // Monaco SQL редактор — грузим лениво если ещё не загружен
+        this._sqlEditor = null;
+        this._initSqlEditor(el);
 
         el.querySelector('#db-reload').addEventListener('click', () => this._loadTables(el));
         el.querySelector('#db-log-btn').addEventListener('click', () => this.toggleLog());
@@ -201,6 +180,57 @@ const DbPage = {
         });
 
         this._switchView(el, 'query');
+    },
+
+    // ── Monaco SQL редактор ───────────────────────────────────────
+    _initSqlEditor(el) {
+        const container = el.querySelector('#db-sql-editor');
+        if (!container) return;
+        const create = () => {
+            if (this._sqlEditor) return;
+            const theme = localStorage.getItem('theme') === 'light' ? 'vs' : 'custom-dark';
+            this._sqlEditor = monaco.editor.create(container, {
+                value: '',
+                language: 'sql',
+                theme,
+                minimap: { enabled: false },
+                lineNumbers: 'off',
+                scrollBeyondLastLine: false,
+                wordWrap: 'on',
+                fontSize: 13,
+                padding: { top: 8, bottom: 8 },
+                suggestOnTriggerCharacters: true,
+                quickSuggestions: true,
+                scrollbar: { vertical: 'hidden', horizontal: 'hidden' },
+                overviewRulerLanes: 0,
+                renderLineHighlight: 'none',
+                contextmenu: false,
+            });
+            this._sqlEditor.addCommand(
+                monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter,
+                () => this._runQuery(el)
+            );
+        };
+
+        if (window.monaco) {
+            create();
+        } else {
+            // Грузим Monaco через тот же loader что и files.js
+            if (!document.querySelector('script[src*="monaco-editor"]')) {
+                const s = document.createElement('script');
+                s.src = 'https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs/loader.js';
+                s.onload = () => {
+                    require.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs' } });
+                    require(['vs/editor/editor.main'], () => create());
+                };
+                document.head.appendChild(s);
+            } else {
+                // Loader уже грузится — ждём
+                const wait = setInterval(() => {
+                    if (window.monaco) { clearInterval(wait); create(); }
+                }, 100);
+            }
+        }
     },
 
     // ── История запросов — модал ──────────────────────────────────
@@ -347,7 +377,7 @@ const DbPage = {
     },
 
     async _runQuery(el) {
-        const sql = this._sqlEditor?.getValue().trim() || '';
+        const sql = (this._sqlEditor?.getValue() ?? '').trim();
         if (!sql) return;
         const result = el.querySelector('#db-query-result');
         result.innerHTML = '<div style="padding:20px;color:var(--text-2);font-size:13px;text-align:center">Выполнение...</div>';

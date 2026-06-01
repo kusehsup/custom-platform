@@ -497,6 +497,9 @@ const app = {
         if (btn) btn.textContent = theme === 'light' ? '🌙' : '☀️';
         if (typeof monaco !== 'undefined') {
             monaco.editor.setTheme(theme === 'light' ? 'vs' : 'custom-dark');
+        } else {
+            // Monaco ещё не загружен — применим когда загрузится
+            window._pendingMonacoTheme = theme === 'light' ? 'vs' : 'custom-dark';
         }
     },
 
