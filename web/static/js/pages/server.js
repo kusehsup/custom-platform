@@ -15,20 +15,45 @@ app.register('server', {
     _renderQueued: false,
 
     // ── Консоль ──────────────────────────────────────────────────────
+    // Новый формат localStorage: {v:2, lines:[..]}. Старый формат
+    // ({array of chunks}) определяем по наличию символов '\n' в элементах
+    // и однократно мигрируем.
     _loadLines() {
+        // Если в этой сессии мы уже инициализированы — не перетираем стрим из памяти.
+        if (this._loaded) return;
         try {
             const raw = JSON.parse(localStorage.getItem(CONSOLE_KEY) || '[]');
-            // Миграция со старого формата (чанки) — рассплитим один раз
-            const joined = Array.isArray(raw) ? raw.join('') : '';
-            const parts = joined.split('\n');
-            this._tail = parts.pop() || '';
-            this._lines = parts;
+            if (raw && raw.v === 2 && Array.isArray(raw.lines)) {
+                // Любые элементы со встроенными '\n' дочистим
+                const cleaned = [];
+                for (const l of raw.lines) {
+                    if (typeof l !== 'string') continue;
+                    if (l.includes('\n')) for (const p of l.split('\n')) cleaned.push(p);
+                    else cleaned.push(l);
+                }
+                this._lines = cleaned;
+            } else if (Array.isArray(raw)) {
+                // Старый формат: массив чанков с возможными '\n' внутри
+                const joined = raw.join('');
+                const parts = joined.split('\n');
+                // Последний "хвост" приклеиваем как обычную строку (старая сессия закончена)
+                this._lines = parts.filter(l => l !== '');
+            } else {
+                this._lines = [];
+            }
+            this._tail = '';
             this._trim();
-        } catch { this._lines = []; this._tail = ''; }
+            this._saveLines();   // сразу пишем новый формат, чтобы миграция не повторялась
+        } catch {
+            this._lines = []; this._tail = '';
+        }
+        this._loaded = true;
     },
     _saveLines() {
         this._trim();
-        try { localStorage.setItem(CONSOLE_KEY, JSON.stringify(this._lines)); } catch {}
+        try {
+            localStorage.setItem(CONSOLE_KEY, JSON.stringify({ v: 2, lines: this._lines }));
+        } catch {}
     },
     _trim() {
         const overflow = this._lines.length - CONSOLE_LIMIT;
@@ -49,9 +74,18 @@ app.register('server', {
         const el = this._el;
         if (!el) return;
         const filter = this._filter.toLowerCase();
-        // Базовый набор — уже разрезанные строки; хвост подсовываем как ещё одну
-        let lines = this._lines;
-        if (this._tail) lines = [...lines, this._tail];
+        // Defensiveness: если каким-то образом в _lines есть элемент с '\n',
+        // разрежем ещё раз. Это страхует от старых данных в localStorage.
+        let lines = [];
+        for (const item of this._lines) {
+            if (typeof item !== 'string') continue;
+            if (item.includes('\n')) {
+                for (const p of item.split('\n')) lines.push(p);
+            } else {
+                lines.push(item);
+            }
+        }
+        if (this._tail) lines.push(this._tail);
         lines = lines.filter(l => l && l.trim());
         const visible = filter ? lines.filter(l => l.toLowerCase().includes(filter)) : lines;
         el.innerHTML = visible.map(l => this._colorize(l)).join('\n');
@@ -147,7 +181,7 @@ app.register('server', {
                 ${saved ? `<button class="btn btn-ghost btn-sm" id="btn-show-last">Последний результат</button>` : ''}
             </div>
             <div id="compile-status" style="color:var(--text-2);font-size:13px;margin-bottom:10px;min-height:16px">
-                ${app.state.compile ? '⏳ Компиляция выполняется...' : ''}
+                ${app.state.compile ? `<span class="compile-spinner"></span>Компиляция <span id="compile-page-timer">0.0с</span>` : ''}
             </div>
             <div id="compile-hist-wrap">${this._renderHistHtml(hist)}</div>
         </div>
@@ -174,7 +208,9 @@ app.register('server', {
 
         if (app.state.compile) {
             document.getElementById('btn-compile').disabled = true;
-            document.getElementById('compile-status').textContent = '⏳ Компиляция выполняется...';
+            const cs = document.getElementById('compile-status');
+            cs.innerHTML = `<span class="compile-spinner"></span>Компиляция <span id="compile-page-timer">0.0с</span>`;
+            this._startPageTimer();
         }
 
         if (this._pendingResult) {
@@ -213,8 +249,12 @@ app.register('server', {
             try {
                 await API.post('/api/compile');
                 app.state.compile = true;
+                if (!app._compileStartTs) app._compileStartTs = Date.now();
+                app._startCompileTimer?.();
                 document.getElementById('btn-compile').disabled = true;
-                document.getElementById('compile-status').textContent = '⏳ Компиляция запущена, ожидаем результат...';
+                const cs = document.getElementById('compile-status');
+                cs.innerHTML = `<span class="compile-spinner"></span>Компиляция <span id="compile-page-timer">0.0с</span>`;
+                this._startPageTimer();
                 app.toast('Компиляция запущена', 'info');
             } catch (e) {
                 document.getElementById('compile-status').textContent = 'Ошибка: ' + e.message;
@@ -319,6 +359,14 @@ app.register('server', {
                 this._serverStartTs = Date.now();
             if (app.state.server !== 'on') this._serverStartTs = null;
         }
+        // Если идёт компиляция — гарантируем работающий таймер
+        if (app.state.compile && document.getElementById('compile-status')) {
+            if (!document.getElementById('compile-page-timer')) {
+                const cs = document.getElementById('compile-status');
+                cs.innerHTML = `<span class="compile-spinner"></span>Компиляция <span id="compile-page-timer">0.0с</span>`;
+            }
+            this._startPageTimer();
+        }
     },
 
     // ── Компиляция ────────────────────────────────────────────────────
@@ -326,6 +374,7 @@ app.register('server', {
 
     onCompileResult(text) {
         app.state.compile = false;
+        this._stopPageTimer();
         this._saveLast(text);
         const now = Date.now();
         const onPage = !!document.getElementById('btn-compile');
@@ -334,7 +383,14 @@ app.register('server', {
             const btn = document.getElementById('btn-compile');
             if (btn) btn.disabled = false;
             const status = document.getElementById('compile-status');
-            if (status) status.textContent = '';
+            if (status) {
+                const dur = app._lastCompileDuration;
+                const durLabel = dur != null
+                    ? (dur < 60 ? `${dur.toFixed(1)}с` : `${Math.floor(dur/60)}м ${Math.floor(dur%60)}с`)
+                    : '';
+                const hasErr = /error/i.test(text);
+                status.innerHTML = `<span style="color:${hasErr ? 'var(--red)' : 'var(--green)'}">● ${hasErr ? 'Завершена с ошибками' : 'Завершена'}</span>${durLabel ? ` <span style="color:var(--text-3)">за ${durLabel}</span>` : ''}`;
+            }
             const tsEl = document.getElementById('compile-last-ts');
             if (tsEl) tsEl.textContent = this._fmtTs(now);
             const btnRow = btn?.closest('.btn-row');
@@ -471,6 +527,8 @@ app.register('server', {
     // ── Консоль ───────────────────────────────────────────────────────
     onLog(data) {
         if (typeof data !== 'string') return;
+        // Гарантируем что localStorage прочитан, даже если страница ещё не рендерилась
+        if (!this._loaded) this._loadLines();
         // Чанк может содержать несколько строк или быть половиной — режем
         // аккуратно. Хвост (без \n в конце) держим до следующего чанка.
         const combined = this._tail + data;
@@ -483,6 +541,26 @@ app.register('server', {
         }
         if (this._paused || !this._el) return;
         this._scheduleFlush();
+    },
+
+    _startPageTimer() {
+        if (this._pageTimerId) return;
+        const tick = () => {
+            const el = document.getElementById('compile-page-timer');
+            if (!el) { this._stopPageTimer(); return; }
+            if (!app.state.compile || !app._compileStartTs) { this._stopPageTimer(); return; }
+            const sec = (Date.now() - app._compileStartTs) / 1000;
+            el.textContent = sec < 10 ? sec.toFixed(1) + 'с' : Math.floor(sec) + 'с';
+        };
+        tick();
+        this._pageTimerId = setInterval(tick, 100);
+    },
+
+    _stopPageTimer() {
+        if (this._pageTimerId) {
+            clearInterval(this._pageTimerId);
+            this._pageTimerId = null;
+        }
     },
 
     _scheduleFlush() {

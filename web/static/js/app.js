@@ -84,6 +84,10 @@ const app = {
 
     _startCompileTimer() {
         if (this._compileTimerId) return;
+        // Если timestamp не известен (например, компиляция началась до рефреша
+        // страницы), стартуем с текущего момента — лучше показать "0.0с" чем
+        // ничего.
+        if (!this._compileStartTs) this._compileStartTs = Date.now();
         const tick = () => {
             if (!this.state.compile) { this._stopCompileTimer(); return; }
             const el = document.getElementById('tb-compile-timer');
@@ -309,9 +313,17 @@ const app = {
     _onWS(msg) {
         this._logWS(`← ${msg.type}`, 'info');
         if (msg.type === 'status') {
+            const compileStarted = !this.state.compile && msg.compile;
+            const compileEnded   = this.state.compile && !msg.compile;
             this.state.server  = msg.server;
             this.state.compile = msg.compile;
             this._logWS(`  server=${msg.server} compile=${msg.compile}`, 'info');
+            if (compileStarted) {
+                if (!this._compileStartTs) this._compileStartTs = Date.now();
+                this._startCompileTimer();
+            } else if (compileEnded) {
+                this._stopCompileTimer();
+            }
             this._pages['server']?.onState?.();
             this._pages['files']?.onFilesUpdate?.();
             this._updateTopbarActions();
