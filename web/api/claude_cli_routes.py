@@ -57,6 +57,11 @@ DEFAULT_MODEL = 'sonnet'
 ALLOWED_TOOLS = 'Read Glob Grep Edit Write MultiEdit'
 DISALLOWED_TOOLS = 'Bash WebFetch WebSearch TodoWrite NotebookEdit'
 
+# CLI выдаёт NDJSON: одна строка = одно событие. При чтении больших файлов
+# tool-result блоки могут весить мегабайты. Дефолтный лимит StreamReader
+# в asyncio = 64 KiB, поэтому увеличиваем до 16 MiB.
+SUBPROC_LIMIT = 16 * 1024 * 1024
+
 # База для workspace директорий
 _WS_BASE = Path(tempfile.gettempdir()) / 'cp-ai-ws'
 
@@ -563,6 +568,7 @@ async def claude_chat(body: ChatRequest, login: str = Depends(get_current_user))
                     cwd=str(ws),
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
+                    limit=SUBPROC_LIMIT,
                 )
             except Exception as e:
                 yield f'event: error\ndata: {json.dumps({"error": str(e)})}\n\n'
@@ -589,8 +595,30 @@ async def claude_chat(body: ChatRequest, login: str = Depends(get_current_user))
             assistant_text_parts: list = []
             assistant_tools: list = []
 
+            async def read_long_line():
+                """
+                Читает одну строку из stdout. Если строка больше SUBPROC_LIMIT,
+                добираем её кусками через readuntil обрабатывая LimitOverrunError.
+                """
+                chunks = []
+                while True:
+                    try:
+                        part = await proc.stdout.readuntil(b'\n')
+                        chunks.append(part)
+                        return b''.join(chunks)
+                    except asyncio.LimitOverrunError as e:
+                        chunks.append(await proc.stdout.readexactly(e.consumed))
+                    except asyncio.IncompleteReadError as e:
+                        chunks.append(e.partial)
+                        return b''.join(chunks) if chunks else None
+                    except Exception:
+                        return None
+
             try:
-                async for raw in proc.stdout:
+                while True:
+                    raw = await read_long_line()
+                    if raw is None or raw == b'':
+                        break
                     line = raw.decode('utf-8', errors='replace').strip()
                     if not line:
                         continue
