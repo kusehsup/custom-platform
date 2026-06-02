@@ -14,6 +14,7 @@ import asyncio
 import base64
 import logging
 from datetime import datetime, timezone
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -106,7 +107,7 @@ async def _ensure_branch(pat: str, repo: str, branch: str, base: str = 'main'):
     })
 
 
-async def _get_file_sha(pat: str, repo: str, path: str, branch: str) -> str | None:
+async def _get_file_sha(pat: str, repo: str, path: str, branch: str) -> Optional[str]:
     """Получить SHA существующего файла (нужен для update)."""
     try:
         data = await _gh('GET', f'/repos/{repo}/contents/{path}', pat,
