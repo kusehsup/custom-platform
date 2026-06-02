@@ -412,6 +412,7 @@ const app = {
                     </span>
                 </div>
                 <div class="topbar-right">
+                    <button class="topbar-btn" id="btn-ai" title="AI ассистент">${ico.ai} AI</button>
                     <button class="topbar-btn" id="btn-console" title="Консоль">${ico.console} Консоль</button>
                     <button class="topbar-btn" id="btn-debug" title="WS лог">${ico.ws} WS</button>
                     <button class="topbar-btn" id="btn-theme" title="Тема">${ico.theme}</button>
@@ -425,7 +426,6 @@ const app = {
                 <span class="sidebar-section">Код</span>
                 <a data-page="files">${ico.files}<span class="label">Файлы</span></a>
                 <span class="sidebar-section">Инструменты</span>
-                <a data-page="ai">${ico.ai}<span class="label">AI ассистент</span></a>
                 <a data-page="todo">${ico.todo}<span class="label">TODO</span><span id="todo-badge" class="sidebar-badge hidden"></span></a>
                 <a data-page="db">${ico.db}<span class="label">База данных</span></a>
                 <div class="sidebar-spacer"></div>
@@ -443,6 +443,7 @@ const app = {
 
         document.getElementById('btn-debug').addEventListener('click', () => this.toggleDebug());
         document.getElementById('btn-console').addEventListener('click', () => this.toggleConsole());
+        document.getElementById('btn-ai').addEventListener('click', () => AiWidget.toggle());
         document.getElementById('btn-theme').addEventListener('click', () => this.toggleTheme());
 
         // Кнопка сервера в топбаре
@@ -484,6 +485,7 @@ const app = {
         P.register({ id: 'compile',      title: 'Компилировать',       icon: '🔨', group: 'Сервер', hint: 'Ctrl+Shift+B', run: () => this._doCompile() });
         P.register({ id: 'view.console', title: 'Виджет: Консоль',     icon: '📋', group: 'Виджеты', run: () => this.toggleConsole() });
         P.register({ id: 'view.wslog',   title: 'Виджет: WS Log',      icon: '📡', group: 'Виджеты', run: () => this.toggleDebug() });
+        P.register({ id: 'view.ai',      title: 'Виджет: AI ассистент', icon: '✦', group: 'Виджеты', run: () => AiWidget.toggle() });
         P.register({ id: 'sidebar.toggle', title: 'Свернуть/Развернуть сайдбар', icon: '◧', group: 'Интерфейс', run: () => document.getElementById('sidebar-toggle')?.click() });
         P.register({ id: 'logout',       title: 'Выйти',               icon: '🚪', group: 'Прочее', run: () => document.getElementById('btn-logout')?.click() });
         // Команды редактора
