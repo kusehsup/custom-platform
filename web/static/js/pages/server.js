@@ -99,6 +99,19 @@ app.register('server', {
     },
 
     // ── Компиляция — хранилище ────────────────────────────────────────
+    _previewFor(text) {
+        // Берём первую информативную строку с error/warning, иначе первую
+        // непустую. Старая логика "последние 3 строки" давала один и тот же
+        // финальный warning для каждой компиляции.
+        const lines = (text || '').split('\n');
+        const firstError = lines.find(l => /error \d+|: error|fatal error/i.test(l));
+        if (firstError) return firstError.trim().slice(0, 200);
+        const firstWarn = lines.find(l => /warning \d+|: warning/i.test(l));
+        if (firstWarn) return firstWarn.trim().slice(0, 200);
+        const firstNonEmpty = lines.find(l => l.trim());
+        return (firstNonEmpty || '').trim().slice(0, 200);
+    },
+
     _saveLast(text) {
         const ts = Date.now();
         const errMatch  = text.match(/(\d+)\s+Error/i);
@@ -111,13 +124,35 @@ app.register('server', {
         try { localStorage.setItem(COMPILE_KEY, JSON.stringify({ text, ts, prevText: prev?.text || '' })); } catch {}
         let hist = [];
         try { hist = JSON.parse(localStorage.getItem(COMPILE_HIST_KEY) || '[]'); } catch {}
+        // Храним полный text в каждой записи истории — иначе при открытии
+        // модалки для старой компиляции мы видим только превью.
         hist.unshift({ ts, hasErrors, hasWarnings, errCount, warnCount,
-            preview: text.split('\n').slice(-3).join(' ').trim().slice(0, 120) });
+            preview: this._previewFor(text), text });
         if (hist.length > COMPILE_HIST_MAX) hist = hist.slice(0, COMPILE_HIST_MAX);
-        try { localStorage.setItem(COMPILE_HIST_KEY, JSON.stringify(hist)); } catch {}
+        try { localStorage.setItem(COMPILE_HIST_KEY, JSON.stringify(hist)); }
+        catch (e) {
+            // Если квота localStorage переполнена — дропаем старые до тех
+            // пор, пока не влезет (минимум одну запись пытаемся сохранить).
+            while (hist.length > 1) {
+                hist.pop();
+                try { localStorage.setItem(COMPILE_HIST_KEY, JSON.stringify(hist)); break; }
+                catch {}
+            }
+        }
     },
     _loadLast() { try { return JSON.parse(localStorage.getItem(COMPILE_KEY) || 'null'); } catch { return null; } },
-    _loadHist() { try { return JSON.parse(localStorage.getItem(COMPILE_HIST_KEY) || '[]'); } catch { return []; } },
+    _loadHist() {
+        try {
+            const hist = JSON.parse(localStorage.getItem(COMPILE_HIST_KEY) || '[]');
+            // Миграция: если в старых записях нет поля text, добавим из последнего
+            // сохранённого результата (только для idx=0).
+            const last = this._loadLast();
+            if (Array.isArray(hist) && hist.length && !hist[0].text && last) {
+                hist[0].text = last.text;
+            }
+            return hist;
+        } catch { return []; }
+    },
 
     _fmtTs(ts) {
         if (!ts) return '—';
@@ -434,8 +469,15 @@ app.register('server', {
                 const hist = this._loadHist();
                 const h = hist[idx];
                 if (!h) return;
-                if (idx === 0) { const s = this._loadLast(); if (s) { this._openModal(s.text, this._fmtTs(h.ts), s.prevText||''); return; } }
-                this._openModal(h.preview, this._fmtTs(h.ts));
+                // Полный текст хранится в самой записи (после фикса). Fallback на
+                // _loadLast.text если запись пришла из старого формата без text.
+                let text = h.text;
+                if (!text && idx === 0) text = this._loadLast()?.text;
+                if (!text) text = h.preview;   // совсем крайний случай
+                // Для diff передаём предыдущую (более старую) компиляцию.
+                const prev = hist[idx + 1];
+                const prevText = prev?.text || '';
+                this._openModal(text, this._fmtTs(h.ts), prevText);
             });
         });
     },
