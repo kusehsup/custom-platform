@@ -175,6 +175,16 @@ class ConnectRequest(BaseModel):
 @router.post('/api/github/connect')
 async def github_connect(body: ConnectRequest, login: str = Depends(get_current_user)):
     """Проверить PAT + repo и сохранить конфигурацию."""
+    import traceback as _tb
+    try:
+        return await _github_connect_impl(body)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f'[DEBUG] {type(e).__name__}: {e}\n{_tb.format_exc()}')
+
+
+async def _github_connect_impl(body: ConnectRequest):
     pat = body.pat.strip()
     repo = body.repo.strip().strip('/')
 
