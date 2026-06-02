@@ -32,7 +32,7 @@ import uuid
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -657,7 +657,8 @@ async def claude_status(login: str = Depends(get_current_user)):
 
 
 @router.post('/api/claude/chat')
-async def claude_chat(body: ChatRequest, login: str = Depends(get_current_user)):
+async def claude_chat(body: ChatRequest, request: Request,
+                       login: str = Depends(get_current_user)):
     _require_allowed(login)
 
     bin_path = _claude_bin()
@@ -733,8 +734,20 @@ async def claude_chat(body: ChatRequest, login: str = Depends(get_current_user))
     # Короткоживущий токен для MCP-сервера (он постучится к нам по HTTP).
     mcp_token = create_token(login)
 
-    # Узнаём порт FastAPI из env (Uvicorn по умолчанию 8000)
-    base_url = os.environ.get('CP_BASE_URL') or 'http://127.0.0.1:8000'
+    # Узнаём адрес FastAPI по которому пришёл текущий HTTP-запрос —
+    # MCP-сервер (subprocess) постучится туда же.
+    # request.url.netloc вернёт хост:порт того, к чему обратился клиент;
+    # для запросов через nginx это будет внешний хост, поэтому
+    # используем непосредственно socket info из request.scope.
+    server = request.scope.get('server')  # tuple (host, port)
+    if server and isinstance(server, (tuple, list)) and len(server) == 2:
+        sv_host, sv_port = server
+        if sv_host in ('0.0.0.0', '::'):
+            sv_host = '127.0.0.1'
+        base_url = f'http://{sv_host}:{sv_port}'
+    else:
+        base_url = os.environ.get('CP_BASE_URL') or 'http://127.0.0.1:8002'
+    logger.info(f'AI MCP base_url={base_url}')
 
     env = {
         **os.environ,
