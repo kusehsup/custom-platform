@@ -214,19 +214,29 @@ const AiPage = {
         }
         wrap.innerHTML = msgs.map((m, i) => this._renderBubble(m, i)).join('');
         wrap.scrollTop = wrap.scrollHeight;
+        AiChat.bindEditActions(wrap);
     },
 
     _renderBubble(m, idx) {
         const isUser = m.role === 'user';
         const cls = isUser ? 'ai-msg ai-msg-user' : 'ai-msg ai-msg-claude';
         const label = isUser ? 'Ты' : 'Claude';
-        const body = isUser
-            ? AiChat.esc(m.content).replace(/\n/g, '<br>')
-            : (AiChat.renderMarkdown(m.content) || '<span class="ai-typing">…</span>');
+        if (isUser) {
+            return `
+            <div data-idx="${idx}" class="${cls}">
+                <div class="ai-msg-label">${label}</div>
+                <div class="ai-msg-body">${AiChat.esc(m.content).replace(/\n/g, '<br>')}</div>
+            </div>`;
+        }
+        const tools = AiChat.renderTools(m.tools);
+        const text = AiChat.renderMarkdown(m.content) || (m.tools?.length ? '' : '<span class="ai-typing">…</span>');
+        const edits = AiChat.renderEdits(m, idx);
         return `
         <div data-idx="${idx}" class="${cls}">
             <div class="ai-msg-label">${label}</div>
-            <div class="ai-msg-body">${body}</div>
+            ${tools}
+            ${text ? `<div class="ai-msg-body">${text}</div>` : ''}
+            ${edits}
         </div>`;
     },
 

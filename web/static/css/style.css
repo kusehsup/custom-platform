@@ -1408,6 +1408,40 @@ mark.palette-hl { background: rgba(234,179,8,0.15); color: var(--yellow); border
 .ai-code { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 9px 11px; overflow-x: auto; font-family: var(--mono); font-size: 12px; line-height: 1.55; margin: 6px 0; }
 .ai-inline-code { background: var(--bg); border: 1px solid var(--border); border-radius: 3px; padding: 1px 5px; font-family: var(--mono); font-size: 11px; }
 
+/* Tool-use timeline (что Claude делал по дороге) */
+.ai-tools { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0 6px; max-width: 92%; }
+.ai-tool { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); font-size: 10.5px; color: var(--text-2); font-family: var(--mono); }
+.ai-tool-icon { font-size: 10px; opacity: .85; }
+.ai-tool-path { background: transparent; border: none; padding: 0; font-size: 10.5px; color: var(--text); }
+
+/* Edits — карточка с кнопками */
+.ai-edits { margin-top: 8px; background: var(--surface); border: 1px solid var(--border-2); border-radius: var(--radius-md); overflow: hidden; max-width: 92%; }
+.ai-page .ai-edits { max-width: min(800px, 92%); }
+.ai-edits-header { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: var(--surface2); border-bottom: 1px solid var(--border); font-size: 11px; font-weight: 600; color: var(--text); text-transform: uppercase; letter-spacing: .04em; }
+.ai-edits-list { display: flex; flex-direction: column; }
+.ai-edit { display: flex; justify-content: space-between; align-items: center; padding: 7px 12px; gap: 10px; border-top: 1px solid var(--border); }
+.ai-edit:first-child { border-top: none; }
+.ai-edit-done { opacity: .6; }
+.ai-edit-info { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; }
+.ai-edit-icon { font-size: 12px; color: var(--text-2); width: 16px; text-align: center; }
+.ai-edit-path { font-family: var(--mono); font-size: 12px; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 3px; padding: 1px 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.ai-edit-stats { display: inline-flex; gap: 6px; font-family: var(--mono); font-size: 11px; flex-shrink: 0; }
+.ai-edit-plus  { color: var(--green); }
+.ai-edit-minus { color: var(--red); }
+.ai-edit-actions { display: flex; gap: 4px; flex-shrink: 0; }
+.ai-edit-badge { display: inline-block; padding: 3px 10px; border-radius: 99px; font-size: 10px; text-transform: uppercase; letter-spacing: .04em; font-weight: 600; }
+.ai-edit-badge-ok    { background: var(--green-dim); color: var(--green); border: 1px solid rgba(34,197,94,0.25); }
+.ai-edit-badge-err   { background: var(--red-dim); color: var(--red); border: 1px solid rgba(239,68,68,0.25); cursor: help; }
+.ai-edit-badge-muted { background: var(--surface2); color: var(--text-3); border: 1px solid var(--border); }
+
+/* Diff modal */
+.ai-diff-window { width: 100%; height: 100%; max-width: 1600px; max-height: calc(100vh - 40px); background: var(--surface); border: 1px solid var(--border-2); border-radius: var(--radius-lg); display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 16px 48px rgba(0,0,0,0.7); }
+.ai-diff-header { display: flex; gap: 10px; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.ai-diff-title { font-size: 12px; font-weight: 600; color: var(--text); text-transform: uppercase; letter-spacing: .04em; }
+.ai-diff-path { font-family: var(--mono); font-size: 12px; color: var(--text-2); background: var(--bg); border: 1px solid var(--border); border-radius: 3px; padding: 2px 6px; flex: 1; }
+.ai-diff-close { background: none; border: none; color: var(--text-2); cursor: pointer; font-size: 16px; padding: 4px 8px; }
+.ai-diff-body { flex: 1; position: relative; min-height: 0; }
+
 .ai-composer-wrap { position: relative; display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--border); flex-shrink: 0; background: var(--surface); }
 .ai-composer-wrap-page { padding: 12px 0 0; border-top: 1px solid var(--border); background: transparent; }
 .ai-composer { width: 100%; }

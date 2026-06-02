@@ -23,7 +23,15 @@ const AiChat = {
             const raw = localStorage.getItem('ai_chat');
             if (!raw) return;
             const data = JSON.parse(raw);
-            this.state.messages       = Array.isArray(data.messages) ? data.messages : [];
+            const msgs = Array.isArray(data.messages) ? data.messages : [];
+            // Миграция старых записей: гарантируем поля tools/edits
+            for (const m of msgs) {
+                if (m.role === 'assistant') {
+                    if (!Array.isArray(m.tools)) m.tools = [];
+                    if (!Array.isArray(m.edits)) m.edits = [];
+                }
+            }
+            this.state.messages       = msgs;
             this.state.model          = data.model || null;
             this.state.includeConsole = !!data.includeConsole;
             this.state.consoleLines   = data.consoleLines || 200;
@@ -164,7 +172,12 @@ const AiChat = {
         if (!text) return;
 
         s.messages.push({ role: 'user', content: text });
-        s.messages.push({ role: 'assistant', content: '' });
+        s.messages.push({
+            role: 'assistant',
+            content: '',
+            tools: [],   // [{tool, path}] — что Claude делал по дороге
+            edits: [],   // [{file_id, path, old_content, new_content, status: 'pending'|'applied'|'rejected'}]
+        });
         this._save();
         this._emitAll();
 
@@ -245,16 +258,88 @@ const AiChat = {
         try { data = JSON.parse(dataLines.join('\n')); } catch { return; }
 
         const s = this.state;
+        const m = s.messages[idx];
+        if (!m) return;
+
         if (event === 'error') {
-            s.messages[idx].content += `\n\n*[ошибка: ${data.error || 'unknown'}]*`;
+            m.content += `\n\n*[ошибка: ${data.error || 'unknown'}]*`;
             this._emitAll();
         } else if (event === 'delta' && typeof data.text === 'string') {
-            s.messages[idx].content += data.text;
+            m.content += data.text;
             this._emitDelta(idx);
+        } else if (event === 'tool') {
+            m.tools = m.tools || [];
+            m.tools.push({ tool: data.tool, path: data.path });
+            this._emitAll();
+        } else if (event === 'edits') {
+            m.edits = (data.edits || []).map(e => ({ ...e, status: 'pending' }));
+            this._save();
+            this._emitAll();
         } else if (event === 'done') {
             this._save();
             this._emitAll();
         }
+    },
+
+    async applyEdit(msgIdx, editIdx) {
+        const m = this.state.messages[msgIdx];
+        if (!m?.edits?.[editIdx]) return;
+        const e = m.edits[editIdx];
+        if (e.status !== 'pending') return;
+        try {
+            const res = await API.post('/api/claude/apply_edits', {
+                edits: [{ file_id: e.file_id, new_content: e.new_content }],
+            });
+            if (res.applied?.length) {
+                e.status = 'applied';
+                app.toast(`Применено: ${e.path}`, 'success');
+            } else if (res.errors?.length) {
+                e.status = 'failed';
+                e.error = res.errors[0].error;
+                app.toast(`Ошибка: ${res.errors[0].error}`, 'error');
+            }
+        } catch (err) {
+            e.status = 'failed';
+            e.error = err.message;
+            app.toast(err.message, 'error');
+        }
+        this._save();
+        this._emitAll();
+    },
+
+    async applyAllEdits(msgIdx) {
+        const m = this.state.messages[msgIdx];
+        if (!m?.edits?.length) return;
+        const pending = m.edits.filter(e => e.status === 'pending');
+        if (!pending.length) return;
+        try {
+            const res = await API.post('/api/claude/apply_edits', {
+                edits: pending.map(e => ({ file_id: e.file_id, new_content: e.new_content })),
+            });
+            const appliedSet = new Set((res.applied || []).map(a => a.file_id));
+            const errorMap = new Map();
+            for (const er of (res.errors || [])) errorMap.set(er.file_id, er.error);
+            for (const e of m.edits) {
+                if (e.status !== 'pending') continue;
+                if (appliedSet.has(e.file_id)) e.status = 'applied';
+                else if (errorMap.has(e.file_id)) { e.status = 'failed'; e.error = errorMap.get(e.file_id); }
+            }
+            if (res.applied?.length) app.toast(`Применено: ${res.applied.length}`, 'success');
+            if (res.errors?.length) app.toast(`Ошибок: ${res.errors.length}`, 'error');
+        } catch (err) {
+            app.toast(err.message, 'error');
+        }
+        this._save();
+        this._emitAll();
+    },
+
+    rejectEdit(msgIdx, editIdx) {
+        const m = this.state.messages[msgIdx];
+        if (!m?.edits?.[editIdx]) return;
+        if (m.edits[editIdx].status !== 'pending') return;
+        m.edits[editIdx].status = 'rejected';
+        this._save();
+        this._emitAll();
     },
 
     stop() {
@@ -287,6 +372,167 @@ const AiChat = {
             .replace(/`([^`\n]+)`/g, '<code class="ai-inline-code">$1</code>')
             .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
             .replace(/\n/g, '<br>');
+    },
+
+    /** HTML для блока tool-use'ов (что Claude делал по дороге). */
+    renderTools(tools) {
+        if (!tools?.length) return '';
+        // Дедуплицируем подряд идущие одинаковые
+        const seen = [];
+        for (const t of tools) {
+            const key = `${t.tool}:${t.path}`;
+            if (seen.length && seen[seen.length - 1].key === key) continue;
+            seen.push({ ...t, key });
+        }
+        const iconFor = name => ({
+            'Read':  '👁',
+            'Glob':  '🔍',
+            'Grep':  '🔎',
+            'Edit':  '✎',
+            'Write': '✎',
+            'MultiEdit': '✎',
+        }[name] || '·');
+        return `<div class="ai-tools">${seen.map(t =>
+            `<span class="ai-tool"><span class="ai-tool-icon">${iconFor(t.tool)}</span>${t.tool}${t.path ? ` <code class="ai-tool-path">${this.esc(t.path)}</code>` : ''}</span>`
+        ).join('')}</div>`;
+    },
+
+    /** HTML для блока правок с кнопками. msgIdx нужен для callbacks. */
+    renderEdits(msg, msgIdx) {
+        if (!msg?.edits?.length) return '';
+        const edits = msg.edits;
+        const pendingCount = edits.filter(e => e.status === 'pending').length;
+        const applyAll = pendingCount > 1
+            ? `<button class="btn btn-primary btn-sm" data-action="apply-all" data-msg="${msgIdx}">Применить все (${pendingCount})</button>`
+            : '';
+        return `
+        <div class="ai-edits">
+            <div class="ai-edits-header">
+                <span>✦ Предлагаемые правки: ${edits.length}</span>
+                ${applyAll}
+            </div>
+            <div class="ai-edits-list">
+                ${edits.map((e, i) => this._renderEditRow(e, i, msgIdx)).join('')}
+            </div>
+        </div>`;
+    },
+
+    _renderEditRow(e, i, msgIdx) {
+        const stats = this._diffStats(e.old_content || '', e.new_content || '');
+        let actions, badge;
+        if (e.status === 'applied') {
+            actions = `<span class="ai-edit-badge ai-edit-badge-ok">применено</span>`;
+            badge = '✓';
+        } else if (e.status === 'rejected') {
+            actions = `<span class="ai-edit-badge ai-edit-badge-muted">отброшено</span>`;
+            badge = '×';
+        } else if (e.status === 'failed') {
+            actions = `<span class="ai-edit-badge ai-edit-badge-err" title="${this.esc(e.error || '')}">ошибка</span>`;
+            badge = '!';
+        } else {
+            actions = `
+                <button class="btn btn-ghost btn-sm" data-action="diff" data-msg="${msgIdx}" data-idx="${i}">Diff</button>
+                <button class="btn btn-primary btn-sm" data-action="apply" data-msg="${msgIdx}" data-idx="${i}">Применить</button>
+                <button class="btn btn-ghost btn-sm" data-action="reject" data-msg="${msgIdx}" data-idx="${i}">Отбросить</button>`;
+            badge = '✎';
+        }
+        return `
+        <div class="ai-edit ${e.status !== 'pending' ? 'ai-edit-done' : ''}">
+            <div class="ai-edit-info">
+                <span class="ai-edit-icon">${badge}</span>
+                <code class="ai-edit-path">${this.esc(e.path)}</code>
+                <span class="ai-edit-stats">
+                    <span class="ai-edit-plus">+${stats.added}</span>
+                    <span class="ai-edit-minus">-${stats.removed}</span>
+                </span>
+            </div>
+            <div class="ai-edit-actions">${actions}</div>
+        </div>`;
+    },
+
+    _diffStats(oldText, newText) {
+        // Простой line-level подсчёт через LCS-приближение (для UI это норм)
+        const a = (oldText || '').split('\n');
+        const b = (newText || '').split('\n');
+        const aSet = new Set(a);
+        const bSet = new Set(b);
+        let added = 0, removed = 0;
+        for (const line of b) if (!aSet.has(line)) added++;
+        for (const line of a) if (!bSet.has(line)) removed++;
+        return { added, removed };
+    },
+
+    /** Открывает Monaco diff модал для конкретной правки. */
+    showDiff(msgIdx, editIdx) {
+        const m = this.state.messages[msgIdx];
+        if (!m?.edits?.[editIdx]) return;
+        const e = m.edits[editIdx];
+        AiDiffModal.show(e);
+    },
+
+    /** Привязывает обработчики к контейнеру с edit'ами. */
+    bindEditActions(root) {
+        root.querySelectorAll('[data-action]').forEach(btn => {
+            const action = btn.dataset.action;
+            const msgIdx = parseInt(btn.dataset.msg, 10);
+            const idx = parseInt(btn.dataset.idx, 10);
+            btn.addEventListener('click', () => {
+                if (action === 'apply')      this.applyEdit(msgIdx, idx);
+                else if (action === 'reject') this.rejectEdit(msgIdx, idx);
+                else if (action === 'apply-all') this.applyAllEdits(msgIdx);
+                else if (action === 'diff') this.showDiff(msgIdx, idx);
+            });
+        });
+    },
+};
+
+
+// ── Modal для просмотра diff ────────────────────────────────────────
+
+const AiDiffModal = {
+    _editor: null,
+    show(edit) {
+        this.close();
+        const modal = document.createElement('div');
+        modal.id = 'ai-diff-modal';
+        modal.style.cssText = 'position:fixed;inset:0;z-index:9100;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;padding:20px';
+        modal.innerHTML = `
+        <div class="ai-diff-window">
+            <div class="ai-diff-header">
+                <span class="ai-diff-title">Diff</span>
+                <code class="ai-diff-path">${AiChat.esc(edit.path)}</code>
+                <button class="ai-diff-close">✕</button>
+            </div>
+            <div class="ai-diff-body" id="ai-diff-body"></div>
+        </div>`;
+        document.body.appendChild(modal);
+        modal.addEventListener('click', e => { if (e.target === modal) this.close(); });
+        modal.querySelector('.ai-diff-close').addEventListener('click', () => this.close());
+
+        // Создаём Monaco diff editor
+        const wrap = document.getElementById('ai-diff-body');
+        const theme = localStorage.getItem('theme') === 'light' ? 'vs' : 'custom-dark';
+        const lang = edit.path.endsWith('.inc') || edit.path.endsWith('.pwn') ? 'pawn' : 'plaintext';
+        this._editor = monaco.editor.createDiffEditor(wrap, {
+            theme,
+            readOnly: true,
+            renderSideBySide: true,
+            minimap: { enabled: false },
+            scrollBeyondLastLine: false,
+            fontSize: 13,
+            lineNumbers: 'on',
+            ignoreTrimWhitespace: false,
+        });
+        this._editor.setModel({
+            original: monaco.editor.createModel(edit.old_content || '', lang),
+            modified: monaco.editor.createModel(edit.new_content || '', lang),
+        });
+        setTimeout(() => this._editor?.layout(), 50);
+    },
+    close() {
+        if (this._editor) { try { this._editor.dispose(); } catch {} this._editor = null; }
+        const m = document.getElementById('ai-diff-modal');
+        if (m) m.remove();
     },
 };
 
