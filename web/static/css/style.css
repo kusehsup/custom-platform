@@ -1614,6 +1614,19 @@ mark.palette-hl { background: rgba(234,179,8,0.15); color: var(--yellow); border
 .task-create-row { display: flex; gap: 12px; align-items: flex-end; }
 .task-create-footer { display: flex; justify-content: flex-end; gap: 6px; padding: 12px 16px; border-top: 1px solid var(--border); }
 
+/* Pending action cards */
+.ai-actions-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; max-width: 92%; }
+.ai-page .ai-actions-list { max-width: min(800px, 92%); }
+.ai-action { display: flex; gap: 10px; align-items: center; padding: 9px 12px; background: var(--surface); border: 1px solid var(--border-2); border-radius: var(--radius-md); font-size: 12.5px; }
+.ai-action-done { opacity: .7; }
+.ai-action-icon { font-size: 16px; flex-shrink: 0; }
+.ai-action-summary { color: var(--text); flex: 1; min-width: 0; }
+.ai-action-state { display: flex; gap: 4px; align-items: center; flex-shrink: 0; }
+.ai-action-badge { display: inline-block; padding: 3px 10px; border-radius: 99px; font-size: 10px; text-transform: uppercase; letter-spacing: .04em; font-weight: 600; }
+.ai-action-badge-ok    { background: var(--green-dim); color: var(--green); border: 1px solid rgba(34,197,94,0.25); }
+.ai-action-badge-err   { background: var(--red-dim); color: var(--red); border: 1px solid rgba(239,68,68,0.25); cursor: help; }
+.ai-action-badge-muted { background: var(--surface2); color: var(--text-3); border: 1px solid var(--border); }
+
 /* Diff modal */
 .ai-diff-window { width: 100%; height: 100%; max-width: 1600px; max-height: calc(100vh - 40px); background: var(--surface); border: 1px solid var(--border-2); border-radius: var(--radius-lg); display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 16px 48px rgba(0,0,0,0.7); }
 .ai-diff-header { display: flex; gap: 10px; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--border); flex-shrink: 0; }

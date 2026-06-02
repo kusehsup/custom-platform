@@ -26,6 +26,7 @@ import json
 import logging
 import os
 import shutil
+import sys
 import tempfile
 import uuid
 from pathlib import Path
@@ -35,11 +36,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from .auth import get_current_user
+from .auth import get_current_user, create_token
 from .sessions import get_session
 from . import claude_usage
 from . import tasks_store
 from . import ai_threads_store
+from . import pending_actions
 
 logger = logging.getLogger('claude')
 router = APIRouter()
@@ -53,8 +55,23 @@ AVAILABLE_MODELS = [
 ]
 DEFAULT_MODEL = 'sonnet'
 
-# Какие инструменты CLI разрешены — только работа с файлами в workspace.
-ALLOWED_TOOLS = 'Read Glob Grep Edit Write MultiEdit'
+# Какие инструменты CLI разрешены.
+# - Базовые: только файлы в workspace.
+# - mcp__cp-ai__* — наш MCP-сервер (статус сервера, консоль, БД, действия с подтверждением)
+ALLOWED_TOOLS = ' '.join([
+    'Read', 'Glob', 'Grep', 'Edit', 'Write', 'MultiEdit',
+    'mcp__cp-ai__get_server_status',
+    'mcp__cp-ai__get_console_log',
+    'mcp__cp-ai__get_last_compile',
+    'mcp__cp-ai__db_list_databases',
+    'mcp__cp-ai__db_list_tables',
+    'mcp__cp-ai__db_describe_table',
+    'mcp__cp-ai__db_select',
+    'mcp__cp-ai__server_action',
+    'mcp__cp-ai__compile',
+    'mcp__cp-ai__console_clear',
+    'mcp__cp-ai__db_write',
+])
 DISALLOWED_TOOLS = 'Bash WebFetch WebSearch TodoWrite NotebookEdit'
 
 # CLI выдаёт NDJSON: одна строка = одно событие. При чтении больших файлов
@@ -236,6 +253,29 @@ def _build_system_prompt(client, body: 'ChatRequest', attached_paths: list[str],
         '- Будь краток. Не пересказывай содержимое файла, если пользователь его и так видит.',
         '- Pawn-код в ответе оборачивай в ```pawn ... ```.',
         '- Если делаешь правку — НЕ дублируй её ещё и текстом в ответе, пользователь увидит её в diff. Достаточно короткого пояснения "что и зачем".',
+        '',
+        '# Доступ к серверу и базе',
+        'У тебя есть MCP-инструменты для управления платформой:',
+        '',
+        '## Чтение (выполняется сразу):',
+        '- `mcp__cp-ai__get_server_status` — включён ли игровой сервер, идёт ли компиляция',
+        '- `mcp__cp-ai__get_console_log` — последние N строк серверной консоли',
+        '- `mcp__cp-ai__get_last_compile` — текст последнего результата компиляции',
+        '- `mcp__cp-ai__db_list_databases` / `mcp__cp-ai__db_list_tables` — обзор БД',
+        '- `mcp__cp-ai__db_describe_table` — структура таблицы',
+        '- `mcp__cp-ai__db_select` — выполнить SELECT/SHOW/EXPLAIN/DESCRIBE',
+        '',
+        '## Изменение (создаёт подтверждение):',
+        '- `mcp__cp-ai__server_action` (start/stop/restart) — управление игровым сервером',
+        '- `mcp__cp-ai__compile` — запуск компиляции',
+        '- `mcp__cp-ai__console_clear` — очистка буфера консоли',
+        '- `mcp__cp-ai__db_write` — INSERT/UPDATE/DELETE/REPLACE',
+        '',
+        'ВАЖНО про write-инструменты:',
+        '- Они НЕ выполняют действие сразу. Создаётся pending-action, пользователь жмёт «Подтвердить» в чате.',
+        '- DROP / TRUNCATE / ALTER / GRANT / REVOKE / RENAME — ПОЛНОСТЬЮ ЗАПРЕЩЕНЫ. Не вызывай db_write с ними; попроси пользователя выполнить вручную.',
+        '- НЕ вызывай server_action / compile / db_write без ясного запроса пользователя. Уточни если не уверен.',
+        '- После создания pending-action кратко напиши что предлагаешь — не повторяй summary действия дословно.',
     ]
 
     # Задача треда (если есть) > глобальная активная задача
@@ -360,6 +400,134 @@ class ApplyEditsRequest(BaseModel):
 
 
 # ── Endpoints ───────────────────────────────────────────────────────────
+
+# ── Pending actions (MCP-confirmation) ────────────────────────────
+
+
+class CreatePendingRequest(BaseModel):
+    kind: str
+    payload: dict
+    summary: str
+
+
+@router.post('/api/claude/pending_actions/_create')
+async def pending_create(body: CreatePendingRequest,
+                         login: str = Depends(get_current_user)):
+    """Internal endpoint — вызывается MCP-сервером."""
+    _require_allowed(login)
+    aid = pending_actions.create(login, body.kind, body.payload, body.summary)
+    return {'id': aid}
+
+
+@router.get('/api/claude/pending_actions')
+async def pending_list(login: str = Depends(get_current_user)):
+    _require_allowed(login)
+    return {'actions': pending_actions.list_pending(login, include_resolved=False)}
+
+
+async def _execute_action(login: str, client, action: dict) -> tuple[bool, str]:
+    """Реально выполнить одобренное действие. Возвращает (ok, message)."""
+    kind = action.get('kind')
+    payload = action.get('payload') or {}
+    try:
+        if kind == 'server_action':
+            sub = (payload.get('action') or '').lower()
+            if sub == 'start':
+                await client.start_server()
+                return True, 'Сервер запущен.'
+            if sub == 'stop':
+                await client.stop_server()
+                return True, 'Сервер остановлен.'
+            if sub == 'restart':
+                await client.stop_server()
+                await asyncio.sleep(2.0)
+                await client.start_server()
+                return True, 'Сервер перезапущен.'
+            return False, f'Неизвестное действие сервера: {sub}'
+
+        elif kind == 'compile':
+            if client.is_compiling:
+                return False, 'Компиляция уже идёт.'
+            asyncio.create_task(client.start_compile())
+            return True, 'Компиляция запущена.'
+
+        elif kind == 'console_clear':
+            client.clear_console_log()
+            return True, 'Буфер консоли очищен.'
+
+        elif kind == 'db_write':
+            sql = payload.get('sql') or ''
+            db = payload.get('database') or ''
+            # Защита ещё раз на сервере (MCP-сервер тоже проверяет)
+            import re
+            if re.search(r'\b(DROP|TRUNCATE|ALTER|GRANT|REVOKE|RENAME)\b',
+                          sql, re.IGNORECASE):
+                return False, 'Команда DROP/TRUNCATE/ALTER/etc запрещена.'
+            from .db_routes import _db_connect_sync
+            import pymysql
+            def _run():
+                conn = _db_connect_sync()
+                try:
+                    with conn.cursor() as cur:
+                        if db:
+                            cur.execute(f'USE `{db}`')
+                        cur.execute(sql)
+                        return cur.rowcount
+                finally:
+                    conn.close()
+            affected = await asyncio.get_event_loop().run_in_executor(None, _run)
+            return True, f'Выполнено. Затронуто строк: {affected}'
+
+        return False, f'Неизвестный kind: {kind}'
+    except Exception as e:
+        logger.exception('action execute failed')
+        return False, f'Ошибка: {e}'
+
+
+@router.post('/api/claude/pending_actions/{aid}/approve')
+async def pending_approve(aid: str, login: str = Depends(get_current_user)):
+    _require_allowed(login)
+    action = pending_actions.get(login, aid)
+    if not action:
+        raise HTTPException(status_code=404, detail='Действие не найдено')
+    if action.get('status') != 'pending':
+        raise HTTPException(status_code=400, detail='Действие уже обработано')
+
+    client = get_session(login)
+    if not client:
+        raise HTTPException(status_code=401, detail='Сессия не найдена')
+
+    ok, message = await _execute_action(login, client, action)
+    new_status = 'approved' if ok else 'failed'
+    updated = pending_actions.update_status(login, aid, new_status, message)
+
+    # Лог в активную задачу (если есть)
+    try:
+        active = tasks_store.get_active_task(login)
+        if active:
+            tasks_store.append_ai_log(
+                login, active['id'],
+                'action_approved' if ok else 'action_failed',
+                f'{action.get("summary")}: {message}',
+            )
+    except Exception:
+        pass
+
+    return {'action': updated, 'ok': ok}
+
+
+@router.post('/api/claude/pending_actions/{aid}/reject')
+async def pending_reject(aid: str, login: str = Depends(get_current_user)):
+    _require_allowed(login)
+    action = pending_actions.get(login, aid)
+    if not action:
+        raise HTTPException(status_code=404, detail='Действие не найдено')
+    if action.get('status') != 'pending':
+        raise HTTPException(status_code=400, detail='Действие уже обработано')
+    updated = pending_actions.update_status(login, aid, 'rejected',
+                                              'Отклонено пользователем.')
+    return {'action': updated}
+
 
 # ── Threads ────────────────────────────────────────────────────────
 
@@ -544,6 +712,38 @@ async def claude_chat(body: ChatRequest, login: str = Depends(get_current_user))
 
     system_prompt = _build_system_prompt(client, body, attached_paths, login)
 
+    # MCP-конфиг: поднимаем наш сервер с инструментами платформы и БД
+    mcp_config = {
+        'mcpServers': {
+            'cp-ai': {
+                'command': sys.executable,
+                'args': ['-m', 'web.api.mcp_server'],
+            },
+        },
+    }
+    mcp_config_path = ws / '_mcp_config.json'
+    mcp_config_path.write_text(json.dumps(mcp_config), encoding='utf-8')
+
+    # Короткоживущий токен для MCP-сервера (он постучится к нам по HTTP).
+    mcp_token = create_token(login)
+
+    # Узнаём порт FastAPI из env (Uvicorn по умолчанию 8000)
+    base_url = os.environ.get('CP_BASE_URL') or 'http://127.0.0.1:8000'
+
+    env = {
+        **os.environ,
+        'CP_AI_USER_LOGIN': login,
+        'CP_AI_BASE_URL': base_url,
+        'CP_AI_AUTH_TOKEN': mcp_token,
+        # PYTHONPATH чтобы 'web.api.mcp_server' нашёлся
+        'PYTHONPATH': str(Path(__file__).resolve().parent.parent.parent),
+    }
+
+    # Засечка времени — чтобы потом отобрать только pending-actions, созданные
+    # во время этого запроса
+    import time as _time
+    request_start_ts = _time.time()
+
     args = [
         bin_path,
         '--print',
@@ -555,7 +755,8 @@ async def claude_chat(body: ChatRequest, login: str = Depends(get_current_user))
         '--allowed-tools', ALLOWED_TOOLS,
         '--disallowed-tools', DISALLOWED_TOOLS,
         '--append-system-prompt', system_prompt,
-        '--permission-mode', 'acceptEdits',  # позволяем Edit/Write без интерактива
+        '--permission-mode', 'acceptEdits',  # Edit/Write + MCP вызовы без интерактива
+        '--mcp-config', str(mcp_config_path),
         user_prompt,
     ]
 
@@ -569,6 +770,7 @@ async def claude_chat(body: ChatRequest, login: str = Depends(get_current_user))
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                     limit=SUBPROC_LIMIT,
+                    env=env,
                 )
             except Exception as e:
                 yield f'event: error\ndata: {json.dumps({"error": str(e)})}\n\n'
@@ -723,6 +925,13 @@ async def claude_chat(body: ChatRequest, login: str = Depends(get_current_user))
 
                         yield f'event: edits\ndata: {json.dumps({"edits": edits_payload})}\n\n'
 
+                        # Свежие pending-actions, созданные во время этого запроса
+                        new_actions = pending_actions.list_recent_changes(
+                            login, request_start_ts - 1
+                        )
+                        if new_actions:
+                            yield f'event: actions\ndata: {json.dumps({"actions": new_actions})}\n\n'
+
                         # Сохраняем тред: добавляем последнее user-сообщение и
                         # собранный assistant-ответ
                         try:
@@ -746,6 +955,11 @@ async def claude_chat(body: ChatRequest, login: str = Depends(get_current_user))
                                     'new_content': e['new_content'],
                                     'status': 'pending',
                                 } for e in edits_payload],
+                                'actions': [
+                                    {'id': a['id'], 'kind': a['kind'],
+                                     'summary': a['summary'], 'status': a['status']}
+                                    for a in new_actions
+                                ],
                             })
                             ai_threads_store.append_messages(
                                 login, requested_thread, new_msgs,

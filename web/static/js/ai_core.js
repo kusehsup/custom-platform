@@ -282,8 +282,9 @@ const AiChat = {
         s.messages.push({
             role: 'assistant',
             content: '',
-            tools: [],   // [{tool, path}] — что Claude делал по дороге
-            edits: [],   // [{file_id, path, old_content, new_content, status: 'pending'|'applied'|'rejected'}]
+            tools: [],
+            edits: [],
+            actions: [],  // [{id, kind, summary, status}]
         });
         this._save();
         this._emitAll();
@@ -385,6 +386,10 @@ const AiChat = {
             m.edits = (data.edits || []).map(e => ({ ...e, status: 'pending' }));
             this._save();
             this._emitAll();
+        } else if (event === 'actions') {
+            m.actions = data.actions || [];
+            this._save();
+            this._emitAll();
         } else if (event === 'usage') {
             this.state.usage = data;
             this._emitAll();
@@ -453,6 +458,38 @@ const AiChat = {
         m.edits[editIdx].status = 'rejected';
         this._save();
         this._emitAll();
+    },
+
+    async approveAction(msgIdx, actIdx) {
+        const m = this.state.messages[msgIdx];
+        const action = m?.actions?.[actIdx];
+        if (!action || action.status !== 'pending') return;
+        try {
+            const res = await API.post(`/api/claude/pending_actions/${action.id}/approve`);
+            action.status = res.action?.status || (res.ok ? 'approved' : 'failed');
+            action.result = res.action?.result;
+            this._save(); this._emitAll();
+            app.toast(res.ok ? `${action.summary}: ${action.result || 'OK'}` : `Ошибка: ${action.result}`,
+                      res.ok ? 'success' : 'error');
+        } catch (e) {
+            action.status = 'failed';
+            action.result = e.message;
+            this._save(); this._emitAll();
+            app.toast(e.message, 'error');
+        }
+    },
+
+    async rejectAction(msgIdx, actIdx) {
+        const m = this.state.messages[msgIdx];
+        const action = m?.actions?.[actIdx];
+        if (!action || action.status !== 'pending') return;
+        try {
+            await API.post(`/api/claude/pending_actions/${action.id}/reject`);
+            action.status = 'rejected';
+            this._save(); this._emitAll();
+        } catch (e) {
+            app.toast(e.message, 'error');
+        }
     },
 
     stop() {
@@ -734,7 +771,41 @@ const AiChat = {
         </span>`;
     },
 
-    /** Привязывает обработчики к контейнеру с edit'ами. */
+    /** HTML карточек pending-действий (server/db/compile). */
+    renderActions(msg, msgIdx) {
+        if (!msg?.actions?.length) return '';
+        const ICONS = {
+            server_action: '⚡',
+            compile: '🔨',
+            console_clear: '🧹',
+            db_write: '🗄',
+        };
+        return `<div class="ai-actions-list">
+            ${msg.actions.map((a, i) => {
+                const icon = ICONS[a.kind] || '⎘';
+                let stateHtml;
+                if (a.status === 'approved') {
+                    stateHtml = `<span class="ai-action-badge ai-action-badge-ok">выполнено${a.result ? ` · ${this.esc(a.result)}` : ''}</span>`;
+                } else if (a.status === 'rejected') {
+                    stateHtml = `<span class="ai-action-badge ai-action-badge-muted">отклонено</span>`;
+                } else if (a.status === 'failed') {
+                    stateHtml = `<span class="ai-action-badge ai-action-badge-err" title="${this.esc(a.result || '')}">ошибка</span>`;
+                } else {
+                    stateHtml = `
+                        <button class="btn btn-primary btn-sm" data-action="act-approve" data-msg="${msgIdx}" data-idx="${i}">Подтвердить</button>
+                        <button class="btn btn-ghost btn-sm" data-action="act-reject" data-msg="${msgIdx}" data-idx="${i}">Отклонить</button>`;
+                }
+                return `
+                <div class="ai-action ${a.status !== 'pending' ? 'ai-action-done' : ''}">
+                    <span class="ai-action-icon">${icon}</span>
+                    <span class="ai-action-summary">${this.esc(a.summary)}</span>
+                    <span class="ai-action-state">${stateHtml}</span>
+                </div>`;
+            }).join('')}
+        </div>`;
+    },
+
+    /** Привязывает обработчики к контейнеру с edit'ами/действиями. */
     bindEditActions(root) {
         root.querySelectorAll('[data-action]').forEach(btn => {
             const action = btn.dataset.action;
@@ -745,6 +816,8 @@ const AiChat = {
                 else if (action === 'reject') this.rejectEdit(msgIdx, idx);
                 else if (action === 'apply-all') this.applyAllEdits(msgIdx);
                 else if (action === 'diff') this.showDiff(msgIdx, idx);
+                else if (action === 'act-approve') this.approveAction(msgIdx, idx);
+                else if (action === 'act-reject')  this.rejectAction(msgIdx, idx);
             });
         });
     },

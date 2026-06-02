@@ -35,3 +35,6 @@ web/uploads/
 
 # AI чаты (треды и история)
 web/ai_threads.json
+
+# Pending-actions от AI (action confirmations)
+web/pending_actions.json

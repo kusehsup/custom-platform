@@ -242,11 +242,13 @@ const AiPage = {
         const tools = AiChat.renderTools(m.tools);
         const text = AiChat.renderMarkdown(m.content) || (m.tools?.length ? '' : '<span class="ai-typing">…</span>');
         const edits = AiChat.renderEdits(m, idx);
+        const actions = AiChat.renderActions(m, idx);
         return `
         <div data-idx="${idx}" class="${cls}">
             <div class="ai-msg-label">${label}</div>
             ${tools}
             ${text ? `<div class="ai-msg-body">${text}</div>` : ''}
+            ${actions}
             ${edits}
         </div>`;
     },
