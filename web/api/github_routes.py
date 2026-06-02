@@ -81,30 +81,47 @@ def _build_content(client, file_id: str) -> str:
 
 
 async def _ensure_branch(pat: str, repo: str, branch: str, base: str = 'main'):
-    """Создать ветку если её нет."""
+    """Создать ветку если её нет. Если репо пустое — создаёт первый коммит."""
+    # Ветка уже существует?
     try:
         await _gh('GET', f'/repos/{repo}/branches/{branch}', pat)
-        return  # уже есть
+        return
     except HTTPException as e:
         if e.status_code != 404:
             raise
 
-    # Получаем SHA базовой ветки
-    try:
-        base_data = await _gh('GET', f'/repos/{repo}/branches/{base}', pat)
-        sha = base_data['commit']['sha']
-    except HTTPException:
-        # Попробуем master
+    # Ищем SHA любой существующей ветки
+    sha = None
+    for b in (base, 'master', 'main'):
         try:
-            base_data = await _gh('GET', f'/repos/{repo}/branches/master', pat)
-            sha = base_data['commit']['sha']
+            data = await _gh('GET', f'/repos/{repo}/branches/{b}', pat)
+            sha = data.get('commit', {}).get('sha')
+            if sha:
+                break
         except HTTPException:
-            raise HTTPException(status_code=400, detail='Не найдена базовая ветка main/master')
+            continue
 
-    await _gh('POST', f'/repos/{repo}/git/refs', pat, json={
-        'ref': f'refs/heads/{branch}',
-        'sha': sha,
-    })
+    if sha:
+        # Создаём ветку от существующего коммита
+        await _gh('POST', f'/repos/{repo}/git/refs', pat, json={
+            'ref': f'refs/heads/{branch}',
+            'sha': sha,
+        })
+    else:
+        # Репо пустое — создаём первый коммит через Git Data API
+        # 1. Пустое дерево
+        tree = await _gh('POST', f'/repos/{repo}/git/trees', pat, json={'tree': []})
+        # 2. Первый коммит
+        commit = await _gh('POST', f'/repos/{repo}/git/commits', pat, json={
+            'message': 'init: CustomPlatform archive',
+            'tree': tree['sha'],
+            'parents': [],
+        })
+        # 3. Создаём ветку
+        await _gh('POST', f'/repos/{repo}/git/refs', pat, json={
+            'ref': f'refs/heads/{branch}',
+            'sha': commit['sha'],
+        })
 
 
 async def _get_file_sha(pat: str, repo: str, path: str, branch: str) -> Optional[str]:
@@ -147,16 +164,6 @@ class ConnectRequest(BaseModel):
 @router.post('/api/github/connect')
 async def github_connect(body: ConnectRequest, login: str = Depends(get_current_user)):
     """Проверить PAT + repo и сохранить конфигурацию."""
-    import traceback
-    try:
-        return await _github_connect_impl(body)
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f'[DEBUG] {type(e).__name__}: {e}\n{traceback.format_exc()}')
-
-
-async def _github_connect_impl(body: ConnectRequest):
     pat = body.pat.strip()
     repo = body.repo.strip().strip('/')
 
