@@ -297,6 +297,24 @@ async def _github_autocommit(client, file_id: str, part_index: int):
 
 
 # ------------------------------------------------------------------ #
+#  Консольный лог                                                      #
+# ------------------------------------------------------------------ #
+
+@router.get('/api/console/recent')
+async def console_recent(limit: int = 500, login: str = Depends(get_current_user)):
+    """Последние строки серверного лога из ring buffer."""
+    client = _require_client(login)
+    return {'lines': client.get_console_log(limit=limit)}
+
+
+@router.post('/api/console/clear')
+async def console_clear(login: str = Depends(get_current_user)):
+    client = _require_client(login)
+    client.clear_console_log()
+    return {'ok': True}
+
+
+# ------------------------------------------------------------------ #
 #  Запросы кода                                                        #
 # ------------------------------------------------------------------ #
 

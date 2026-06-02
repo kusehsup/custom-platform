@@ -1,10 +1,16 @@
 import asyncio
 import json
+import time
 import urllib.parse
-import websockets
+from collections import deque
 from typing import Callable, Any
 
+import websockets
+
 from config import PLATFORM_URL, PROXY_URL
+
+# Размер кольцевого буфера консольных логов (на одну сессию).
+CONSOLE_BUFFER_SIZE = 10000
 
 _host = urllib.parse.urlparse(PLATFORM_URL).netloc
 _path_param = urllib.parse.quote(PLATFORM_URL, safe='')
@@ -75,6 +81,8 @@ class PlatformClient:
         self._ping_interval: float = 20.0
         self._ping_timeout: float = 5.0
         self._last_pong: float = 0.0
+        # Ring buffer для логов с сервера (для AI-контекста и истории)
+        self._console_log: deque = deque(maxlen=CONSOLE_BUFFER_SIZE)
 
     # ------------------------------------------------------------------ #
     #  Публичные свойства                                                  #
@@ -83,6 +91,15 @@ class PlatformClient:
     @property
     def server_status(self) -> str:
         return self._app_data.get('server', 'unknown')
+
+    def get_console_log(self, limit: int = 0) -> list[dict]:
+        """Вернуть последние `limit` строк лога (0 = все). Каждая запись: {ts, line}."""
+        if limit <= 0 or limit >= len(self._console_log):
+            return list(self._console_log)
+        return list(self._console_log)[-limit:]
+
+    def clear_console_log(self):
+        self._console_log.clear()
 
     @property
     def is_compiling(self) -> bool:
@@ -482,6 +499,11 @@ class PlatformClient:
 
         elif event == 'save_finish':
             new_hash = args[0] if args else None
+
+        elif event == 'server_log':
+            line = args[0] if args else ''
+            if isinstance(line, str) and line:
+                self._console_log.append({'ts': time.time(), 'line': line})
 
         for callback in self._listeners.get(event, []):
             try:
