@@ -228,8 +228,8 @@ async def github_connect(body: ConnectRequest, login: str = Depends(get_current_
     if not perms.get('push', False):
         raise HTTPException(status_code=403, detail='Нет прав на запись в репозиторий')
 
-    github_store.save_config(pat, repo)
-    logger.info(f'GitHub подключён: {user_data.get("login")} → {repo}')
+    github_store.save_config(login, pat, repo)
+    logger.info(f'GitHub подключён ({login}): {user_data.get("login")} → {repo}')
 
     return {
         'ok': True,
@@ -241,17 +241,17 @@ async def github_connect(body: ConnectRequest, login: str = Depends(get_current_
 
 @router.delete('/api/github/connect')
 async def github_disconnect(login: str = Depends(get_current_user)):
-    github_store.clear()
+    github_store.clear(login)
     return {'ok': True}
 
 
 @router.get('/api/github/status')
 async def github_status(login: str = Depends(get_current_user)):
-    if not github_store.is_configured():
+    if not github_store.is_configured(login):
         return {'connected': False}
 
-    pat = github_store.get_pat()
-    repo = github_store.get_repo()
+    pat = github_store.get_pat(login)
+    repo = github_store.get_repo(login)
 
     try:
         user_data = await _gh('GET', '/user', pat)
@@ -284,15 +284,15 @@ async def github_status(login: str = Depends(get_current_user)):
 @router.get('/api/github/history/{file_id}')
 async def github_file_history(file_id: str, login: str = Depends(get_current_user)):
     """История коммитов для конкретного файла."""
-    if not github_store.is_configured():
+    if not github_store.is_configured(login):
         raise HTTPException(status_code=400, detail='GitHub не подключён')
 
     client = get_session(login)
     if not client:
         raise HTTPException(status_code=401, detail='Сессия не найдена')
 
-    pat = github_store.get_pat()
-    repo = github_store.get_repo()
+    pat = github_store.get_pat(login)
+    repo = github_store.get_repo(login)
     file_path = _file_path_for(client, file_id)
 
     try:
@@ -322,15 +322,15 @@ async def github_file_history(file_id: str, login: str = Depends(get_current_use
 @router.get('/api/github/file/{file_id}')
 async def github_file_content(file_id: str, sha: str, login: str = Depends(get_current_user)):
     """Получить содержимое файла из архива по SHA коммита."""
-    if not github_store.is_configured():
+    if not github_store.is_configured(login):
         raise HTTPException(status_code=400, detail='GitHub не подключён')
 
     client = get_session(login)
     if not client:
         raise HTTPException(status_code=401, detail='Сессия не найдена')
 
-    pat = github_store.get_pat()
-    repo = github_store.get_repo()
+    pat = github_store.get_pat(login)
+    repo = github_store.get_repo(login)
     file_path = _file_path_for(client, file_id)
 
     try:
@@ -348,15 +348,15 @@ async def github_file_content(file_id: str, sha: str, login: str = Depends(get_c
 @router.post('/api/github/sync')
 async def github_sync(login: str = Depends(get_current_user)):
     """Синхронизировать все доступные файлы одним коммитом."""
-    if not github_store.is_configured():
+    if not github_store.is_configured(login):
         raise HTTPException(status_code=400, detail='GitHub не подключён')
 
     client = get_session(login)
     if not client:
         raise HTTPException(status_code=401, detail='Сессия не найдена')
 
-    pat = github_store.get_pat()
-    repo = github_store.get_repo()
+    pat = github_store.get_pat(login)
+    repo = github_store.get_repo(login)
     branch = 'platform/archive'
 
     # Собираем все файлы

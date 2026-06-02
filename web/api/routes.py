@@ -267,20 +267,20 @@ async def save_code(body: SaveCodeRequest, login: str = Depends(get_current_user
     client.update_cached_code(body.file_id, body.part_index, body.code, new_hash)
 
     # Автокоммит в GitHub архив (fire-and-forget, не блокирует ответ)
-    asyncio.create_task(_github_autocommit(client, body.file_id, body.part_index))
+    asyncio.create_task(_github_autocommit(login, client, body.file_id, body.part_index))
 
     return {'hash': new_hash}
 
 
-async def _github_autocommit(client, file_id: str, part_index: int):
-    """Коммитит актуальный файл в GitHub архив после сохранения."""
+async def _github_autocommit(login: str, client, file_id: str, part_index: int):
+    """Коммитит актуальный файл в персональный GitHub архив после сохранения."""
     from . import github_store
     from .github_routes import commit_file, _file_path_for, _build_content
-    if not github_store.is_configured():
+    if not github_store.is_configured(login):
         return
     try:
-        pat = github_store.get_pat()
-        repo = github_store.get_repo()
+        pat = github_store.get_pat(login)
+        repo = github_store.get_repo(login)
         content = _build_content(client, file_id)
         if not content.strip():
             return
@@ -292,7 +292,7 @@ async def _github_autocommit(client, file_id: str, part_index: int):
         import logging
         import traceback
         logging.getLogger('github').warning(
-            f'Autocommit failed: {e}\n{traceback.format_exc()}'
+            f'Autocommit failed ({login}): {e}\n{traceback.format_exc()}'
         )
 
 

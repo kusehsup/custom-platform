@@ -1,6 +1,11 @@
 """
-Хранит GitHub PAT и настройки репозитория в web/github.json.
-Аналог totp_store.py — простой JSON-файл вне git.
+Хранит GitHub PAT и настройки репозитория per-user в web/github.json.
+
+Формат файла:
+{
+  "login_a": {"pat": "...", "repo": "owner/repo"},
+  "login_b": {"pat": "...", "repo": "owner/repo"}
+}
 """
 import json
 from pathlib import Path
@@ -11,38 +16,45 @@ _PATH = Path(__file__).parent.parent / 'github.json'
 
 def _read() -> dict:
     try:
-        return json.loads(_PATH.read_text())
+        data = json.loads(_PATH.read_text())
+        return data if isinstance(data, dict) else {}
     except Exception:
         return {}
 
 
 def _write(data: dict):
-    _PATH.write_text(json.dumps(data, indent=2))
+    _PATH.write_text(json.dumps(data, indent=2, ensure_ascii=False))
 
 
-def get_config() -> dict:
-    return _read()
+def _user_config(login: str) -> dict:
+    entry = _read().get(login)
+    return entry if isinstance(entry, dict) else {}
 
 
-def is_configured() -> bool:
-    d = _read()
+def get_config(login: str) -> dict:
+    return _user_config(login)
+
+
+def is_configured(login: str) -> bool:
+    d = _user_config(login)
     return bool(d.get('pat') and d.get('repo'))
 
 
-def save_config(pat: str, repo: str):
-    d = _read()
-    d['pat'] = pat
-    d['repo'] = repo  # "owner/repo"
-    _write(d)
+def save_config(login: str, pat: str, repo: str):
+    data = _read()
+    data[login] = {'pat': pat, 'repo': repo}
+    _write(data)
 
 
-def get_pat() -> Optional[str]:
-    return _read().get('pat')
+def get_pat(login: str) -> Optional[str]:
+    return _user_config(login).get('pat')
 
 
-def get_repo() -> Optional[str]:
-    return _read().get('repo')
+def get_repo(login: str) -> Optional[str]:
+    return _user_config(login).get('repo')
 
 
-def clear():
-    _write({})
+def clear(login: str):
+    data = _read()
+    data.pop(login, None)
+    _write(data)

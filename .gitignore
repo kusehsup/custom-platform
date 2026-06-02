@@ -22,3 +22,6 @@ web/totp.json
 
 # GitHub PAT — не должен попасть в репозиторий
 web/github.json
+
+# Anthropic API key — не должен попасть в репозиторий
+web/claude.json
