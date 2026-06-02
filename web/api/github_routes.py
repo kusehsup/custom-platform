@@ -89,52 +89,57 @@ def _build_content(client, file_id: str) -> str:
     return '\n'.join(lines)
 
 
-async def _init_repo_if_empty(pat: str, repo: str) -> dict:
-    """
-    Если репо полностью пустое — создаёт README через /contents/ API
-    (единственный способ инициализировать пустой репо).
-    Возвращает обновлённые данные репозитория.
-    """
-    repo_data = await _gh('GET', f'/repos/{repo}', pat)
-    if repo_data.get('size', 0) != 0:
-        return repo_data
-
-    # Репо пустое — создаём README в дефолтной ветке (без указания branch,
-    # т.к. ветки ещё не существуют). GitHub создаст её сам.
-    readme = (
-        '# CustomPlatform Archive\n\n'
-        'Автоматический архив кода из CustomPlatform.\n'
-    )
-    await _gh('PUT', f'/repos/{repo}/contents/README.md', pat, json={
-        'message': 'init: CustomPlatform archive',
-        'content': base64.b64encode(readme.encode()).decode(),
-    })
-    # Перечитываем чтобы знать актуальный default_branch
-    return await _gh('GET', f'/repos/{repo}', pat)
-
-
 async def _ensure_branch_base(pat: str, repo: str, branch: str) -> str:
     """
     Гарантирует, что ветка `branch` существует и возвращает её SHA.
-    Если ветки нет — создаёт её от дефолтной ветки репозитория.
+    Работает для пустых репо тоже — создаёт init-коммит через Git Data API.
     """
-    repo_data = await _init_repo_if_empty(pat, repo)
+    # 1. Уже есть нужная ветка?
     sha = await _get_branch_sha(pat, repo, branch)
     if sha:
         return sha
-    # Ветки нет — создаём от default_branch
+
+    # 2. Ветки нет. Пробуем создать от дефолтной ветки репо.
+    repo_data = await _gh('GET', f'/repos/{repo}', pat)
     default_branch = repo_data.get('default_branch', 'main')
     base_sha = await _get_branch_sha(pat, repo, default_branch)
-    if not base_sha:
-        raise HTTPException(
-            status_code=500,
-            detail=f'Не удалось получить SHA дефолтной ветки {default_branch}'
-        )
+
+    if base_sha:
+        # Дефолтная ветка существует — создаём от неё
+        await _gh('POST', f'/repos/{repo}/git/refs', pat, json={
+            'ref': f'refs/heads/{branch}',
+            'sha': base_sha,
+        })
+        return base_sha
+
+    # 3. Репо полностью пустое — создаём init-коммит через Git Data API
+    # (создаём пустое дерево → корневой коммит → ref)
+    readme_content = (
+        '# CustomPlatform Archive\n\n'
+        'Автоматический архив кода из CustomPlatform.\n'
+    )
+    blob = await _gh('POST', f'/repos/{repo}/git/blobs', pat, json={
+        'content': readme_content,
+        'encoding': 'utf-8',
+    })
+    tree = await _gh('POST', f'/repos/{repo}/git/trees', pat, json={
+        'tree': [{
+            'path': 'README.md',
+            'mode': '100644',
+            'type': 'blob',
+            'sha': blob['sha'],
+        }],
+    })
+    commit = await _gh('POST', f'/repos/{repo}/git/commits', pat, json={
+        'message': 'init: CustomPlatform archive',
+        'tree': tree['sha'],
+        'parents': [],
+    })
     await _gh('POST', f'/repos/{repo}/git/refs', pat, json={
         'ref': f'refs/heads/{branch}',
-        'sha': base_sha,
+        'sha': commit['sha'],
     })
-    return base_sha
+    return commit['sha']
 
 
 async def _get_branch_sha(pat: str, repo: str, branch: str) -> Optional[str]:
