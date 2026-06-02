@@ -80,17 +80,18 @@ def _build_content(client, file_id: str) -> str:
     return '\n'.join(lines)
 
 
-async def _init_repo_if_empty(pat: str, repo: str, branch: str):
+async def _init_repo_if_empty(pat: str, repo: str) -> dict:
     """
     Если репо полностью пустое — создаёт README через /contents/ API
     (единственный способ инициализировать пустой репо).
-    После этого Git Data API начинает работать.
+    Возвращает обновлённые данные репозитория.
     """
     repo_data = await _gh('GET', f'/repos/{repo}', pat)
     if repo_data.get('size', 0) != 0:
-        return  # репо не пустое, всё ок
+        return repo_data
 
-    # Репо пустое — создаём README в нужной ветке
+    # Репо пустое — создаём README в дефолтной ветке (без указания branch,
+    # т.к. ветки ещё не существуют). GitHub создаст её сам.
     readme = (
         '# CustomPlatform Archive\n\n'
         'Автоматический архив кода из CustomPlatform.\n'
@@ -98,8 +99,33 @@ async def _init_repo_if_empty(pat: str, repo: str, branch: str):
     await _gh('PUT', f'/repos/{repo}/contents/README.md', pat, json={
         'message': 'init: CustomPlatform archive',
         'content': base64.b64encode(readme.encode()).decode(),
-        'branch': branch,
     })
+    # Перечитываем чтобы знать актуальный default_branch
+    return await _gh('GET', f'/repos/{repo}', pat)
+
+
+async def _ensure_branch_base(pat: str, repo: str, branch: str) -> str:
+    """
+    Гарантирует, что ветка `branch` существует и возвращает её SHA.
+    Если ветки нет — создаёт её от дефолтной ветки репозитория.
+    """
+    repo_data = await _init_repo_if_empty(pat, repo)
+    sha = await _get_branch_sha(pat, repo, branch)
+    if sha:
+        return sha
+    # Ветки нет — создаём от default_branch
+    default_branch = repo_data.get('default_branch', 'main')
+    base_sha = await _get_branch_sha(pat, repo, default_branch)
+    if not base_sha:
+        raise HTTPException(
+            status_code=500,
+            detail=f'Не удалось получить SHA дефолтной ветки {default_branch}'
+        )
+    await _gh('POST', f'/repos/{repo}/git/refs', pat, json={
+        'ref': f'refs/heads/{branch}',
+        'sha': base_sha,
+    })
+    return base_sha
 
 
 async def _get_branch_sha(pat: str, repo: str, branch: str) -> Optional[str]:
@@ -116,8 +142,8 @@ async def _get_branch_sha(pat: str, repo: str, branch: str) -> Optional[str]:
 async def commit_file(pat: str, repo: str, file_path: str, content: str,
                       message: str, branch: str = 'platform/archive'):
     """Закоммитить один файл через Git Data API."""
-    # Инициализируем репо если пустой
-    await _init_repo_if_empty(pat, repo, branch)
+    # Гарантируем, что ветка существует и получаем SHA базового коммита
+    base_sha = await _ensure_branch_base(pat, repo, branch)
 
     # 1. Создаём blob с содержимым файла
     blob = await _gh('POST', f'/repos/{repo}/git/blobs', pat, json={
@@ -125,42 +151,30 @@ async def commit_file(pat: str, repo: str, file_path: str, content: str,
         'encoding': 'utf-8',
     })
 
-    # 2. Получаем SHA базового коммита (если ветка существует)
-    base_sha = await _get_branch_sha(pat, repo, branch)
+    # 2. Получаем SHA дерева базового коммита
+    base_commit = await _gh('GET', f'/repos/{repo}/git/commits/{base_sha}', pat)
 
-    # 3. Получаем базовое дерево (если есть)
-    tree_params: dict = {
+    # 3. Создаём дерево
+    tree = await _gh('POST', f'/repos/{repo}/git/trees', pat, json={
+        'base_tree': base_commit['tree']['sha'],
         'tree': [{
             'path': file_path,
             'mode': '100644',
             'type': 'blob',
             'sha': blob['sha'],
-        }]
-    }
-    if base_sha:
-        # Получаем SHA дерева базового коммита
-        base_commit = await _gh('GET', f'/repos/{repo}/git/commits/{base_sha}', pat)
-        tree_params['base_tree'] = base_commit['tree']['sha']
+        }],
+    })
 
-    # 4. Создаём дерево
-    tree = await _gh('POST', f'/repos/{repo}/git/trees', pat, json=tree_params)
-
-    # 5. Создаём коммит
-    commit_body: dict = {
+    # 4. Создаём коммит
+    commit = await _gh('POST', f'/repos/{repo}/git/commits', pat, json={
         'message': message,
         'tree': tree['sha'],
-        'parents': [base_sha] if base_sha else [],
-    }
-    commit = await _gh('POST', f'/repos/{repo}/git/commits', pat, json=commit_body)
+        'parents': [base_sha],
+    })
 
-    # 6. Обновляем или создаём ветку
-    ref = f'refs/heads/{branch}'
-    if base_sha:
-        await _gh('PATCH', f'/repos/{repo}/git/refs/heads/{branch}', pat,
-                  json={'sha': commit['sha']})
-    else:
-        await _gh('POST', f'/repos/{repo}/git/refs', pat,
-                  json={'ref': ref, 'sha': commit['sha']})
+    # 5. Обновляем ветку
+    await _gh('PATCH', f'/repos/{repo}/git/refs/heads/{branch}', pat,
+              json={'sha': commit['sha']})
 
 
 # ── Schemas ────────────────────────────────────────────────────────────
@@ -344,8 +358,8 @@ async def github_sync(login: str = Depends(get_current_user)):
         return {'synced': [], 'errors': [], 'message': 'Нет доступных файлов для синхронизации'}
 
     try:
-        # 0. Инициализируем репо если пустой (Git Data API не работает на пустых репо)
-        await _init_repo_if_empty(pat, repo, branch)
+        # 0. Гарантируем ветку и получаем базовый SHA
+        base_sha = await _ensure_branch_base(pat, repo, branch)
 
         # 1. Создаём blob для каждого файла параллельно
         async def make_blob(path, content):
@@ -357,36 +371,30 @@ async def github_sync(login: str = Depends(get_current_user)):
 
         blob_results = await asyncio.gather(*[make_blob(p, c) for p, c in files.items()])
 
-        # 2. Получаем SHA текущей ветки (если есть)
-        base_sha = await _get_branch_sha(pat, repo, branch)
+        # 2. Получаем дерево базового коммита
+        base_commit = await _gh('GET', f'/repos/{repo}/git/commits/{base_sha}', pat)
 
         # 3. Строим дерево
         tree_items = [
             {'path': path, 'mode': '100644', 'type': 'blob', 'sha': sha}
             for path, sha in blob_results
         ]
-        tree_params: dict = {'tree': tree_items}
-        if base_sha:
-            base_commit = await _gh('GET', f'/repos/{repo}/git/commits/{base_sha}', pat)
-            tree_params['base_tree'] = base_commit['tree']['sha']
-
-        tree = await _gh('POST', f'/repos/{repo}/git/trees', pat, json=tree_params)
+        tree = await _gh('POST', f'/repos/{repo}/git/trees', pat, json={
+            'base_tree': base_commit['tree']['sha'],
+            'tree': tree_items,
+        })
 
         # 4. Коммит
         ts = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')
         commit = await _gh('POST', f'/repos/{repo}/git/commits', pat, json={
             'message': f'sync: {len(files)} files [{ts}]',
             'tree': tree['sha'],
-            'parents': [base_sha] if base_sha else [],
+            'parents': [base_sha],
         })
 
-        # 5. Обновляем или создаём ветку
-        if base_sha:
-            await _gh('PATCH', f'/repos/{repo}/git/refs/heads/{branch}', pat,
-                      json={'sha': commit['sha']})
-        else:
-            await _gh('POST', f'/repos/{repo}/git/refs', pat,
-                      json={'ref': f'refs/heads/{branch}', 'sha': commit['sha']})
+        # 5. Обновляем ветку
+        await _gh('PATCH', f'/repos/{repo}/git/refs/heads/{branch}', pat,
+                  json={'sha': commit['sha']})
 
     except HTTPException as e:
         raise HTTPException(status_code=e.status_code, detail=f'Ошибка синхронизации: {e.detail}')
