@@ -80,23 +80,26 @@ def _build_content(client, file_id: str) -> str:
     return '\n'.join(lines)
 
 
-async def _repo_is_empty(pat: str, repo: str) -> bool:
-    """Проверить пустой ли репозиторий (нет ни одного коммита)."""
-    try:
-        data = await _gh('GET', f'/repos/{repo}', pat)
-        return data.get('size', 0) == 0
-    except HTTPException:
-        return True
+async def _init_repo_if_empty(pat: str, repo: str, branch: str):
+    """
+    Если репо полностью пустое — создаёт README через /contents/ API
+    (единственный способ инициализировать пустой репо).
+    После этого Git Data API начинает работать.
+    """
+    repo_data = await _gh('GET', f'/repos/{repo}', pat)
+    if repo_data.get('size', 0) != 0:
+        return  # репо не пустое, всё ок
 
-
-async def _ensure_branch(pat: str, repo: str, branch: str):
-    """Убедиться что ветка существует. Не делает ничего — первый файл создаст её сам."""
-    try:
-        await _gh('GET', f'/repos/{repo}/branches/{branch}', pat)
-    except HTTPException as e:
-        if e.status_code != 404:
-            raise
-        # Ветки нет — она будет создана при первом commit_file
+    # Репо пустое — создаём README в нужной ветке
+    readme = (
+        '# CustomPlatform Archive\n\n'
+        'Автоматический архив кода из CustomPlatform.\n'
+    )
+    await _gh('PUT', f'/repos/{repo}/contents/README.md', pat, json={
+        'message': 'init: CustomPlatform archive',
+        'content': base64.b64encode(readme.encode()).decode(),
+        'branch': branch,
+    })
 
 
 async def _get_branch_sha(pat: str, repo: str, branch: str) -> Optional[str]:
@@ -112,7 +115,10 @@ async def _get_branch_sha(pat: str, repo: str, branch: str) -> Optional[str]:
 
 async def commit_file(pat: str, repo: str, file_path: str, content: str,
                       message: str, branch: str = 'platform/archive'):
-    """Закоммитить один файл через Git Data API (работает даже для пустых репо)."""
+    """Закоммитить один файл через Git Data API."""
+    # Инициализируем репо если пустой
+    await _init_repo_if_empty(pat, repo, branch)
+
     # 1. Создаём blob с содержимым файла
     blob = await _gh('POST', f'/repos/{repo}/git/blobs', pat, json={
         'content': content,
@@ -344,6 +350,9 @@ async def github_sync(login: str = Depends(get_current_user)):
         return {'synced': [], 'errors': [], 'message': 'Нет доступных файлов для синхронизации'}
 
     try:
+        # 0. Инициализируем репо если пустой (Git Data API не работает на пустых репо)
+        await _init_repo_if_empty(pat, repo, branch)
+
         # 1. Создаём blob для каждого файла параллельно
         async def make_blob(path, content):
             blob = await _gh('POST', f'/repos/{repo}/git/blobs', pat, json={
