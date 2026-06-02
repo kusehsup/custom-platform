@@ -232,3 +232,59 @@ def rename_thread(login: str, thread_id: str, title: str):
 def thread_task_id(login: str, thread_id: str) -> Optional[str]:
     thread = get_thread(login, thread_id)
     return thread.get('task_id') if thread else None
+
+
+def update_action_status(login: str, action_id: str, status: str,
+                         result: Optional[str] = None) -> bool:
+    """Найти action по id в сообщениях всех тредов и обновить статус."""
+    with _LOCK:
+        data = _read()
+        bucket = _user_bucket(data, login)
+        changed = False
+        for thread in bucket['threads'].values():
+            for msg in thread.get('messages') or []:
+                if msg.get('role') != 'assistant':
+                    continue
+                for act in msg.get('actions') or []:
+                    if act.get('id') == action_id:
+                        act['status'] = status
+                        if result is not None:
+                            act['result'] = result
+                        changed = True
+        if changed:
+            _write(data)
+        return changed
+
+
+def update_edit_status(login: str, file_id: str, path: str, status: str,
+                        match_content: Optional[str] = None) -> bool:
+    """Найти pending edit по (file_id, path) и обновить статус.
+
+    Если несколько pending edit'ов с тем же путём — обновляем самый свежий
+    (последнее сообщение). Если match_content задан — сравниваем new_content
+    для точного матча.
+    """
+    with _LOCK:
+        data = _read()
+        bucket = _user_bucket(data, login)
+        changed = False
+        # Идём от свежих к старым
+        for thread in bucket['threads'].values():
+            msgs = thread.get('messages') or []
+            for msg in reversed(msgs):
+                if msg.get('role') != 'assistant':
+                    continue
+                for ed in msg.get('edits') or []:
+                    if ed.get('status') != 'pending':
+                        continue
+                    if str(ed.get('file_id')) != str(file_id):
+                        continue
+                    if path and ed.get('path') != path:
+                        continue
+                    if match_content is not None and ed.get('new_content') != match_content:
+                        continue
+                    ed['status'] = status
+                    changed = True
+                    _write(data)
+                    return True
+        return changed

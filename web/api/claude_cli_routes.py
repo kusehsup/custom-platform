@@ -257,25 +257,24 @@ def _build_system_prompt(client, body: 'ChatRequest', attached_paths: list[str],
         '# Доступ к серверу и базе',
         'У тебя есть MCP-инструменты для управления платформой:',
         '',
-        '## Чтение (выполняется сразу):',
+        '## Чтение и управление (выполняются сразу):',
         '- `mcp__cp-ai__get_server_status` — включён ли игровой сервер, идёт ли компиляция',
         '- `mcp__cp-ai__get_console_log` — последние N строк серверной консоли',
         '- `mcp__cp-ai__get_last_compile` — текст последнего результата компиляции',
         '- `mcp__cp-ai__db_list_databases` / `mcp__cp-ai__db_list_tables` — обзор БД',
         '- `mcp__cp-ai__db_describe_table` — структура таблицы',
-        '- `mcp__cp-ai__db_select` — выполнить SELECT/SHOW/EXPLAIN/DESCRIBE',
-        '',
-        '## Изменение (создаёт подтверждение):',
+        '- `mcp__cp-ai__db_select` — SELECT/SHOW/EXPLAIN/DESCRIBE',
         '- `mcp__cp-ai__server_action` (start/stop/restart) — управление игровым сервером',
         '- `mcp__cp-ai__compile` — запуск компиляции',
         '- `mcp__cp-ai__console_clear` — очистка буфера консоли',
-        '- `mcp__cp-ai__db_write` — INSERT/UPDATE/DELETE/REPLACE',
         '',
-        'ВАЖНО про write-инструменты:',
-        '- Они НЕ выполняют действие сразу. Создаётся pending-action, пользователь жмёт «Подтвердить» в чате.',
+        '## Запись в БД (создаёт подтверждение):',
+        '- `mcp__cp-ai__db_write` — INSERT/UPDATE/DELETE/REPLACE. Не выполняется сразу: пользователь жмёт «Подтвердить» в чате.',
+        '',
+        'ВАЖНО:',
         '- DROP / TRUNCATE / ALTER / GRANT / REVOKE / RENAME — ПОЛНОСТЬЮ ЗАПРЕЩЕНЫ. Не вызывай db_write с ними; попроси пользователя выполнить вручную.',
-        '- НЕ вызывай server_action / compile / db_write без ясного запроса пользователя. Уточни если не уверен.',
-        '- После создания pending-action кратко напиши что предлагаешь — не повторяй summary действия дословно.',
+        '- Не вызывай server_action / compile / db_write без ясного запроса пользователя. Уточни если не уверен.',
+        '- После вызова инструмента кратко сообщи результат — не повторяй output дословно.',
     ]
 
     # Задача треда (если есть) > глобальная активная задача
@@ -419,6 +418,87 @@ async def pending_create(body: CreatePendingRequest,
     return {'id': aid}
 
 
+# ── MCP direct exec endpoints (без подтверждения) ──────────────────
+
+class MCPServerActionRequest(BaseModel):
+    action: str  # start | stop | restart
+
+
+async def _notify_app_data(client):
+    """Дёргает send_app_data listener'ы — фронт получит свежий status по WS.
+
+    После client.start_server()/stop_server() мы локально знаем что
+    статус изменился, но WS-канал ждёт send_app_data от платформы.
+    Чтобы UI обновился сразу, имитируем событие с актуальными данными.
+    """
+    listeners = client._listeners.get('send_app_data', [])
+    data = dict(client._app_data)
+    for cb in listeners:
+        try:
+            if asyncio.iscoroutinefunction(cb):
+                await cb(data)
+            else:
+                cb(data)
+        except Exception:
+            pass
+
+
+@router.post('/api/claude/mcp_exec/server_action')
+async def mcp_exec_server_action(body: MCPServerActionRequest,
+                                  login: str = Depends(get_current_user)):
+    """Internal — вызывается MCP-сервером. Выполняет сразу."""
+    _require_allowed(login)
+    client = get_session(login)
+    if not client:
+        raise HTTPException(status_code=401, detail='Сессия не найдена')
+    action = (body.action or '').lower()
+    try:
+        if action == 'start':
+            await client.start_server()
+            await _notify_app_data(client)
+            return {'message': 'Сервер запущен.'}
+        if action == 'stop':
+            await client.stop_server()
+            await _notify_app_data(client)
+            return {'message': 'Сервер остановлен.'}
+        if action == 'restart':
+            await client.stop_server()
+            await _notify_app_data(client)
+            await asyncio.sleep(2.0)
+            await client.start_server()
+            await _notify_app_data(client)
+            return {'message': 'Сервер перезапущен.'}
+        return {'message': f'Неизвестное действие: {action}'}
+    except Exception as e:
+        logger.exception('server_action failed')
+        return {'message': f'Ошибка: {e}'}
+
+
+@router.post('/api/claude/mcp_exec/compile')
+async def mcp_exec_compile(login: str = Depends(get_current_user)):
+    _require_allowed(login)
+    client = get_session(login)
+    if not client:
+        raise HTTPException(status_code=401, detail='Сессия не найдена')
+    if client.is_compiling:
+        return {'message': 'Компиляция уже идёт.'}
+    asyncio.create_task(client.start_compile())
+    # Заставляем _app_data.compile=True и шлём фронту
+    client._app_data['compile'] = True
+    await _notify_app_data(client)
+    return {'message': 'Компиляция запущена.'}
+
+
+@router.post('/api/claude/mcp_exec/console_clear')
+async def mcp_exec_console_clear(login: str = Depends(get_current_user)):
+    _require_allowed(login)
+    client = get_session(login)
+    if not client:
+        raise HTTPException(status_code=401, detail='Сессия не найдена')
+    client.clear_console_log()
+    return {'message': 'Буфер консоли очищен.'}
+
+
 @router.get('/api/claude/pending_actions')
 async def pending_list(login: str = Depends(get_current_user)):
     _require_allowed(login)
@@ -426,36 +506,16 @@ async def pending_list(login: str = Depends(get_current_user)):
 
 
 async def _execute_action(login: str, client, action: dict) -> tuple[bool, str]:
-    """Реально выполнить одобренное действие. Возвращает (ok, message)."""
+    """Реально выполнить одобренное действие. Возвращает (ok, message).
+
+    Сейчас сюда попадают только db_write — остальное (server_action,
+    compile, console_clear) MCP-сервер выполняет сразу через
+    /api/claude/mcp_exec/* без шага подтверждения.
+    """
     kind = action.get('kind')
     payload = action.get('payload') or {}
     try:
-        if kind == 'server_action':
-            sub = (payload.get('action') or '').lower()
-            if sub == 'start':
-                await client.start_server()
-                return True, 'Сервер запущен.'
-            if sub == 'stop':
-                await client.stop_server()
-                return True, 'Сервер остановлен.'
-            if sub == 'restart':
-                await client.stop_server()
-                await asyncio.sleep(2.0)
-                await client.start_server()
-                return True, 'Сервер перезапущен.'
-            return False, f'Неизвестное действие сервера: {sub}'
-
-        elif kind == 'compile':
-            if client.is_compiling:
-                return False, 'Компиляция уже идёт.'
-            asyncio.create_task(client.start_compile())
-            return True, 'Компиляция запущена.'
-
-        elif kind == 'console_clear':
-            client.clear_console_log()
-            return True, 'Буфер консоли очищен.'
-
-        elif kind == 'db_write':
+        if kind == 'db_write':
             sql = payload.get('sql') or ''
             db = payload.get('database') or ''
             # Защита ещё раз на сервере (MCP-сервер тоже проверяет)
@@ -501,6 +561,13 @@ async def pending_approve(aid: str, login: str = Depends(get_current_user)):
     new_status = 'approved' if ok else 'failed'
     updated = pending_actions.update_status(login, aid, new_status, message)
 
+    # Синхронизируем статус в треде, чтобы после рефреша или возврата
+    # на страницу кнопка не возвращалась.
+    try:
+        ai_threads_store.update_action_status(login, aid, new_status, message)
+    except Exception as e:
+        logger.warning(f'thread action update failed: {e}')
+
     # Лог в активную задачу (если есть)
     try:
         active = tasks_store.get_active_task(login)
@@ -526,6 +593,11 @@ async def pending_reject(aid: str, login: str = Depends(get_current_user)):
         raise HTTPException(status_code=400, detail='Действие уже обработано')
     updated = pending_actions.update_status(login, aid, 'rejected',
                                               'Отклонено пользователем.')
+    try:
+        ai_threads_store.update_action_status(login, aid, 'rejected',
+                                                 'Отклонено пользователем.')
+    except Exception as e:
+        logger.warning(f'thread action update failed: {e}')
     return {'action': updated}
 
 
@@ -1105,10 +1177,14 @@ async def claude_apply_edits(body: ApplyEditsRequest, login: str = Depends(get_c
         asyncio.create_task(_github_autocommit(login, client, fid, part_index))
 
         meta = (client.files or {}).get(fid) or {}
-        applied.append({
-            'file_id': fid,
-            'path': meta.get('fullPath') or meta.get('name') or fid,
-        })
+        path = meta.get('fullPath') or meta.get('name') or fid
+        # Помечаем edit в тредах как applied — чтобы кнопка не возвращалась
+        try:
+            ai_threads_store.update_edit_status(login, fid, path, 'applied',
+                                                  match_content=new_content)
+        except Exception as e:
+            logger.warning(f'thread edit update failed: {e}')
+        applied.append({'file_id': fid, 'path': path})
 
     # Логируем применение в активную задачу
     if applied:

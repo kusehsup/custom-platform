@@ -225,28 +225,25 @@ def tool_server_action(args: dict) -> str:
     action = (args.get('action') or '').lower()
     if action not in ('start', 'stop', 'restart'):
         return 'action должен быть start | stop | restart'
-    summaries = {
-        'start': 'Запустить игровой сервер',
-        'stop': 'Остановить игровой сервер',
-        'restart': 'Перезапустить игровой сервер',
-    }
-    aid = create_pending(LOGIN, 'server_action', {'action': action},
-                         summaries[action])
-    return (f'Создано подтверждение #{aid}: «{summaries[action]}». '
-            f'Пользователь должен нажать «Подтвердить» в чате.')
+    r = _http('POST', '/api/claude/mcp_exec/server_action',
+              json_body={'action': action})
+    if r.get('_error'):
+        return f'Ошибка: {r["_error"]}'
+    return r.get('message', 'OK')
 
 
 def tool_compile(_args: dict) -> str:
-    aid = create_pending(LOGIN, 'compile', {}, 'Запустить компиляцию')
-    return (f'Создано подтверждение #{aid}: «Запустить компиляцию». '
-            f'Пользователь должен нажать «Подтвердить».')
+    r = _http('POST', '/api/claude/mcp_exec/compile', json_body={})
+    if r.get('_error'):
+        return f'Ошибка: {r["_error"]}'
+    return r.get('message', 'OK')
 
 
 def tool_console_clear(_args: dict) -> str:
-    aid = create_pending(LOGIN, 'console_clear', {},
-                          'Очистить буфер консоли')
-    return (f'Создано подтверждение #{aid}: «Очистить буфер консоли». '
-            f'Пользователь должен нажать «Подтвердить».')
+    r = _http('POST', '/api/claude/mcp_exec/console_clear', json_body={})
+    if r.get('_error'):
+        return f'Ошибка: {r["_error"]}'
+    return r.get('message', 'OK')
 
 
 def tool_db_write(args: dict) -> str:
@@ -336,9 +333,8 @@ TOOLS = {
     },
     'server_action': {
         'fn': tool_server_action,
-        'description': ('Запросить подтверждение на старт/стоп/рестарт '
-                        'игрового сервера. НЕ выполняется автоматически — '
-                        'пользователь жмёт кнопку в чате.'),
+        'description': ('Запустить/остановить/перезапустить игровой сервер. '
+                        'Выполняется сразу.'),
         'input': {
             'type': 'object',
             'properties': {
@@ -349,12 +345,12 @@ TOOLS = {
     },
     'compile': {
         'fn': tool_compile,
-        'description': 'Запросить подтверждение на запуск компиляции.',
+        'description': 'Запустить компиляцию сразу.',
         'input': {'type': 'object', 'properties': {}, 'required': []},
     },
     'console_clear': {
         'fn': tool_console_clear,
-        'description': 'Запросить подтверждение на очистку буфера консоли.',
+        'description': 'Очистить буфер серверной консоли.',
         'input': {'type': 'object', 'properties': {}, 'required': []},
     },
     'db_write': {
