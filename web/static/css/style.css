@@ -110,11 +110,15 @@ body {
 
 .layout {
     display: grid;
-    grid-template-columns: 200px 1fr;
+    grid-template-columns: 52px 1fr;
     grid-template-rows: 52px 1fr;
     height: 100vh;
-    transition: grid-template-columns .2s ease;
     overflow: hidden;
+    transition: grid-template-columns .2s ease;
+}
+
+.layout.sidebar-expanded {
+    grid-template-columns: 200px 1fr;
 }
 
 .topbar {
@@ -156,54 +160,97 @@ body {
 .sidebar {
     border-right: 1px solid var(--border);
     background: var(--bg);
-    padding: 12px 10px;
+    padding: 8px 6px;
     display: flex;
     flex-direction: column;
+    align-items: center;
     gap: 2px;
     overflow-y: auto;
+    overflow-x: hidden;
+    width: 52px;
+    transition: width .2s ease;
+}
+
+.layout.sidebar-expanded .sidebar {
+    width: 200px;
+    align-items: stretch;
+    padding: 8px 10px;
 }
 
 .sidebar-section {
+    display: none;
     font-size: 11px;
     font-weight: 600;
     color: var(--text-3);
     text-transform: uppercase;
     letter-spacing: 0.08em;
     padding: 8px 10px 4px;
-    margin-top: 8px;
+    margin-top: 4px;
 }
+.layout.sidebar-expanded .sidebar-section { display: block; }
 
 .sidebar a {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 8px 10px;
-    color: var(--text-2);
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    color: var(--text-3);
     text-decoration: none;
     border-radius: var(--radius-sm);
-    font-size: 13.5px;
-    font-weight: 500;
     cursor: pointer;
     transition: background 0.15s, color 0.15s;
     user-select: none;
-}
-
-.sidebar a .icon {
-    width: 18px;
-    text-align: center;
-    font-size: 15px;
+    position: relative;
     flex-shrink: 0;
 }
 
-.sidebar a:hover {
-    background: rgba(255,255,255,0.04);
-    color: var(--text);
+.layout.sidebar-expanded .sidebar a {
+    width: 100%;
+    justify-content: flex-start;
+    gap: 10px;
+    padding: 8px 10px;
+    height: auto;
 }
 
-.sidebar a.active {
-    background: rgba(59,130,246,0.12);
-    color: var(--accent);
+.sidebar a .label { display: none; }
+.layout.sidebar-expanded .sidebar a .label { display: inline; font-size: 13.5px; font-weight: 500; }
+
+.sidebar a .icon {
+    font-size: 16px;
+    line-height: 1;
+    flex-shrink: 0;
+    width: 18px;
+    text-align: center;
 }
+
+.sidebar a:hover { background: rgba(255,255,255,0.06); color: var(--text); }
+.sidebar a.active { background: rgba(59,130,246,0.15); color: var(--accent); }
+body.light .sidebar a:hover { background: rgba(0,0,0,0.05); }
+body.light .sidebar a.active { background: rgba(37,99,235,0.1); }
+
+/* Tooltip только когда сайдбар свёрнут */
+.sidebar a::after {
+    content: attr(title);
+    position: absolute;
+    left: calc(100% + 10px);
+    top: 50%;
+    transform: translateY(-50%);
+    background: var(--surface3);
+    color: var(--text);
+    font-size: 12px;
+    font-weight: 500;
+    padding: 4px 10px;
+    border-radius: var(--radius-xs);
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.1s;
+    z-index: 100;
+    border: 1px solid var(--border);
+}
+.sidebar a:hover::after { opacity: 1; }
+.layout.sidebar-expanded .sidebar a::after { display: none; }
 
 .main {
     overflow-y: auto;
@@ -336,6 +383,19 @@ input::placeholder { color: var(--text-3); }
 
 .badge-off { background: rgba(248,113,113,0.08); color: var(--red); border: 1px solid rgba(248,113,113,0.15); }
 .badge-off::before { background: var(--red); }
+
+/* ─── Server status glow ─────────────────────────────────────── */
+.server-glow {
+    position: absolute;
+    top: 0; right: 0;
+    width: 600px;
+    height: 300px;
+    pointer-events: none;
+    border-radius: var(--radius-lg);
+    transition: background 1s ease;
+}
+.server-glow-on  { background: radial-gradient(ellipse at 100% 0%, rgba(52,211,153,0.12) 0%, transparent 70%); }
+.server-glow-off { background: radial-gradient(ellipse at 100% 0%, rgba(248,113,113,0.10) 0%, transparent 70%); }
 
 .badge-busy { background: rgba(251,191,36,0.08); color: var(--yellow); border: 1px solid rgba(251,191,36,0.15); }
 .badge-busy::before { background: var(--yellow); animation: pulse 1.4s infinite; }
@@ -929,51 +989,30 @@ mark.sq-hl { background: rgba(251,191,36,0.2); color: var(--yellow); border-radi
     font-family: var(--mono);
 }
 
-/* ─── Collapsible sidebar ────────────────────────────────────── */
-
-.sidebar {
-    transition: width .2s ease;
-    display: flex;
-    flex-direction: column;
-}
-
-.layout.sidebar-collapsed .sidebar { width: 48px !important; }
-.layout.sidebar-collapsed { grid-template-columns: 48px 1fr !important; }
-
-.layout.sidebar-collapsed .sidebar .label,
-.layout.sidebar-collapsed .sidebar-section { display: none; }
-
-.layout.sidebar-collapsed .sidebar a {
-    justify-content: center;
-    padding: 10px 0;
-}
-
-.layout.sidebar-collapsed .sidebar a .icon {
-    margin: 0;
-    font-size: 16px;
-}
+/* ─── Sidebar toggle button ──────────────────────────────────── */
 
 .sidebar-toggle-btn {
     background: none;
     border: none;
     color: var(--text-3);
     cursor: pointer;
-    padding: 10px 14px;
-    text-align: left;
-    font-size: 14px;
-    transition: background .15s, color .15s;
-    margin-top: auto;
+    width: 36px;
+    height: 36px;
     display: flex;
     align-items: center;
-    gap: 10px;
+    justify-content: center;
+    border-radius: var(--radius-sm);
+    font-size: 14px;
+    transition: background .15s, color .15s;
+    flex-shrink: 0;
 }
-.sidebar-toggle-btn:hover { background: rgba(255,255,255,0.04); color: var(--text); }
-.sidebar-toggle-btn .icon { display: none; font-size: 16px; }
-.sidebar-toggle-btn .label { font-size: 14px; }
+.sidebar-toggle-btn:hover { background: rgba(255,255,255,0.06); color: var(--text); }
 
-.layout.sidebar-collapsed .sidebar-toggle-btn .icon { display: inline; }
-.layout.sidebar-collapsed .sidebar-toggle-btn .label { display: none; }
-.layout.sidebar-collapsed .sidebar-toggle-btn { justify-content: center; padding: 10px 0; }
+.layout.sidebar-expanded .sidebar-toggle-btn {
+    width: 100%;
+    justify-content: flex-end;
+    padding-right: 10px;
+}
 
 /* ─── Horizontal part tabs ───────────────────────────────────── */
 

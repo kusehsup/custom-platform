@@ -409,10 +409,9 @@ const app = {
                 <span class="sidebar-section">Инструменты</span>
                 <a data-page="todo" title="TODO трекер"><span class="icon">✅</span><span class="label">TODO</span><span id="todo-badge" class="sidebar-badge hidden"></span></a>
                 <a data-page="db" title="База данных"><span class="icon">🗄</span><span class="label">База данных</span></a>
-                <span class="sidebar-section">Прочее</span>
-                <a data-page="settings" title="Настройки"><span class="icon">⚙️</span><span class="label">Настройки</span></a>
                 <div style="flex:1"></div>
-                <button id="sidebar-toggle" class="sidebar-toggle-btn" title="Свернуть/развернуть"><span class="label">«</span><span class="icon">»</span></button>
+                <a data-page="settings" title="Настройки"><span class="icon">⚙️</span><span class="label">Настройки</span></a>
+                <button id="sidebar-toggle" class="sidebar-toggle-btn" title="Развернуть/свернуть">»</button>
             </nav>
             <main class="main" id="main"></main>
         </div>
@@ -422,15 +421,18 @@ const app = {
             a.addEventListener('click', () => this.navigate(a.dataset.page))
         );
 
-        // Состояние сворачивания
-        if (localStorage.getItem('sidebar_collapsed') === '1') {
-            document.querySelector('.layout')?.classList.add('sidebar-collapsed');
+        // Восстанавливаем состояние сайдбара
+        if (localStorage.getItem('sidebar_expanded') === '1') {
+            document.querySelector('.layout')?.classList.add('sidebar-expanded');
+            const btn = document.getElementById('sidebar-toggle');
+            if (btn) btn.textContent = '«';
         }
         document.getElementById('sidebar-toggle')?.addEventListener('click', () => {
             const layout = document.querySelector('.layout');
-            const collapsed = layout.classList.toggle('sidebar-collapsed');
-            try { localStorage.setItem('sidebar_collapsed', collapsed ? '1' : '0'); } catch {}
-            // Перерисовываем Monaco если он есть
+            const expanded = layout.classList.toggle('sidebar-expanded');
+            const btn = document.getElementById('sidebar-toggle');
+            if (btn) btn.textContent = expanded ? '«' : '»';
+            try { localStorage.setItem('sidebar_expanded', expanded ? '1' : '0'); } catch {}
             setTimeout(() => this._pages['files']?._editor?.layout(), 250);
         });
         document.getElementById('btn-debug').addEventListener('click', () => this.toggleDebug());

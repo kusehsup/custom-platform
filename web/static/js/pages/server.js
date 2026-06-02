@@ -92,7 +92,8 @@ app.register('server', {
 
         root.innerHTML = `
         <!-- Сервер -->
-        <div class="card">
+        <div class="card" style="position:relative;overflow:hidden">
+            <div class="server-glow" id="server-glow"></div>
             <div class="card-header">
                 <span class="card-title">Сервер</span>
                 <button class="btn btn-ghost btn-sm" id="btn-refresh">↻</button>
@@ -286,6 +287,10 @@ app.register('server', {
             if (s === 'on')       badge.innerHTML = '<span class="badge badge-on">Работает</span>';
             else if (s === 'off') badge.innerHTML = '<span class="badge badge-off">Выключен</span>';
             else                  badge.innerHTML = '<span style="color:var(--text-2)">—</span>';
+        }
+        const glow = document.getElementById('server-glow');
+        if (glow) {
+            glow.className = 'server-glow ' + (app.state.server === 'on' ? 'server-glow-on' : 'server-glow-off');
         }
         if (btnStart && btnStop) {
             btnStart.classList.toggle('hidden', app.state.server === 'on');
