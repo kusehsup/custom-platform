@@ -392,6 +392,7 @@ const app = {
             theme:    `<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="3"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.05 3.05l1.41 1.41M11.54 11.54l1.41 1.41M3.05 12.95l1.41-1.41M11.54 4.46l1.41-1.41"/></svg>`,
             logout:   `<svg viewBox="0 0 16 16"><path d="M6 14H3a1 1 0 01-1-1V3a1 1 0 011-1h3M11 11l3-3-3-3M14 8H6"/></svg>`,
             compile:  `<svg viewBox="0 0 16 16"><path d="M4 4l4 4-4 4M9 12h4"/></svg>`,
+            ai:       `<svg viewBox="0 0 16 16"><path d="M8 1.5l1.6 3.5L13 6.6l-2.7 2.3.8 3.6L8 10.7l-3.1 1.8.8-3.6L3 6.6l3.4-1.6L8 1.5z"/></svg>`,
             stop:     `<svg viewBox="0 0 16 16"><rect x="4" y="4" width="8" height="8" rx="1.5"/></svg>`,
             play:     `<svg viewBox="0 0 16 16"><polygon points="4,2 14,8 4,14"/></svg>`,
             ws:       `<svg viewBox="0 0 16 16"><path d="M2 8c0-3.3 2.7-6 6-6M14 8c0 3.3-2.7 6-6 6M5 8c0-1.7 1.3-3 3-3M11 8c0 1.7-1.3 3-3 3"/><circle cx="8" cy="8" r="1" fill="currentColor" stroke="none"/></svg>`,
@@ -424,6 +425,7 @@ const app = {
                 <span class="sidebar-section">Код</span>
                 <a data-page="files">${ico.files}<span class="label">Файлы</span></a>
                 <span class="sidebar-section">Инструменты</span>
+                <a data-page="ai">${ico.ai}<span class="label">AI ассистент</span></a>
                 <a data-page="todo">${ico.todo}<span class="label">TODO</span><span id="todo-badge" class="sidebar-badge hidden"></span></a>
                 <a data-page="db">${ico.db}<span class="label">База данных</span></a>
                 <div class="sidebar-spacer"></div>
