@@ -1398,24 +1398,29 @@ app.register('files', {
         const fileId = this._activeFileId;
         if (!fileId) return;
 
-        // Создаём модал
         let modal = document.getElementById('gh-archive-modal');
         if (modal) modal.remove();
         modal = document.createElement('div');
         modal.id = 'gh-archive-modal';
-        modal.style.cssText = `position:fixed;inset:0;z-index:8000;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;padding:20px`;
+        modal.style.cssText = `position:fixed;inset:0;z-index:8000;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;padding:16px`;
         modal.innerHTML = `
-        <div style="background:var(--surface);border:1px solid var(--border-2);border-radius:var(--radius-lg);width:100%;height:100%;max-width:1100px;max-height:calc(100vh - 40px);display:flex;flex-direction:column;overflow:hidden;box-shadow:0 16px 48px rgba(0,0,0,0.7)">
-            <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--border);flex-shrink:0">
+        <div style="background:var(--surface);border:1px solid var(--border-2);border-radius:var(--radius-lg);width:100%;height:100%;max-width:1800px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 16px 48px rgba(0,0,0,0.8)">
+            <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border);flex-shrink:0">
                 <span style="font-size:13px;font-weight:600;color:var(--text)">GitHub Архив</span>
                 <span id="gh-arc-path" style="font-size:11px;color:var(--text-3);font-family:var(--mono)"></span>
-                <button id="gh-arc-close" style="margin-left:auto;background:none;border:none;color:var(--text-2);cursor:pointer;font-size:18px;line-height:1;padding:2px 6px">✕</button>
+                <div style="margin-left:auto;display:flex;gap:4px;align-items:center">
+                    <div id="gh-arc-mode" style="display:none;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:2px;gap:0">
+                        <button data-mode="view" class="gh-arc-mode-btn active" style="background:var(--surface-2);border:none;color:var(--text);font-size:11px;padding:4px 10px;border-radius:4px;cursor:pointer">Просмотр</button>
+                        <button data-mode="diff" class="gh-arc-mode-btn" style="background:none;border:none;color:var(--text-2);font-size:11px;padding:4px 10px;border-radius:4px;cursor:pointer">Diff</button>
+                    </div>
+                    <button id="gh-arc-close" style="background:none;border:none;color:var(--text-2);cursor:pointer;font-size:18px;line-height:1;padding:2px 6px;margin-left:8px">✕</button>
+                </div>
             </div>
-            <div style="display:grid;grid-template-columns:260px 1fr;flex:1;overflow:hidden;min-height:0">
+            <div style="display:grid;grid-template-columns:300px 1fr;flex:1;overflow:hidden;min-height:0">
                 <div id="gh-arc-list" style="border-right:1px solid var(--border);overflow-y:auto;padding:4px 0;background:var(--bg)">
                     <div style="padding:16px;color:var(--text-3);font-size:12px">Загрузка...</div>
                 </div>
-                <div style="display:flex;flex-direction:column;overflow:hidden;min-height:0">
+                <div style="display:flex;flex-direction:column;overflow:hidden;min-height:0;position:relative">
                     <div id="gh-arc-empty" style="display:flex;align-items:center;justify-content:center;flex:1;color:var(--text-3);font-size:13px">← Выберите версию</div>
                     <div id="gh-arc-viewer" style="flex:1;display:none;position:relative;min-height:0"></div>
                 </div>
@@ -1426,7 +1431,107 @@ app.register('files', {
         modal.querySelector('#gh-arc-close').addEventListener('click', () => modal.remove());
         modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
 
-        let arcViewer = null;
+        // Состояние просмотрщика
+        const state = {
+            viewer: null,           // обычный editor
+            diffEditor: null,       // diff editor
+            mode: 'view',           // 'view' | 'diff'
+            commits: [],            // массив коммитов (новые → старые)
+            currentIdx: -1,         // индекс выбранного коммита в commits
+            cache: new Map(),       // sha → content
+        };
+
+        const theme = () => localStorage.getItem('theme') === 'light' ? 'vs' : 'custom-dark';
+
+        const disposeEditors = () => {
+            if (state.viewer) { state.viewer.dispose(); state.viewer = null; }
+            if (state.diffEditor) { state.diffEditor.dispose(); state.diffEditor = null; }
+        };
+
+        const fetchContent = async (sha) => {
+            if (state.cache.has(sha)) return state.cache.get(sha);
+            const file = await API.get(`/api/github/file/${fileId}?sha=${sha}`);
+            state.cache.set(sha, file.content);
+            return file.content;
+        };
+
+        const renderView = async () => {
+            const wrap = document.getElementById('gh-arc-viewer');
+            wrap.innerHTML = '<div style="padding:16px;color:var(--text-3);font-size:12px">Загрузка...</div>';
+            const sha = state.commits[state.currentIdx].sha;
+            try {
+                const content = await fetchContent(sha);
+                wrap.innerHTML = '';
+                disposeEditors();
+                state.viewer = monaco.editor.create(wrap, {
+                    value: content,
+                    language: 'pawn',
+                    theme: theme(),
+                    readOnly: true,
+                    minimap: { enabled: false },
+                    scrollBeyondLastLine: false,
+                    fontSize: 13,
+                    lineNumbers: 'on',
+                    padding: { top: 8 },
+                });
+                setTimeout(() => state.viewer?.layout(), 50);
+            } catch (e) {
+                wrap.innerHTML = `<div style="padding:16px;color:var(--red);font-size:12px">${e.message}</div>`;
+            }
+        };
+
+        const renderDiff = async () => {
+            const wrap = document.getElementById('gh-arc-viewer');
+            wrap.innerHTML = '<div style="padding:16px;color:var(--text-3);font-size:12px">Загрузка...</div>';
+
+            const currentCommit = state.commits[state.currentIdx];
+            // Предыдущий коммит = более старый = следующий в массиве (commits отсортированы новые→старые)
+            const prevCommit = state.commits[state.currentIdx + 1];
+
+            try {
+                const [newContent, oldContent] = await Promise.all([
+                    fetchContent(currentCommit.sha),
+                    prevCommit ? fetchContent(prevCommit.sha) : Promise.resolve(''),
+                ]);
+                wrap.innerHTML = '';
+                disposeEditors();
+                state.diffEditor = monaco.editor.createDiffEditor(wrap, {
+                    theme: theme(),
+                    readOnly: true,
+                    renderSideBySide: true,
+                    minimap: { enabled: false },
+                    scrollBeyondLastLine: false,
+                    fontSize: 13,
+                    lineNumbers: 'on',
+                    ignoreTrimWhitespace: false,
+                });
+                state.diffEditor.setModel({
+                    original: monaco.editor.createModel(oldContent, 'pawn'),
+                    modified: monaco.editor.createModel(newContent, 'pawn'),
+                });
+                setTimeout(() => state.diffEditor?.layout(), 50);
+            } catch (e) {
+                wrap.innerHTML = `<div style="padding:16px;color:var(--red);font-size:12px">${e.message}</div>`;
+            }
+        };
+
+        const render = () => state.mode === 'diff' ? renderDiff() : renderView();
+
+        // Переключатель режима
+        modal.querySelectorAll('.gh-arc-mode-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const newMode = btn.dataset.mode;
+                if (newMode === state.mode) return;
+                state.mode = newMode;
+                modal.querySelectorAll('.gh-arc-mode-btn').forEach(b => {
+                    const active = b.dataset.mode === newMode;
+                    b.classList.toggle('active', active);
+                    b.style.background = active ? 'var(--surface-2)' : 'none';
+                    b.style.color = active ? 'var(--text)' : 'var(--text-2)';
+                });
+                if (state.currentIdx >= 0) render();
+            });
+        });
 
         // Загружаем историю
         try {
@@ -1439,13 +1544,15 @@ app.register('files', {
                 return;
             }
 
+            state.commits = data.commits;
+
             const fmt = iso => {
                 const d = new Date(iso);
                 return d.toLocaleString('ru-RU', { day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit' });
             };
 
             listEl.innerHTML = data.commits.map((c, i) => `
-            <div class="hist-item" data-sha="${c.sha}" data-idx="${i}">
+            <div class="hist-item" data-idx="${i}">
                 <div class="hist-item-ts">${c.sha_short} — ${fmt(c.date)}</div>
                 <div class="hist-item-line" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${this._esc(c.message.split('\n')[0])}</div>
             </div>`).join('');
@@ -1454,36 +1561,13 @@ app.register('files', {
                 item.addEventListener('click', async () => {
                     listEl.querySelectorAll('.hist-item').forEach(i => i.classList.remove('active'));
                     item.classList.add('active');
-                    const sha = item.dataset.sha;
+                    state.currentIdx = parseInt(item.dataset.idx, 10);
 
                     document.getElementById('gh-arc-empty').style.display = 'none';
-                    const wrap = document.getElementById('gh-arc-viewer');
-                    wrap.style.display = 'block';
-                    wrap.innerHTML = '<div style="padding:16px;color:var(--text-3);font-size:12px">Загрузка...</div>';
+                    document.getElementById('gh-arc-viewer').style.display = 'block';
+                    document.getElementById('gh-arc-mode').style.display = 'inline-flex';
 
-                    try {
-                        const file = await API.get(`/api/github/file/${fileId}?sha=${sha}`);
-                        wrap.innerHTML = '';
-                        if (arcViewer) { arcViewer.dispose(); arcViewer = null; }
-
-                        const theme = localStorage.getItem('theme') === 'light' ? 'vs' : 'custom-dark';
-                        arcViewer = monaco.editor.create(wrap, {
-                            value: file.content,
-                            language: 'pawn',
-                            theme,
-                            readOnly: true,
-                            minimap: { enabled: false },
-                            scrollBeyondLastLine: false,
-                            fontSize: 13,
-                            lineNumbers: 'on',
-                            padding: { top: 8 },
-                        });
-
-                        // Resize когда модал отображается
-                        setTimeout(() => arcViewer?.layout(), 50);
-                    } catch (e) {
-                        wrap.innerHTML = `<div style="padding:16px;color:var(--red);font-size:12px">${e.message}</div>`;
-                    }
+                    await render();
                 });
             });
 
