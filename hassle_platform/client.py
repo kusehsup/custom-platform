@@ -83,6 +83,11 @@ class PlatformClient:
         self._last_pong: float = 0.0
         # Ring buffer для логов с сервера (для AI-контекста и истории)
         self._console_log: deque = deque(maxlen=CONSOLE_BUFFER_SIZE)
+        # Защита от затирания server статуса устаревшими send_app_data.
+        # Когда мы шлём start_server / stop_server — платформа ещё несколько
+        # секунд продолжает рассылать send_app_data со старым server полем.
+        # Сохраняем (desired_status, expires_at).
+        self._pending_server: tuple = ('', 0.0)
 
     # ------------------------------------------------------------------ #
     #  Публичные свойства                                                  #
@@ -235,10 +240,13 @@ class PlatformClient:
     async def start_server(self):
         await self._emit('start_server')
         self._app_data['server'] = 'on'
+        # 8 секунд игнорируем устаревший server в send_app_data
+        self._pending_server = ('on', time.time() + 8.0)
 
     async def stop_server(self):
         await self._emit('stop_server')
         self._app_data['server'] = 'off'
+        self._pending_server = ('off', time.time() + 8.0)
 
     # ------------------------------------------------------------------ #
     #  Компиляция                                                          #
@@ -466,9 +474,24 @@ class PlatformClient:
 
         elif event == 'send_app_data':
             data = args[0] if args else {}
-            # Не перезаписываем server статус если идёт реконнект —
-            # платформа может слать устаревший статус при новом подключении
-            if self._reconnecting and 'server' in data:
+            # Защита server-статуса от устаревших send_app_data:
+            # 1) если идёт реконнект — платформа шлёт пустой/старый статус;
+            # 2) если мы только что сделали start/stop — pending удерживает
+            #    нужный статус N секунд, пока платформа не догонится.
+            pending_val, pending_until = self._pending_server
+            now = time.time()
+            if pending_val and now < pending_until and 'server' in data:
+                # Если в данных пришёл уже желаемый статус — снимаем pending,
+                # доверяем платформе.
+                if data.get('server') == pending_val:
+                    self._pending_server = ('', 0.0)
+                    self._app_data.update(data)
+                else:
+                    # игнорируем server в этом обновлении
+                    incoming = dict(data)
+                    incoming.pop('server', None)
+                    self._app_data.update(incoming)
+            elif self._reconnecting and 'server' in data:
                 prev_server = self._app_data.get('server')
                 self._app_data.update(data)
                 if prev_server == 'on':
