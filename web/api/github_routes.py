@@ -319,7 +319,7 @@ async def github_file_content(file_id: str, sha: str, login: str = Depends(get_c
 
 @router.post('/api/github/sync')
 async def github_sync(login: str = Depends(get_current_user)):
-    """Ручная синхронизация всех доступных файлов в архив."""
+    """Синхронизировать все доступные файлы одним коммитом."""
     if not github_store.is_configured():
         raise HTTPException(status_code=400, detail='GitHub не подключён')
 
@@ -329,25 +329,63 @@ async def github_sync(login: str = Depends(get_current_user)):
 
     pat = github_store.get_pat()
     repo = github_store.get_repo()
+    branch = 'platform/archive'
 
-    await _ensure_branch(pat, repo, 'platform/archive')
-
-    synced = []
-    errors = []
-
+    # Собираем все файлы
+    files: dict = {}
     for file_id in list(client.code.keys()):
         content = _build_content(client, file_id)
         if not content.strip():
             continue
         file_path = _file_path_for(client, file_id)
-        try:
-            ts = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')
-            await commit_file(pat, repo, file_path, content,
-                              f'sync: {file_path} [{ts}]')
-            synced.append(file_path)
-        except HTTPException as e:
-            errors.append({'file': file_path, 'error': e.detail})
-        except Exception as e:
-            errors.append({'file': file_path, 'error': str(e)})
+        files[file_path] = content
 
-    return {'synced': synced, 'errors': errors}
+    if not files:
+        return {'synced': [], 'errors': [], 'message': 'Нет доступных файлов для синхронизации'}
+
+    try:
+        # 1. Создаём blob для каждого файла параллельно
+        async def make_blob(path, content):
+            blob = await _gh('POST', f'/repos/{repo}/git/blobs', pat, json={
+                'content': content,
+                'encoding': 'utf-8',
+            })
+            return path, blob['sha']
+
+        blob_results = await asyncio.gather(*[make_blob(p, c) for p, c in files.items()])
+
+        # 2. Получаем SHA текущей ветки (если есть)
+        base_sha = await _get_branch_sha(pat, repo, branch)
+
+        # 3. Строим дерево
+        tree_items = [
+            {'path': path, 'mode': '100644', 'type': 'blob', 'sha': sha}
+            for path, sha in blob_results
+        ]
+        tree_params: dict = {'tree': tree_items}
+        if base_sha:
+            base_commit = await _gh('GET', f'/repos/{repo}/git/commits/{base_sha}', pat)
+            tree_params['base_tree'] = base_commit['tree']['sha']
+
+        tree = await _gh('POST', f'/repos/{repo}/git/trees', pat, json=tree_params)
+
+        # 4. Коммит
+        ts = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')
+        commit = await _gh('POST', f'/repos/{repo}/git/commits', pat, json={
+            'message': f'sync: {len(files)} files [{ts}]',
+            'tree': tree['sha'],
+            'parents': [base_sha] if base_sha else [],
+        })
+
+        # 5. Обновляем или создаём ветку
+        if base_sha:
+            await _gh('PATCH', f'/repos/{repo}/git/refs/heads/{branch}', pat,
+                      json={'sha': commit['sha']})
+        else:
+            await _gh('POST', f'/repos/{repo}/git/refs', pat,
+                      json={'ref': f'refs/heads/{branch}', 'sha': commit['sha']})
+
+    except HTTPException as e:
+        raise HTTPException(status_code=e.status_code, detail=f'Ошибка синхронизации: {e.detail}')
+
+    return {'synced': list(files.keys()), 'errors': [], 'commit': commit['sha'][:7]}
