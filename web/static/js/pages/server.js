@@ -8,17 +8,31 @@ app.register('server', {
     _el: null,
     _paused: false,
     _autoScroll: true,
-    _lines: [],
+    _lines: [],          // массив УЖЕ разбитых строк
+    _tail: '',           // незавершённая строка (хвост последнего чанка)
     _filter: '',
     _serverStartTs: null,
+    _renderQueued: false,
 
     // ── Консоль ──────────────────────────────────────────────────────
     _loadLines() {
-        try { this._lines = JSON.parse(localStorage.getItem(CONSOLE_KEY) || '[]'); } catch { this._lines = []; }
+        try {
+            const raw = JSON.parse(localStorage.getItem(CONSOLE_KEY) || '[]');
+            // Миграция со старого формата (чанки) — рассплитим один раз
+            const joined = Array.isArray(raw) ? raw.join('') : '';
+            const parts = joined.split('\n');
+            this._tail = parts.pop() || '';
+            this._lines = parts;
+            this._trim();
+        } catch { this._lines = []; this._tail = ''; }
     },
     _saveLines() {
-        if (this._lines.length > CONSOLE_LIMIT) this._lines = this._lines.slice(-CONSOLE_LIMIT);
+        this._trim();
         try { localStorage.setItem(CONSOLE_KEY, JSON.stringify(this._lines)); } catch {}
+    },
+    _trim() {
+        const overflow = this._lines.length - CONSOLE_LIMIT;
+        if (overflow > 0) this._lines.splice(0, overflow);
     },
 
     _colorize(line) {
@@ -35,7 +49,10 @@ app.register('server', {
         const el = this._el;
         if (!el) return;
         const filter = this._filter.toLowerCase();
-        const lines  = this._lines.join('').split('\n').filter(l => l.trim());
+        // Базовый набор — уже разрезанные строки; хвост подсовываем как ещё одну
+        let lines = this._lines;
+        if (this._tail) lines = [...lines, this._tail];
+        lines = lines.filter(l => l && l.trim());
         const visible = filter ? lines.filter(l => l.toLowerCase().includes(filter)) : lines;
         el.innerHTML = visible.map(l => this._colorize(l)).join('\n');
         this._updateCount(visible.length);
@@ -453,17 +470,28 @@ app.register('server', {
 
     // ── Консоль ───────────────────────────────────────────────────────
     onLog(data) {
-        this._lines.push(data);
-        this._saveLines();
+        if (typeof data !== 'string') return;
+        // Чанк может содержать несколько строк или быть половиной — режем
+        // аккуратно. Хвост (без \n в конце) держим до следующего чанка.
+        const combined = this._tail + data;
+        const parts = combined.split('\n');
+        this._tail = parts.pop() || '';
+        if (parts.length) {
+            this._lines.push(...parts);
+            this._trim();
+            this._saveLines();
+        }
         if (this._paused || !this._el) return;
-        if (this._filter && !data.toLowerCase().includes(this._filter)) return;
-        const line = data.trimEnd();
-        if (!line) return;
-        const div = document.createElement('span');
-        div.innerHTML = this._colorize(line) + '\n';
-        this._el.appendChild(div);
-        this._updateCount();
-        if (this._autoScroll) this._el.scrollTop = this._el.scrollHeight;
+        this._scheduleFlush();
+    },
+
+    _scheduleFlush() {
+        if (this._renderQueued) return;
+        this._renderQueued = true;
+        requestAnimationFrame(() => {
+            this._renderQueued = false;
+            this._flushConsole();
+        });
     },
 
     _msg(t)  { const e = document.getElementById('srv-msg'); if (e) e.textContent = t; },

@@ -42,13 +42,23 @@ const app = {
         const cWrap = document.getElementById('tb-compile-wrap');
         if (!cWrap) return;
         if (this.state.compile) {
-            cWrap.innerHTML = `<button class="btn btn-ghost btn-sm" disabled style="opacity:.5">Компилируется...</button>`;
+            // Стартуем тикер если ещё не запущен; начало компиляции — _compileStartTs
+            if (!this._compileStartTs) this._compileStartTs = Date.now();
+            cWrap.innerHTML = `<button class="btn btn-ghost btn-sm" disabled style="opacity:.7">
+                <span class="compile-spinner"></span>Компиляция <span id="tb-compile-timer">0.0с</span>
+            </button>`;
+            this._startCompileTimer();
         } else if (this._lastCompileResult) {
+            this._stopCompileTimer();
             const hasErr = /error/i.test(this._lastCompileResult);
+            const dur = this._lastCompileDuration;
+            const durLabel = dur != null
+                ? (dur < 60 ? `${dur.toFixed(1)}с` : `${Math.floor(dur/60)}м ${Math.floor(dur%60)}с`)
+                : '';
             cWrap.innerHTML = `
             <div style="display:flex;gap:0;border:1px solid var(--border-2);border-radius:var(--radius);overflow:hidden">
                 <button class="btn btn-ghost btn-sm" id="tb-compile-btn" style="border-radius:0;border:none;border-right:1px solid var(--border-2)">Сборка</button>
-                <button class="btn btn-ghost btn-sm" id="tb-compile-result" style="border-radius:0;border:none;color:${hasErr ? 'var(--red)' : 'var(--green)'}">● ${hasErr ? 'Ошибки' : 'OK'}</button>
+                <button class="btn btn-ghost btn-sm" id="tb-compile-result" style="border-radius:0;border:none;color:${hasErr ? 'var(--red)' : 'var(--green)'}">● ${hasErr ? 'Ошибки' : 'OK'}${durLabel ? ` <span style="color:var(--text-3);font-weight:normal;margin-left:4px">${durLabel}</span>` : ''}</button>
             </div>`;
             document.getElementById('tb-compile-btn').addEventListener('click', () => this._doCompile());
             document.getElementById('tb-compile-result').addEventListener('click', () => {
@@ -65,10 +75,35 @@ const app = {
         try {
             await API.post('/api/compile');
             this.state.compile = true;
+            this._compileStartTs = Date.now();
             this._updateTopbarActions();
             this._pages['server']?.onState?.();
             app.toast('🔨 Компиляция запущена', 'info');
         } catch (e) { app.toast('Ошибка: ' + e.message, 'error'); }
+    },
+
+    _startCompileTimer() {
+        if (this._compileTimerId) return;
+        const tick = () => {
+            if (!this.state.compile) { this._stopCompileTimer(); return; }
+            const el = document.getElementById('tb-compile-timer');
+            if (el && this._compileStartTs) {
+                const sec = (Date.now() - this._compileStartTs) / 1000;
+                el.textContent = sec < 10
+                    ? sec.toFixed(1) + 'с'
+                    : Math.floor(sec) + 'с';
+            }
+        };
+        tick();
+        this._compileTimerId = setInterval(tick, 100);
+    },
+
+    _stopCompileTimer() {
+        if (this._compileTimerId) {
+            clearInterval(this._compileTimerId);
+            this._compileTimerId = null;
+        }
+        this._compileStartTs = null;
     },
 
     // ── WS Log widget ─────────────────────────────────────────────────
@@ -109,7 +144,11 @@ const app = {
     },
 
     // ── Console widget ────────────────────────────────────────────────
+    // Храним УЖЕ разбитые на строки данные. Чанки от платформы режутся
+    // в pushConsoleLog по '\n'; незавершённый хвост держим в _consoleTail.
     _consoleLines: [],
+    _consoleTail: '',
+    _consoleMax: 500,
     _consolePaused: false,
     _consoleFilter: '',
 
@@ -150,19 +189,44 @@ const app = {
     },
 
     pushConsoleLog(data) {
-        this._consoleLines.push(data);
-        if (this._consoleLines.length > 200) this._consoleLines.shift();
-        if (!this._consolePaused) this._renderConsoleWidget();
+        // Платформа шлёт чанки — в одном могут быть несколько строк
+        // или половина строки. Аккуратно режем по '\n', хвост держим
+        // в _consoleTail до прихода следующего чанка.
+        if (typeof data !== 'string') return;
+        const combined = this._consoleTail + data;
+        const parts = combined.split('\n');
+        this._consoleTail = parts.pop() || '';
+        if (parts.length) {
+            this._consoleLines.push(...parts);
+            const overflow = this._consoleLines.length - this._consoleMax;
+            if (overflow > 0) this._consoleLines.splice(0, overflow);
+        }
+        if (!this._consolePaused) this._scheduleConsoleRender();
+    },
+
+    // Throttle перерисовки: при потоке логов 50-100/сек не рендерим каждое.
+    _scheduleConsoleRender() {
+        if (this._consoleRenderQueued) return;
+        this._consoleRenderQueued = true;
+        requestAnimationFrame(() => {
+            this._consoleRenderQueued = false;
+            this._renderConsoleWidget();
+        });
     },
 
     _renderConsoleWidget() {
         const el = document.getElementById('con-body');
         if (!el) return;
         const filter = this._consoleFilter;
-        const lines  = this._consoleLines.join('').split('\n');
+        let lines = this._consoleLines;
+        // Хвост (незавершённая строка) тоже показываем
+        if (this._consoleTail) lines = [...lines, this._consoleTail];
         const filtered = filter ? lines.filter(l => l.toLowerCase().includes(filter)) : lines;
         el.innerHTML = filtered.map(line => this._colorizeConsoleLine(line)).join('<br>');
         el.scrollTop = el.scrollHeight;
+        // Обновляем счётчик в шапке виджета
+        const counter = document.getElementById('con-count');
+        if (counter) counter.textContent = `${filtered.length}/${this._consoleMax}`;
     },
 
     _colorizeConsoleLine(line) {
@@ -255,7 +319,12 @@ const app = {
             this._pages['server']?.onLog?.(msg.data);
             this.pushConsoleLog(msg.data);
         } else if (msg.type === 'compile_result') {
+            // Запоминаем длительность последней компиляции до сброса стартового ts
+            if (this._compileStartTs) {
+                this._lastCompileDuration = (Date.now() - this._compileStartTs) / 1000;
+            }
             this.state.compile = false;
+            this._stopCompileTimer();
             this._lastCompileResult = msg.data;
             this._updateTopbarActions();
             this._pages['server']?.onCompileResult?.(msg.data);
@@ -316,7 +385,7 @@ const app = {
         <div class="auth-box">
             <div class="auth-logo">
                 <h1>CustomPlatform</h1>
-                <p>Сервер был перезапущен.<br>Войдите снова для продолжения.</p>
+                <p>Нужно подтвердить сессию.<br>Введи пароль для продолжения.</p>
             </div>
             <input type="password" id="rc-pass" placeholder="Пароль" autocomplete="current-password" />
             <div id="rc-totp-wrap" style="display:none">

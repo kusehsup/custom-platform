@@ -20,6 +20,9 @@ probe.py
 # TOTP секрет — не должен попасть в репозиторий
 web/totp.json
 
+# Доверенные устройства (fingerprints) — содержат IP/UA, держим локально
+web/trusted_devices.json
+
 # GitHub PAT — не должен попасть в репозиторий
 web/github.json
 

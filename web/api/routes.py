@@ -7,6 +7,7 @@ from .auth import create_token, get_current_user, decode_token
 from .sessions import get_session, set_session, remove_session
 from .totp_routes import check_rate_limit, reset_rate_limit
 from . import totp_store
+from . import trusted_devices
 
 router = APIRouter()
 
@@ -72,16 +73,19 @@ class LoginRequest(BaseModel):
 @router.post('/api/login')
 async def login(body: LoginRequest, request: Request):
     ip = request.client.host
+    user_agent = request.headers.get('user-agent', '')
     check_rate_limit(ip)
 
-    # Проверяем TOTP если включён
+    # Проверяем TOTP если включён — но пропускаем для доверенных устройств
     if totp_store.is_enabled():
-        if not body.totp_code:
-            raise HTTPException(status_code=401, detail='TOTP_REQUIRED')
-        import pyotp
-        secret = totp_store.get_secret()
-        if not pyotp.TOTP(secret).verify(body.totp_code, valid_window=1):
-            raise HTTPException(status_code=401, detail='Неверный код аутентификатора')
+        device_trusted = trusted_devices.is_trusted(body.login, ip, user_agent)
+        if not device_trusted:
+            if not body.totp_code:
+                raise HTTPException(status_code=401, detail='TOTP_REQUIRED')
+            import pyotp
+            secret = totp_store.get_secret()
+            if not pyotp.TOTP(secret).verify(body.totp_code, valid_window=1):
+                raise HTTPException(status_code=401, detail='Неверный код аутентификатора')
 
     client = PlatformClient()
     try:
@@ -99,6 +103,9 @@ async def login(body: LoginRequest, request: Request):
 
     reset_rate_limit(ip)
     set_session(body.login, client)
+    # После успешного входа делаем устройство доверенным (или продлеваем срок)
+    if totp_store.is_enabled():
+        trusted_devices.trust(body.login, ip, user_agent)
     token = create_token(body.login)
     return {'token': token}
 

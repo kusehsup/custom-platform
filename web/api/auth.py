@@ -5,7 +5,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 SECRET_KEY = 'change-this-secret-in-production-please'
 ALGORITHM = 'HS256'
-TOKEN_EXPIRE_HOURS = 24
+TOKEN_EXPIRE_HOURS = 24 * 7  # 7 дней — не теряем сессию между рестартами
 
 bearer = HTTPBearer()
 
