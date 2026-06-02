@@ -15,7 +15,6 @@ import base64
 import logging
 from datetime import datetime, timezone
 
-import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
@@ -41,6 +40,10 @@ def _headers(pat: str) -> dict:
 
 async def _gh(method: str, path: str, pat: str, **kwargs) -> dict:
     """Выполнить запрос к GitHub API."""
+    try:
+        import httpx
+    except ImportError:
+        raise HTTPException(status_code=500, detail='httpx не установлен. Выполните: pip install httpx')
     url = f'{GITHUB_API}{path}'
     async with httpx.AsyncClient(timeout=15) as client:
         resp = await client.request(method, url, headers=_headers(pat), **kwargs)
