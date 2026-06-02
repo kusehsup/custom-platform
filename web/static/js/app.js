@@ -35,29 +35,27 @@ const app = {
         const btn = document.getElementById('tb-server-btn');
         const isOn = this.state.server === 'on';
         if (btn) {
-            btn.textContent = isOn ? '⏹ Стоп' : '▶ Старт';
+            btn.textContent = isOn ? 'Стоп' : 'Старт';
             btn.className   = isOn ? 'btn btn-danger btn-sm' : 'btn btn-success btn-sm';
         }
 
-        // Кнопка компиляции меняется в зависимости от состояния
         const cWrap = document.getElementById('tb-compile-wrap');
         if (!cWrap) return;
         if (this.state.compile) {
-            cWrap.innerHTML = `<button class="btn btn-ghost btn-sm" disabled style="opacity:.6">⏳ Компилируется...</button>`;
+            cWrap.innerHTML = `<button class="btn btn-ghost btn-sm" disabled style="opacity:.5">Компилируется...</button>`;
         } else if (this._lastCompileResult) {
             const hasErr = /error/i.test(this._lastCompileResult);
-            const icon   = hasErr ? '❌' : '✅';
             cWrap.innerHTML = `
-            <div style="display:flex;gap:0;border:1px solid var(--border);border-radius:var(--radius-sm);overflow:hidden">
-                <button class="btn btn-ghost btn-sm" id="tb-compile-btn" style="border-radius:0;border:none;border-right:1px solid var(--border)">🔨</button>
-                <button class="btn btn-ghost btn-sm" id="tb-compile-result" style="border-radius:0;border:none">${icon} Результат</button>
+            <div style="display:flex;gap:0;border:1px solid var(--border-2);border-radius:var(--radius);overflow:hidden">
+                <button class="btn btn-ghost btn-sm" id="tb-compile-btn" style="border-radius:0;border:none;border-right:1px solid var(--border-2)">Сборка</button>
+                <button class="btn btn-ghost btn-sm" id="tb-compile-result" style="border-radius:0;border:none;color:${hasErr ? 'var(--red)' : 'var(--green)'}">● ${hasErr ? 'Ошибки' : 'OK'}</button>
             </div>`;
             document.getElementById('tb-compile-btn').addEventListener('click', () => this._doCompile());
             document.getElementById('tb-compile-result').addEventListener('click', () => {
                 this._pages['server']?._openModal?.(this._lastCompileResult, 'Последний результат');
             });
         } else {
-            cWrap.innerHTML = `<button class="btn btn-ghost btn-sm" id="tb-compile-btn">🔨 Компилировать</button>`;
+            cWrap.innerHTML = `<button class="btn btn-ghost btn-sm" id="tb-compile-btn">Сборка</button>`;
             document.getElementById('tb-compile-btn').addEventListener('click', () => this._doCompile());
         }
     },
@@ -383,35 +381,55 @@ const app = {
     },
 
     _showApp() {
+        // SVG icons
+        const ico = {
+            server:   `<svg viewBox="0 0 16 16"><rect x="1" y="2" width="14" height="4" rx="1"/><rect x="1" y="10" width="14" height="4" rx="1"/><circle cx="12.5" cy="4" r=".8" fill="currentColor" stroke="none"/><circle cx="12.5" cy="12" r=".8" fill="currentColor" stroke="none"/></svg>`,
+            files:    `<svg viewBox="0 0 16 16"><path d="M2 3a1 1 0 011-1h4.586a1 1 0 01.707.293l4.414 4.414A1 1 0 0113 7.414V13a1 1 0 01-1 1H3a1 1 0 01-1-1V3z"/></svg>`,
+            todo:     `<svg viewBox="0 0 16 16"><path d="M2 4h12M2 8h8M2 12h10"/></svg>`,
+            db:       `<svg viewBox="0 0 16 16"><ellipse cx="8" cy="4" rx="6" ry="2"/><path d="M2 4v4c0 1.1 2.686 2 6 2s6-.9 6-2V4"/><path d="M2 8v4c0 1.1 2.686 2 6 2s6-.9 6-2V8"/></svg>`,
+            settings: `<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="2.5"/><path d="M8 1.5v1M8 13.5v1M1.5 8h1M13.5 8h1M3.4 3.4l.7.7M11.9 11.9l.7.7M3.4 12.6l.7-.7M11.9 4.1l.7-.7"/></svg>`,
+            console:  `<svg viewBox="0 0 16 16"><rect x="1" y="2" width="14" height="12" rx="2"/><path d="M4 6l3 2.5L4 11M8 11h4"/></svg>`,
+            theme:    `<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="3"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.05 3.05l1.41 1.41M11.54 11.54l1.41 1.41M3.05 12.95l1.41-1.41M11.54 4.46l1.41-1.41"/></svg>`,
+            logout:   `<svg viewBox="0 0 16 16"><path d="M6 14H3a1 1 0 01-1-1V3a1 1 0 011-1h3M11 11l3-3-3-3M14 8H6"/></svg>`,
+            compile:  `<svg viewBox="0 0 16 16"><path d="M4 4l4 4-4 4M9 12h4"/></svg>`,
+            stop:     `<svg viewBox="0 0 16 16"><rect x="4" y="4" width="8" height="8" rx="1.5"/></svg>`,
+            play:     `<svg viewBox="0 0 16 16"><polygon points="4,2 14,8 4,14"/></svg>`,
+            ws:       `<svg viewBox="0 0 16 16"><path d="M2 8c0-3.3 2.7-6 6-6M14 8c0 3.3-2.7 6-6 6M5 8c0-1.7 1.3-3 3-3M11 8c0 1.7-1.3 3-3 3"/><circle cx="8" cy="8" r="1" fill="currentColor" stroke="none"/></svg>`,
+        };
+
         document.body.innerHTML = `
         <div class="layout">
             <header class="topbar">
-                <span class="topbar-logo"><span class="topbar-logo-icon">⚡</span>CustomPlatform</span>
+                <span class="topbar-logo">
+                    <span class="topbar-logo-icon">⚡</span>
+                    CustomPlatform
+                </span>
                 <div id="topbar-actions" class="topbar-actions hidden">
                     <button class="btn btn-sm" id="tb-server-btn">—</button>
-                    <span class="topbar-compile-wrap" id="tb-compile-wrap">
-                        <button class="btn btn-ghost btn-sm" id="tb-compile-btn">🔨 Компилировать</button>
+                    <span id="tb-compile-wrap">
+                        <button class="btn btn-ghost btn-sm" id="tb-compile-btn">${ico.compile} Компилировать</button>
                     </span>
                 </div>
-                <div style="margin-left:auto;display:flex;align-items:center;gap:6px">
-                    <button class="btn btn-ghost btn-sm" id="btn-console" title="Консоль" style="font-size:11px;padding:5px 10px">📋</button>
-                    <button class="btn btn-ghost btn-sm" id="btn-debug" title="WS лог" style="font-size:11px;padding:5px 10px">WS</button>
-                    <button class="btn btn-ghost btn-sm" id="btn-theme" title="Переключить тему" style="font-size:14px;padding:5px 8px">🌙</button>
-                    <span id="ws-status" class="ws-status ws-offline" title="Подключение..."></span>
-                    <button class="btn btn-ghost btn-sm" id="btn-logout">Выйти</button>
+                <div class="topbar-right">
+                    <button class="topbar-btn" id="btn-console" title="Консоль">${ico.console} Консоль</button>
+                    <button class="topbar-btn" id="btn-debug" title="WS лог">${ico.ws} WS</button>
+                    <button class="topbar-btn" id="btn-theme" title="Тема">${ico.theme}</button>
+                    <span id="ws-status" class="ws-status ws-offline" title="Подключение..." style="margin:0 4px"></span>
+                    <button class="topbar-btn" id="btn-logout" title="Выйти">${ico.logout} Выйти</button>
                 </div>
             </header>
             <nav class="sidebar">
                 <span class="sidebar-section">Управление</span>
-                <a data-page="server" title="Сервер"><span class="icon">🖥</span><span class="label">Сервер</span></a>
+                <a data-page="server">${ico.server}<span class="label">Сервер</span></a>
                 <span class="sidebar-section">Код</span>
-                <a data-page="files" title="Файлы"><span class="icon">📁</span><span class="label">Файлы</span></a>
+                <a data-page="files">${ico.files}<span class="label">Файлы</span></a>
                 <span class="sidebar-section">Инструменты</span>
-                <a data-page="todo" title="TODO трекер"><span class="icon">✅</span><span class="label">TODO</span><span id="todo-badge" class="sidebar-badge hidden"></span></a>
-                <a data-page="db" title="База данных"><span class="icon">🗄</span><span class="label">База данных</span></a>
-                <div style="flex:1"></div>
-                <a data-page="settings" title="Настройки"><span class="icon">⚙️</span><span class="label">Настройки</span></a>
-                <button id="sidebar-toggle" class="sidebar-toggle-btn" title="Развернуть/свернуть">»</button>
+                <a data-page="todo">${ico.todo}<span class="label">TODO</span><span id="todo-badge" class="sidebar-badge hidden"></span></a>
+                <a data-page="db">${ico.db}<span class="label">База данных</span></a>
+                <div class="sidebar-spacer"></div>
+                <div class="sidebar-footer">
+                    <a data-page="settings">${ico.settings}<span class="label">Настройки</span></a>
+                </div>
             </nav>
             <main class="main" id="main"></main>
         </div>
@@ -421,20 +439,6 @@ const app = {
             a.addEventListener('click', () => this.navigate(a.dataset.page))
         );
 
-        // Восстанавливаем состояние сайдбара
-        if (localStorage.getItem('sidebar_expanded') === '1') {
-            document.querySelector('.layout')?.classList.add('sidebar-expanded');
-            const btn = document.getElementById('sidebar-toggle');
-            if (btn) btn.textContent = '«';
-        }
-        document.getElementById('sidebar-toggle')?.addEventListener('click', () => {
-            const layout = document.querySelector('.layout');
-            const expanded = layout.classList.toggle('sidebar-expanded');
-            const btn = document.getElementById('sidebar-toggle');
-            if (btn) btn.textContent = expanded ? '«' : '»';
-            try { localStorage.setItem('sidebar_expanded', expanded ? '1' : '0'); } catch {}
-            setTimeout(() => this._pages['files']?._editor?.layout(), 250);
-        });
         document.getElementById('btn-debug').addEventListener('click', () => this.toggleDebug());
         document.getElementById('btn-console').addEventListener('click', () => this.toggleConsole());
         document.getElementById('btn-theme').addEventListener('click', () => this.toggleTheme());
@@ -448,7 +452,7 @@ const app = {
                     this.state.server = isOn ? 'off' : 'on';
                     this._updateTopbarActions();
                     this._pages['server']?.onState?.();
-                    app.toast(isOn ? '🔴 Сервер остановлен' : '🟢 Сервер запущен', isOn ? 'info' : 'success');
+                    app.toast(isOn ? 'Сервер остановлен' : 'Сервер запущен', isOn ? 'info' : 'success');
                 } catch (e) { app.toast('Ошибка: ' + e.message, 'error'); }
             }
         });
@@ -473,8 +477,8 @@ const app = {
         P.register({ id: 'nav.server',   title: 'Перейти: Сервер',     icon: '🖥', group: 'Навигация', run: () => this.navigate('server') });
         P.register({ id: 'nav.files',    title: 'Перейти: Файлы',      icon: '📁', group: 'Навигация', run: () => this.navigate('files') });
         P.register({ id: 'nav.settings', title: 'Перейти: Настройки',  icon: '⚙️', group: 'Навигация', run: () => this.navigate('settings') });
-        P.register({ id: 'srv.start',    title: 'Сервер: Запустить',   icon: '▶',  group: 'Сервер', hint: 'Ctrl+Shift+S', when: () => this.state.server !== 'on', run: async () => { await API.post('/api/server/start'); this.state.server='on'; this._updateTopbarActions(); this._pages['server']?.onState?.(); app.toast('🟢 Сервер запущен', 'success'); } });
-        P.register({ id: 'srv.stop',     title: 'Сервер: Остановить',  icon: '⏹', group: 'Сервер', when: () => this.state.server === 'on', run: async () => { await API.post('/api/server/stop'); this.state.server='off'; this._updateTopbarActions(); this._pages['server']?.onState?.(); app.toast('🔴 Сервер остановлен', 'info'); } });
+        P.register({ id: 'srv.start',    title: 'Сервер: Запустить',   icon: '▶',  group: 'Сервер', hint: 'Ctrl+Shift+S', when: () => this.state.server !== 'on', run: async () => { await API.post('/api/server/start'); this.state.server='on'; this._updateTopbarActions(); this._pages['server']?.onState?.(); app.toast('Сервер запущен', 'success'); } });
+        P.register({ id: 'srv.stop',     title: 'Сервер: Остановить',  icon: '⏹', group: 'Сервер', when: () => this.state.server === 'on', run: async () => { await API.post('/api/server/stop'); this.state.server='off'; this._updateTopbarActions(); this._pages['server']?.onState?.(); app.toast('Сервер остановлен', 'info'); } });
         P.register({ id: 'compile',      title: 'Компилировать',       icon: '🔨', group: 'Сервер', hint: 'Ctrl+Shift+B', run: () => this._doCompile() });
         P.register({ id: 'view.console', title: 'Виджет: Консоль',     icon: '📋', group: 'Виджеты', run: () => this.toggleConsole() });
         P.register({ id: 'view.wslog',   title: 'Виджет: WS Log',      icon: '📡', group: 'Виджеты', run: () => this.toggleDebug() });
@@ -495,8 +499,6 @@ const app = {
 
     _applyTheme(theme) {
         document.body.classList.toggle('light', theme === 'light');
-        const btn = document.getElementById('btn-theme');
-        if (btn) btn.textContent = theme === 'light' ? '🌙' : '☀️';
         if (typeof monaco !== 'undefined') {
             monaco.editor.setTheme(theme === 'light' ? 'vs' : 'custom-dark');
         } else {
