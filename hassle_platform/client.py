@@ -271,7 +271,6 @@ class PlatformClient:
 
     async def fetch_queries(self, timeout: float = 8.0) -> dict:
         """Получает запросы через основное соединение — без отдельного WS."""
-        import time
         # Кэш 60 секунд
         cached = self._app_data.get('queries', {})
         cache_ts = self._app_data.get('queries_ts', 0)
@@ -468,7 +467,6 @@ class PlatformClient:
 
         elif event == 'code_queries_update':
             queries = args[0] if args else {}
-            import time
             self._app_data['queries'] = queries
             self._app_data['queries_ts'] = time.time()
 
