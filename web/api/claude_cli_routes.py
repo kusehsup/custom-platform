@@ -482,10 +482,11 @@ async def mcp_exec_compile(login: str = Depends(get_current_user)):
         raise HTTPException(status_code=401, detail='Сессия не найдена')
     if client.is_compiling:
         return {'message': 'Компиляция уже идёт.'}
+    # start_compile сам выставит _app_data['compile']=True ПОСЛЕ
+    # успешного _emit'а. Если мы предзагрузим флаг — start_compile
+    # увидит is_compiling=True, вернётся как already_running и
+    # реальная команда платформе не уйдёт (вечная фейк-компиляция).
     asyncio.create_task(client.start_compile())
-    # Заставляем _app_data.compile=True и шлём фронту
-    client._app_data['compile'] = True
-    await _notify_app_data(client)
     return {'message': 'Компиляция запущена.'}
 
 
