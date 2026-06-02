@@ -57,6 +57,7 @@ app.register('files', {
                         <button class="btn btn-ghost btn-sm hidden" id="btn-save">💾 Сохранить</button>
                         <button class="btn btn-ghost btn-sm hidden" id="btn-discard">✕ Сбросить</button>
                         <button class="btn btn-ghost btn-sm hidden" id="btn-history" title="История изменений">🕐 История</button>
+                        <button class="btn btn-ghost btn-sm hidden" id="btn-gh-archive" title="Архив GitHub">⬡ Архив</button>
                         <button class="btn btn-ghost btn-sm hidden" id="btn-del-toggle" title="Удалить доступ к строкам">🗑</button>
                     </div>
                     <div id="editor-statusbar" class="editor-statusbar hidden">
@@ -104,6 +105,7 @@ app.register('files', {
         );
 
         document.getElementById('btn-history').addEventListener('click', () => this._showHistory());
+        document.getElementById('btn-gh-archive').addEventListener('click', () => this._showGithubArchive());
         document.getElementById('btn-del-toggle').addEventListener('click', () => {
             const bar = document.getElementById('delete-access-bar');
             bar.classList.toggle('hidden');
@@ -227,6 +229,7 @@ app.register('files', {
         // Показываем кнопку удаления доступа, панель скрыта по умолчанию
         document.getElementById('btn-goto')?.classList.remove('hidden');
         document.getElementById('btn-history')?.classList.remove('hidden');
+        document.getElementById('btn-gh-archive')?.classList.remove('hidden');
         document.getElementById('btn-del-toggle')?.classList.remove('hidden');
         document.getElementById('editor-statusbar')?.classList.remove('hidden');
         document.getElementById('delete-access-bar')?.classList.add('hidden');
@@ -1388,4 +1391,105 @@ app.register('files', {
     },
 
     _esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); },
+
+    // ── GitHub Archive ────────────────────────────────────────────
+
+    async _showGithubArchive() {
+        const fileId = this._activeFileId;
+        if (!fileId) return;
+
+        // Создаём модал
+        let modal = document.getElementById('gh-archive-modal');
+        if (modal) modal.remove();
+        modal = document.createElement('div');
+        modal.id = 'gh-archive-modal';
+        modal.style.cssText = `position:fixed;inset:0;z-index:8000;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;padding:24px`;
+        modal.innerHTML = `
+        <div style="background:var(--surface);border:1px solid var(--border-2);border-radius:var(--radius-lg);width:100%;max-width:860px;max-height:80vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 16px 48px rgba(0,0,0,0.7)">
+            <div style="display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--border);flex-shrink:0">
+                <span style="font-size:13px;font-weight:600;color:var(--text)">GitHub Архив</span>
+                <span id="gh-arc-path" style="font-size:11px;color:var(--text-3);font-family:var(--mono)"></span>
+                <button id="gh-arc-close" style="margin-left:auto;background:none;border:none;color:var(--text-2);cursor:pointer;font-size:18px;line-height:1;padding:2px 6px">✕</button>
+            </div>
+            <div style="display:grid;grid-template-columns:220px 1fr;flex:1;overflow:hidden;min-height:0">
+                <div id="gh-arc-list" style="border-right:1px solid var(--border);overflow-y:auto;padding:6px 0;background:var(--bg)">
+                    <div style="padding:16px;color:var(--text-3);font-size:12px">Загрузка...</div>
+                </div>
+                <div style="display:flex;flex-direction:column;overflow:hidden">
+                    <div id="gh-arc-empty" style="display:flex;align-items:center;justify-content:center;flex:1;color:var(--text-3);font-size:13px">← Выберите версию</div>
+                    <div id="gh-arc-viewer" style="flex:1;display:none;position:relative"></div>
+                </div>
+            </div>
+        </div>`;
+        document.body.appendChild(modal);
+
+        modal.querySelector('#gh-arc-close').addEventListener('click', () => modal.remove());
+        modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+
+        let arcViewer = null;
+
+        // Загружаем историю
+        try {
+            const data = await API.get(`/api/github/history/${fileId}`);
+            const listEl = document.getElementById('gh-arc-list');
+            document.getElementById('gh-arc-path').textContent = data.file_path;
+
+            if (!data.commits.length) {
+                listEl.innerHTML = `<div style="padding:16px;color:var(--text-3);font-size:12px">Нет коммитов для этого файла</div>`;
+                return;
+            }
+
+            const fmt = iso => {
+                const d = new Date(iso);
+                return d.toLocaleString('ru-RU', { day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit' });
+            };
+
+            listEl.innerHTML = data.commits.map((c, i) => `
+            <div class="hist-item" data-sha="${c.sha}" data-idx="${i}">
+                <div class="hist-item-ts">${c.sha_short} — ${fmt(c.date)}</div>
+                <div class="hist-item-line" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${this._esc(c.message.split('\n')[0])}</div>
+            </div>`).join('');
+
+            listEl.querySelectorAll('.hist-item').forEach(item => {
+                item.addEventListener('click', async () => {
+                    listEl.querySelectorAll('.hist-item').forEach(i => i.classList.remove('active'));
+                    item.classList.add('active');
+                    const sha = item.dataset.sha;
+
+                    document.getElementById('gh-arc-empty').style.display = 'none';
+                    const wrap = document.getElementById('gh-arc-viewer');
+                    wrap.style.display = 'block';
+                    wrap.innerHTML = '<div style="padding:16px;color:var(--text-3);font-size:12px">Загрузка...</div>';
+
+                    try {
+                        const file = await API.get(`/api/github/file/${fileId}?sha=${sha}`);
+                        wrap.innerHTML = '';
+                        if (arcViewer) { arcViewer.dispose(); arcViewer = null; }
+
+                        const theme = localStorage.getItem('theme') === 'light' ? 'vs' : 'custom-dark';
+                        arcViewer = monaco.editor.create(wrap, {
+                            value: file.content,
+                            language: 'pawn',
+                            theme,
+                            readOnly: true,
+                            minimap: { enabled: false },
+                            scrollBeyondLastLine: false,
+                            fontSize: 13,
+                            lineNumbers: 'on',
+                            padding: { top: 8 },
+                        });
+
+                        // Resize когда модал отображается
+                        setTimeout(() => arcViewer?.layout(), 50);
+                    } catch (e) {
+                        wrap.innerHTML = `<div style="padding:16px;color:var(--red);font-size:12px">${e.message}</div>`;
+                    }
+                });
+            });
+
+        } catch (e) {
+            const listEl = document.getElementById('gh-arc-list');
+            if (listEl) listEl.innerHTML = `<div style="padding:16px;color:var(--red);font-size:12px">${e.message}</div>`;
+        }
+    },
 });

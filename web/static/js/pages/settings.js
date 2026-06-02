@@ -23,6 +23,13 @@ app.register('settings', {
             <div id="notif-hint" style="margin-top:10px;font-size:12px;color:var(--text-3)"></div>
         </div>
 
+        <div class="card" id="github-card">
+            <div class="card-header"><span class="card-title">GitHub архив</span></div>
+            <div id="github-body" style="padding:2px 0">
+                <div style="color:var(--text-3);font-size:12px">Загрузка...</div>
+            </div>
+        </div>
+
         <div class="card" id="totp-card">
             <div class="card-header">
                 <span class="card-title">Безопасность</span>
@@ -61,6 +68,7 @@ app.register('settings', {
         });
 
         this._loadTotpStatus(root);
+        this._loadGithubStatus(root);
     },
 
     _row(key, icon, title, desc, checked) {
@@ -221,6 +229,108 @@ app.register('settings', {
         } catch (e) {
             area.innerHTML = `<div style="color:var(--red);font-size:13px">${e.message}</div>`;
             btn.disabled = false; btn.textContent = 'Настроить 2FA';
+        }
+    },
+
+    // ── GitHub ────────────────────────────────────────────────────
+
+    async _loadGithubStatus(root) {
+        const body = document.getElementById('github-body');
+        if (!body) return;
+        try {
+            const res = await API.get('/api/github/status');
+            this._renderGithubSection(body, res);
+        } catch (e) {
+            body.innerHTML = `<div style="color:var(--red);font-size:12px">${e.message}</div>`;
+        }
+    },
+
+    _renderGithubSection(body, status) {
+        if (status.connected) {
+            const lc = status.last_commit;
+            const lcHtml = lc
+                ? `<div style="font-size:11px;color:var(--text-3);margin-top:6px;font-family:var(--mono)">
+                     Последний коммит: <span style="color:var(--text-2)">${lc.sha}</span>
+                     — ${lc.message.split('\n')[0].slice(0, 60)}
+                   </div>`
+                : '';
+            body.innerHTML = `
+            <div class="settings-row">
+                <div class="settings-row-body">
+                    <div class="settings-row-title">${status.repo}</div>
+                    <div class="settings-row-desc">Подключено как ${status.github_user}</div>
+                    ${lcHtml}
+                </div>
+                <div class="settings-row-action" style="display:flex;gap:6px">
+                    <button class="btn btn-ghost btn-sm" id="gh-sync-btn">Синхронизировать</button>
+                    <button class="btn btn-danger btn-sm" id="gh-disconnect-btn">Отключить</button>
+                </div>
+            </div>`;
+
+            document.getElementById('gh-sync-btn').addEventListener('click', async () => {
+                const btn = document.getElementById('gh-sync-btn');
+                btn.disabled = true; btn.textContent = 'Синхронизация...';
+                try {
+                    const res = await API.post('/api/github/sync');
+                    app.toast(`Синхронизировано ${res.synced.length} файлов`, 'success');
+                    if (res.errors.length) app.toast(`Ошибок: ${res.errors.length}`, 'error');
+                } catch (e) {
+                    app.toast(e.message, 'error');
+                } finally {
+                    btn.disabled = false; btn.textContent = 'Синхронизировать';
+                }
+            });
+
+            document.getElementById('gh-disconnect-btn').addEventListener('click', async () => {
+                if (!confirm('Отключить GitHub? Данные в репозитории останутся.')) return;
+                try {
+                    await API.delete('/api/github/connect');
+                    app.toast('GitHub отключён', 'info');
+                    await this._loadGithubStatus(document.getElementById('github-card').parentElement);
+                } catch (e) {
+                    app.toast(e.message, 'error');
+                }
+            });
+        } else {
+            body.innerHTML = `
+            <div class="settings-row">
+                <div class="settings-row-body">
+                    <div class="settings-row-title">Репозиторий не подключён</div>
+                    <div class="settings-row-desc">Автоматическое сохранение изменений кода в личный GitHub-архив</div>
+                </div>
+            </div>
+            <div style="padding:14px 0 4px;border-top:1px solid var(--border);margin-top:4px;display:flex;flex-direction:column;gap:10px">
+                <div style="display:flex;flex-direction:column;gap:6px">
+                    <label style="font-size:11px;color:var(--text-3)">Personal Access Token (repo scope)</label>
+                    <input id="gh-pat" type="password" placeholder="ghp_xxxxxxxxxxxx" style="font-family:var(--mono);font-size:12px" />
+                </div>
+                <div style="display:flex;flex-direction:column;gap:6px">
+                    <label style="font-size:11px;color:var(--text-3)">Репозиторий</label>
+                    <input id="gh-repo" type="text" placeholder="username/my-pawn-archive" style="font-family:var(--mono);font-size:12px" />
+                </div>
+                <div style="display:flex;gap:8px;align-items:center">
+                    <button class="btn btn-primary btn-sm" id="gh-connect-btn">Подключить</button>
+                    <div id="gh-err" style="font-size:12px;color:var(--red)"></div>
+                </div>
+            </div>`;
+
+            document.getElementById('gh-connect-btn').addEventListener('click', async () => {
+                const pat  = document.getElementById('gh-pat').value.trim();
+                const repo = document.getElementById('gh-repo').value.trim();
+                const err  = document.getElementById('gh-err');
+                const btn  = document.getElementById('gh-connect-btn');
+                if (!pat)  { err.textContent = 'Введите токен'; return; }
+                if (!repo) { err.textContent = 'Введите репозиторий'; return; }
+                btn.disabled = true; btn.textContent = 'Проверка...'; err.textContent = '';
+                try {
+                    const res = await API.post('/api/github/connect', { pat, repo });
+                    app.toast(`Подключено: ${res.repo}`, 'success');
+                    this._renderGithubSection(body, { connected: true, ...res });
+                } catch (e) {
+                    err.textContent = e.message;
+                    btn.disabled = false; btn.textContent = 'Подключить';
+                }
+            });
         }
     },
 

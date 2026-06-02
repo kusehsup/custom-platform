@@ -266,7 +266,32 @@ async def save_code(body: SaveCodeRequest, login: str = Depends(get_current_user
     # Обновляем кэш кода чтобы перезагрузка страницы показывала актуальные данные
     client.update_cached_code(body.file_id, body.part_index, body.code, new_hash)
 
+    # Автокоммит в GitHub архив (fire-and-forget, не блокирует ответ)
+    asyncio.create_task(_github_autocommit(client, body.file_id, body.part_index))
+
     return {'hash': new_hash}
+
+
+async def _github_autocommit(client, file_id: str, part_index: int):
+    """Коммитит актуальный файл в GitHub архив после сохранения."""
+    from . import github_store
+    from .github_routes import commit_file, _file_path_for, _build_content, _ensure_branch
+    if not github_store.is_configured():
+        return
+    try:
+        pat = github_store.get_pat()
+        repo = github_store.get_repo()
+        content = _build_content(client, file_id)
+        if not content.strip():
+            return
+        file_path = _file_path_for(client, file_id)
+        await _ensure_branch(pat, repo, 'platform/archive')
+        fname = client.files.get(file_id, {}).get('name', file_path)
+        await commit_file(pat, repo, file_path, content,
+                          f'auto: save {fname} (part {part_index})')
+    except Exception as e:
+        import logging
+        logging.getLogger('github').warning(f'Autocommit failed: {e}')
 
 
 # ------------------------------------------------------------------ #

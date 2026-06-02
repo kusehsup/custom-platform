@@ -19,3 +19,6 @@ probe.py
 
 # TOTP секрет — не должен попасть в репозиторий
 web/totp.json
+
+# GitHub PAT — не должен попасть в репозиторий
+web/github.json
