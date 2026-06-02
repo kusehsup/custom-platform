@@ -147,12 +147,30 @@ def _build_workspace(client) -> tuple[Path, dict]:
     return ws, snapshot
 
 
+def _normalize(text: str) -> str:
+    """
+    Нормализует текст для сравнения diff:
+    - убирает BOM
+    - приводит CRLF/CR к LF
+    - убирает trailing whitespace на каждой строке
+    - убирает финальные пустые строки
+    Это игнорирует косметические различия, которые Claude часто вносит
+    автоматически (нормализация line endings, добавление newline в конце).
+    """
+    if text is None:
+        return ''
+    s = text.lstrip('﻿')
+    s = s.replace('\r\n', '\n').replace('\r', '\n')
+    s = '\n'.join(line.rstrip() for line in s.split('\n'))
+    s = s.rstrip('\n')
+    return s
+
+
 def _diff_workspace(ws: Path, snapshot: dict) -> list[dict]:
     """
     Сравнивает содержимое workspace с snapshot.
-    Возвращает список:
-        [{'file_id', 'path', 'old_content', 'new_content'}]
-    Только для изменённых файлов.
+    Считаем файл изменённым только если различия СМЫСЛОВЫЕ
+    (после нормализации line endings / trailing whitespace).
     """
     edits = []
     for rel, info in snapshot.items():
@@ -163,13 +181,15 @@ def _diff_workspace(ws: Path, snapshot: dict) -> list[dict]:
             new_text = target.read_text(encoding='utf-8')
         except OSError:
             continue
-        if new_text != info['content']:
-            edits.append({
-                'file_id': info['file_id'],
-                'path': rel,
-                'old_content': info['content'],
-                'new_content': new_text,
-            })
+        old_text = info['content']
+        if _normalize(new_text) == _normalize(old_text):
+            continue  # косметика, не правка
+        edits.append({
+            'file_id': info['file_id'],
+            'path': rel,
+            'old_content': old_text,
+            'new_content': new_text,
+        })
     return edits
 
 
@@ -190,17 +210,23 @@ def _build_system_prompt(client, body: 'ChatRequest', attached_paths: list[str])
         'В ней лежат ТОЛЬКО .pwn и .inc файлы — настоящая структура (например gamemodes/gamelogic.pwn).',
         'Никаких Python, JS, README, .git, deploy-скриптов здесь нет и быть не должно.',
         '',
+        '# Когда что-то менять',
+        '⚠️ Edit/Write/MultiEdit применяй ТОЛЬКО когда пользователь ЯВНО просит внести правку.',
+        'Если вопрос "что есть", "как работает", "объясни", "найди", "покажи" — НЕ ТРОГАЙ файлы. Только читай (Read/Glob/Grep) и отвечай текстом.',
+        'Если ты не уверен, нужна ли правка — спроси у пользователя, прежде чем редактировать.',
+        'НЕ переоформляй файлы под "лучший стиль" по своей инициативе. НЕ переноси переводы строк, BOM, отступы — это всё засчитается как правка и засрёт пользовательский diff.',
+        '',
         '# Как работать',
-        '- Используй Glob/Grep/Read чтобы изучить структуру и найти нужный код.',
-        '- Используй Edit/Write/MultiEdit чтобы изменить файлы — твои правки будут показаны пользователю как diff с кнопкой "Применить".',
+        '- Изучай код через Glob → Read / Grep.',
+        '- Когда пользователь явно просит правку — используй Edit/MultiEdit (точечно), Write (только если файла раньше не было). Твои правки появятся у пользователя как diff с кнопкой "Применить".',
         '- НЕ выходи за пределы рабочей директории. Никаких Bash, WebFetch, обращений к интернету.',
-        '- При изменениях сохраняй стиль соседнего кода: отступы (часто tabs), скобки, паттерны именования (camelCase / snake_case как в файле).',
+        '- При изменениях сохраняй стиль соседнего кода: отступы (часто tabs), скобки, паттерны именования.',
         '',
         '# Правила ответов',
         '- Отвечай на русском.',
         '- Будь краток. Не пересказывай содержимое файла, если пользователь его и так видит.',
         '- Pawn-код в ответе оборачивай в ```pawn ... ```.',
-        '- Если делаешь правку — ОБЯЗАТЕЛЬНО используй Edit/Write, а не показывай код в ответе. Так пользователь увидит diff.',
+        '- Если делаешь правку — НЕ дублируй её ещё и текстом в ответе, пользователь увидит её в diff. Достаточно короткого пояснения "что и зачем".',
     ]
 
     if attached_paths:

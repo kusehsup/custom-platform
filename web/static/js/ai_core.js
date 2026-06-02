@@ -397,10 +397,24 @@ const AiChat = {
         ).join('')}</div>`;
     },
 
+    /** Косметическая нормализация — должна совпадать с _normalize() на бэке. */
+    _normalizeText(s) {
+        if (!s) return '';
+        return s
+            .replace(/^﻿/, '')
+            .replace(/\r\n?/g, '\n')
+            .split('\n').map(l => l.replace(/[ \t]+$/, '')).join('\n')
+            .replace(/\n+$/, '');
+    },
+
     /** HTML для блока правок с кнопками. msgIdx нужен для callbacks. */
     renderEdits(msg, msgIdx) {
         if (!msg?.edits?.length) return '';
-        const edits = msg.edits;
+        // Фильтруем «пустые» правки (косметика line endings и пр.)
+        const edits = msg.edits.filter(e =>
+            this._normalizeText(e.old_content) !== this._normalizeText(e.new_content)
+        );
+        if (!edits.length) return '';
         const pendingCount = edits.filter(e => e.status === 'pending').length;
         const applyAll = pendingCount > 1
             ? `<button class="btn btn-primary btn-sm" data-action="apply-all" data-msg="${msgIdx}">Применить все (${pendingCount})</button>`
