@@ -25,3 +25,7 @@ web/github.json
 
 # Локальная статистика расхода Claude
 web/claude_usage.json
+
+# TODO задачи и их вложения
+web/tasks.json
+web/uploads/

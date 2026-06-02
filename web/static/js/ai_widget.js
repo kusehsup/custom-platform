@@ -39,6 +39,7 @@ const AiWidget = {
                 <div class="ai-status" id="ai-w-status">Загрузка…</div>
                 <button class="ai-usage-btn" id="ai-w-usage" title="Расход Claude за сегодня"></button>
             </div>
+            <div class="ai-active-task-bar" id="ai-w-active-task"></div>
 
             <div class="ai-ctx">
                 <div class="ai-ctx-row">
@@ -123,6 +124,11 @@ const AiWidget = {
         this._renderMessages();
         const usageBtn = document.getElementById('ai-w-usage');
         if (usageBtn) usageBtn.innerHTML = AiChat.renderUsageBadge();
+        const activeTaskBar = document.getElementById('ai-w-active-task');
+        if (activeTaskBar) {
+            activeTaskBar.innerHTML = AiChat.renderActiveTaskPicker();
+            activeTaskBar.querySelector('[data-action="pick-task"]')?.addEventListener('click', () => AiChat.showTaskPicker());
+        }
     },
 
     _renderStatus() {

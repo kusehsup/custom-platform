@@ -393,6 +393,7 @@ const app = {
             logout:   `<svg viewBox="0 0 16 16"><path d="M6 14H3a1 1 0 01-1-1V3a1 1 0 011-1h3M11 11l3-3-3-3M14 8H6"/></svg>`,
             compile:  `<svg viewBox="0 0 16 16"><path d="M4 4l4 4-4 4M9 12h4"/></svg>`,
             ai:       `<svg viewBox="0 0 16 16"><path d="M8 1.5l1.6 3.5L13 6.6l-2.7 2.3.8 3.6L8 10.7l-3.1 1.8.8-3.6L3 6.6l3.4-1.6L8 1.5z"/></svg>`,
+            tasks:    `<svg viewBox="0 0 16 16"><rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M5 6.5l1.5 1.5L9 5.5M5 10.5l1.5 1.5L9 9.5"/></svg>`,
             stop:     `<svg viewBox="0 0 16 16"><rect x="4" y="4" width="8" height="8" rx="1.5"/></svg>`,
             play:     `<svg viewBox="0 0 16 16"><polygon points="4,2 14,8 4,14"/></svg>`,
             ws:       `<svg viewBox="0 0 16 16"><path d="M2 8c0-3.3 2.7-6 6-6M14 8c0 3.3-2.7 6-6 6M5 8c0-1.7 1.3-3 3-3M11 8c0 1.7-1.3 3-3 3"/><circle cx="8" cy="8" r="1" fill="currentColor" stroke="none"/></svg>`,
@@ -427,6 +428,7 @@ const app = {
                 <a data-page="files">${ico.files}<span class="label">Файлы</span></a>
                 <span class="sidebar-section">Инструменты</span>
                 <a data-page="ai">${ico.ai}<span class="label">AI ассистент</span></a>
+                <a data-page="tasks">${ico.tasks}<span class="label">Задачи</span><span id="tasks-badge" class="sidebar-badge hidden"></span></a>
                 <a data-page="todo">${ico.todo}<span class="label">TODO</span><span id="todo-badge" class="sidebar-badge hidden"></span></a>
                 <a data-page="db">${ico.db}<span class="label">База данных</span></a>
                 <div class="sidebar-spacer"></div>
@@ -446,6 +448,9 @@ const app = {
         document.getElementById('btn-console').addEventListener('click', () => this.toggleConsole());
         document.getElementById('btn-ai').addEventListener('click', () => AiWidget.toggle());
         document.getElementById('btn-theme').addEventListener('click', () => this.toggleTheme());
+
+        // Подгружаем задачи в фоне — для бэйджа в сайдбаре и активной задачи в AI
+        if (typeof TasksStore !== 'undefined') TasksStore.load().catch(() => {});
 
         // Кнопка сервера в топбаре
         document.getElementById('topbar-actions').addEventListener('click', async e => {
@@ -487,6 +492,8 @@ const app = {
         P.register({ id: 'view.console', title: 'Виджет: Консоль',     icon: '📋', group: 'Виджеты', run: () => this.toggleConsole() });
         P.register({ id: 'view.wslog',   title: 'Виджет: WS Log',      icon: '📡', group: 'Виджеты', run: () => this.toggleDebug() });
         P.register({ id: 'view.ai',      title: 'Виджет: AI ассистент', icon: '✦', group: 'Виджеты', run: () => AiWidget.toggle() });
+        P.register({ id: 'tasks.open',   title: 'Перейти к задачам',   icon: '⎘', group: 'Навигация', run: () => this.navigate('tasks') });
+        P.register({ id: 'tasks.pick',   title: 'Активная задача...',  icon: '⎘', group: 'Задачи', run: () => { if (typeof AiChat !== 'undefined') { AiChat.init(); AiChat.showTaskPicker(); } } });
         P.register({ id: 'sidebar.toggle', title: 'Свернуть/Развернуть сайдбар', icon: '◧', group: 'Интерфейс', run: () => document.getElementById('sidebar-toggle')?.click() });
         P.register({ id: 'logout',       title: 'Выйти',               icon: '🚪', group: 'Прочее', run: () => document.getElementById('btn-logout')?.click() });
         // Команды редактора

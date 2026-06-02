@@ -13,6 +13,7 @@ const AiPage = {
                     <div id="ai-p-status" class="ai-status ai-status-inline">Загрузка…</div>
                 </div>
                 <div style="display:flex;gap:8px;align-items:center">
+                    <div id="ai-p-active-task"></div>
                     <button class="ai-usage-btn" id="ai-p-usage" title="Расход Claude за сегодня"></button>
                     <button class="btn btn-ghost btn-sm" id="ai-p-clear">Очистить чат</button>
                 </div>
@@ -114,6 +115,11 @@ const AiPage = {
         this._renderMessages();
         const usageBtn = document.getElementById('ai-p-usage');
         if (usageBtn) usageBtn.innerHTML = AiChat.renderUsageBadge();
+        const activeTask = document.getElementById('ai-p-active-task');
+        if (activeTask) {
+            activeTask.innerHTML = AiChat.renderActiveTaskPicker();
+            activeTask.querySelector('[data-action="pick-task"]')?.addEventListener('click', () => AiChat.showTaskPicker());
+        }
     },
 
     _renderStatus() {

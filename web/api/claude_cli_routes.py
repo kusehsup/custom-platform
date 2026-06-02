@@ -38,6 +38,7 @@ from pydantic import BaseModel
 from .auth import get_current_user
 from .sessions import get_session
 from . import claude_usage
+from . import tasks_store
 
 logger = logging.getLogger('claude')
 router = APIRouter()
@@ -203,7 +204,8 @@ def _cleanup_workspace(ws: Path):
 
 # ── System prompt ─────────────────────────────────────────────────────
 
-def _build_system_prompt(client, body: 'ChatRequest', attached_paths: list[str]) -> str:
+def _build_system_prompt(client, body: 'ChatRequest', attached_paths: list[str],
+                          login: str) -> str:
     parts = [
         '# Кто ты',
         'Ты встроенный ассистент в веб-платформу разработки игрового сервера SA-MP на языке Pawn.',
@@ -229,6 +231,63 @@ def _build_system_prompt(client, body: 'ChatRequest', attached_paths: list[str])
         '- Pawn-код в ответе оборачивай в ```pawn ... ```.',
         '- Если делаешь правку — НЕ дублируй её ещё и текстом в ответе, пользователь увидит её в diff. Достаточно короткого пояснения "что и зачем".',
     ]
+
+    # Активная задача всегда в контексте
+    try:
+        active = tasks_store.get_active_task(login)
+    except Exception:
+        active = None
+    if active:
+        parts.append('')
+        parts.append('# Активная задача пользователя')
+        parts.append(f'**{active["title"]}** · статус: `{active["status"]}` · приоритет: `{active["priority"]}`')
+        desc = (active.get('description') or '').strip()
+        if desc:
+            parts.append('')
+            parts.append(desc[:4000])
+        # Прикреплённые к задаче Pawn-файлы — подсказка путей
+        task_files = active.get('attached_files') or []
+        if task_files and client.files:
+            task_paths = []
+            for fid in task_files:
+                meta = client.files.get(fid) or client.files.get(str(fid)) or {}
+                p = meta.get('fullPath') or meta.get('name')
+                if p:
+                    task_paths.append(p.lstrip('/'))
+            if task_paths:
+                parts.append('')
+                parts.append('Файлы задачи:')
+                for p in task_paths:
+                    parts.append(f'- {p}')
+        # Заметки (последние 10) и AI-журнал (последние 5) — короткая память
+        notes = active.get('notes') or []
+        if notes:
+            parts.append('')
+            parts.append('Последние заметки по задаче:')
+            for n in notes[-10:]:
+                parts.append(f'- {n.get("text", "")[:200]}')
+        ai_log = active.get('ai_log') or []
+        if ai_log:
+            parts.append('')
+            parts.append('Что уже делалось AI по этой задаче:')
+            for entry in ai_log[-5:]:
+                parts.append(f'- [{entry.get("kind")}] {entry.get("summary", "")}')
+        parts.append('')
+        parts.append('Если выполнишь то, что просили в задаче — кратко упомяни в ответе, что задачу можно перевести в done.')
+
+    # Короткий обзор остальных открытых задач (только заголовки)
+    try:
+        all_tasks = tasks_store.list_tasks(login)
+    except Exception:
+        all_tasks = []
+    other_open = [t for t in all_tasks
+                  if t.get('id') != (active or {}).get('id')
+                  and t.get('status') in ('open', 'in_progress')]
+    if other_open:
+        parts.append('')
+        parts.append('# Другие открытые задачи (краткий список)')
+        for t in other_open[:15]:
+            parts.append(f'- [{t.get("status")}] {t.get("title")}')
 
     if attached_paths:
         parts.append('')
@@ -380,7 +439,7 @@ async def claude_chat(body: ChatRequest, login: str = Depends(get_current_user))
         if rel:
             attached_paths.append(rel)
 
-    system_prompt = _build_system_prompt(client, body, attached_paths)
+    system_prompt = _build_system_prompt(client, body, attached_paths, login)
 
     args = [
         bin_path,
@@ -502,6 +561,29 @@ async def claude_chat(body: ChatRequest, login: str = Depends(get_current_user))
                                 'old_content': e['old_content'],
                                 'new_content': e['new_content'],
                             })
+                        # Логируем активность AI в активную задачу
+                        try:
+                            active = tasks_store.get_active_task(login)
+                            if active:
+                                if edits_payload:
+                                    paths = [e['path'] for e in edits_payload]
+                                    tasks_store.append_ai_log(
+                                        login, active['id'], 'edit',
+                                        f'Предложено правок: {len(paths)}',
+                                        files=paths,
+                                    )
+                                else:
+                                    # Просто диалог без правок — короткая запись
+                                    last_user = next((m for m in reversed(body.messages)
+                                                       if m.role == 'user'), None)
+                                    if last_user:
+                                        tasks_store.append_ai_log(
+                                            login, active['id'], 'chat',
+                                            last_user.content[:200],
+                                        )
+                        except Exception as ex:
+                            logger.warning(f'ai_log failed: {ex}')
+
                         yield f'event: edits\ndata: {json.dumps({"edits": edits_payload})}\n\n'
                         yield f'event: done\ndata: {json.dumps({"usage": usage_obj})}\n\n'
 
@@ -610,5 +692,19 @@ async def claude_apply_edits(body: ApplyEditsRequest, login: str = Depends(get_c
             'file_id': fid,
             'path': meta.get('fullPath') or meta.get('name') or fid,
         })
+
+    # Логируем применение в активную задачу
+    if applied:
+        try:
+            active = tasks_store.get_active_task(login)
+            if active:
+                paths = [a['path'] for a in applied]
+                tasks_store.append_ai_log(
+                    login, active['id'], 'edit',
+                    f'Применено правок: {len(paths)}',
+                    files=paths,
+                )
+        except Exception as ex:
+            logger.warning(f'ai_log apply failed: {ex}')
 
     return {'applied': applied, 'errors': errors}

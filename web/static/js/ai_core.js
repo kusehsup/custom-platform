@@ -56,6 +56,11 @@ const AiChat = {
         if (this._inited) return;
         this._inited = true;
         this._restore();
+        // Подписываемся на изменения задач, чтобы шапка с активной задачей обновлялась
+        if (typeof TasksStore !== 'undefined') {
+            TasksStore.subscribe(() => this._emitAll());
+            TasksStore.load();
+        }
     },
 
     registerView(view) {
@@ -503,6 +508,61 @@ const AiChat = {
         if (!m?.edits?.[editIdx]) return;
         const e = m.edits[editIdx];
         AiDiffModal.show(e);
+    },
+
+    /** HTML-индикатор активной задачи + dropdown для смены. */
+    renderActiveTaskPicker() {
+        const active = TasksStore.getActive?.();
+        const label = active ? this.esc(active.title) : '— нет активной задачи —';
+        const cls = active ? 'ai-active-task ai-active-task-on' : 'ai-active-task';
+        return `<button class="${cls}" data-action="pick-task" title="${active ? 'Сменить или снять активную задачу' : 'Выбрать активную задачу'}">
+            <span class="ai-active-task-icon">⎘</span>
+            <span class="ai-active-task-label">${label}</span>
+        </button>`;
+    },
+
+    showTaskPicker() {
+        const existing = document.getElementById('ai-task-picker');
+        if (existing) existing.remove();
+        const modal = document.createElement('div');
+        modal.id = 'ai-task-picker';
+        modal.style.cssText = 'position:fixed;inset:0;z-index:9020;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;padding:24px';
+        const tasks = TasksStore.list().filter(t => t.status !== 'done');
+        const activeId = TasksStore.activeId();
+        modal.innerHTML = `
+        <div class="ai-picker">
+            <div class="ai-picker-header">
+                <span style="flex:1;font-size:13px;color:var(--text);font-weight:600">Активная задача</span>
+                <button class="ai-picker-close">✕</button>
+            </div>
+            <div class="ai-picker-list">
+                <div class="ai-picker-item ${activeId == null ? 'attached' : ''}" data-id="">
+                    <span class="ai-picker-name">— не назначать —</span>
+                    <span class="ai-picker-state">${activeId == null ? 'выбрано' : ''}</span>
+                </div>
+                ${tasks.length ? tasks.map(t => `
+                    <div class="ai-picker-item ${activeId === t.id ? 'attached' : ''}" data-id="${t.id}">
+                        <span class="ai-picker-name">${this.esc(t.title)}</span>
+                        <span class="ai-picker-path">${t.status} · ${t.priority || 'medium'}</span>
+                        <span class="ai-picker-state">${activeId === t.id ? 'активная' : 'выбрать'}</span>
+                    </div>`).join('') : `<div class="ai-empty" style="padding:32px">Нет открытых задач. Создай в разделе <a href="#" id="ai-tp-go-tasks" style="color:var(--text);text-decoration:underline">Задачи</a>.</div>`}
+            </div>
+        </div>`;
+        document.body.appendChild(modal);
+        modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+        modal.querySelector('.ai-picker-close').addEventListener('click', () => modal.remove());
+        document.getElementById('ai-tp-go-tasks')?.addEventListener('click', e => {
+            e.preventDefault(); modal.remove(); app.navigate('tasks');
+        });
+        modal.querySelectorAll('.ai-picker-item').forEach(item => {
+            item.addEventListener('click', async () => {
+                const id = item.dataset.id;
+                await TasksStore.setActive(id || null);
+                modal.remove();
+                this._emitAll();
+                app.toast(id ? 'Задача активна' : 'Активность снята', 'info');
+            });
+        });
     },
 
     /** Форматирует число токенов в k/M. */

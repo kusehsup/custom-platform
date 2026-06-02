@@ -21,6 +21,7 @@ from .api.db_routes import router as db_router
 from .api.totp_routes import router as totp_router
 from .api.github_routes import router as github_router
 from .api.claude_cli_routes import router as claude_router
+from .api.tasks_routes import router as tasks_router
 
 app = FastAPI(title='CustomPlatform')
 app.include_router(router)
@@ -28,6 +29,7 @@ app.include_router(db_router)
 app.include_router(totp_router)
 app.include_router(github_router)
 app.include_router(claude_router)
+app.include_router(tasks_router)
 
 
 class NoCacheAPIMiddleware(BaseHTTPMiddleware):
