@@ -71,7 +71,8 @@ class ChatRequest(BaseModel):
     model: Optional[str] = None
     include_console: bool = False
     console_lines: int = 200
-    include_file: Optional[str] = None
+    # Список file_id прикреплённых файлов (через @ или другой UI)
+    attached_files: list[str] = []
 
 
 # ── Endpoints ───────────────────────────────────────────────────────────
@@ -123,24 +124,67 @@ async def claude_status(login: str = Depends(get_current_user)):
 
 def _build_system_prompt(client, body: ChatRequest) -> str:
     parts = [
-        'Ты — встроенный ассистент в платформу разработки Pawn-серверов SA-MP.',
-        'Отвечай на русском. Будь краток и конкретен. Код оборачивай в ```pawn ... ```.',
+        '# Кто ты',
+        'Ты встроен в веб-платформу для разработки и обслуживания игрового сервера SA-MP, написанного на языке Pawn.',
+        'Это НЕ обычный программный проект — здесь нет Python, JS, README, тестов. Это серверная Pawn-кодовая база (.pwn, .inc).',
+        'Доступ к платформе и коду у пользователя ограничен — он видит только те части файлов, которые ему открыли модераторы.',
+        '',
+        '# Правила ответов',
+        '- Отвечай на русском.',
+        '- Будь краток и конкретен, без лишних дисклеймеров.',
+        '- Pawn-код всегда оборачивай в ```pawn ... ```.',
+        '- Если нужен файл, который не приложен — попроси прикрепить через @имя_файла, а не выдумывай его содержимое.',
+        '- Никогда не описывай файлы платформы (web/, hassle_platform/, bot/) — это не твоя задача. Работай только с Pawn-кодом сервера.',
     ]
 
-    if body.include_file:
-        meta = client.files.get(body.include_file, {})
-        fname = meta.get('fullPath') or meta.get('name') or body.include_file
-        code_parts = client.code.get(body.include_file, [])
-        if code_parts:
+    # Структура проекта — всегда. Список всех доступных файлов с их fullPath.
+    files = client.files or {}
+    accessible_ids = set((client.code or {}).keys())
+    if files:
+        listing = []
+        ordered = [str(pid) for pid in (client.project_files or []) if str(pid) in accessible_ids]
+        for fid in ordered:
+            meta = files.get(fid) or {}
+            path = meta.get('fullPath') or meta.get('name') or fid
+            listing.append(f'- {path}')
+        # Остальные файлы (которые есть в files но нет в project_files)
+        for fid in accessible_ids:
+            if str(fid) in (str(p) for p in (client.project_files or [])):
+                continue
+            meta = files.get(fid) or {}
+            path = meta.get('fullPath') or meta.get('name') or fid
+            listing.append(f'- {path}')
+        if listing:
+            parts.append('')
+            parts.append('# Файлы Pawn-проекта, к которым у пользователя есть доступ')
+            parts.append('(содержимое НЕ приложено — попроси прикрепить через @ если нужно)')
+            parts.extend(listing)
+
+    # Прикреплённые файлы — их содержимое целиком
+    attached = body.attached_files or []
+    if attached:
+        parts.append('')
+        parts.append('# Прикреплённые файлы (содержимое)')
+        for fid in attached:
+            meta = files.get(fid) or {}
+            fname = meta.get('fullPath') or meta.get('name') or fid
+            code_parts = (client.code or {}).get(fid, [])
+            if not code_parts:
+                parts.append(f'\n## {fname}')
+                parts.append('_(нет доступного содержимого)_')
+                continue
             sorted_parts = sorted(code_parts, key=lambda p: p.get('line', 0))
             content = '\n\n'.join(p.get('content', '') for p in sorted_parts)
-            parts.append(f'\n# Открытый файл: {fname}\n```pawn\n{content}\n```')
+            parts.append(f'\n## {fname}')
+            parts.append(f'```pawn\n{content}\n```')
 
     if body.include_console:
         log = client.get_console_log(limit=max(1, min(body.console_lines, 2000)))
         if log:
             lines = '\n'.join(entry['line'] for entry in log)
-            parts.append(f'\n# Последние строки серверного лога:\n```\n{lines}\n```')
+            parts.append('')
+            parts.append('# Последние строки серверного лога')
+            parts.append(f'```\n{lines}\n```')
 
     return '\n'.join(parts)
 

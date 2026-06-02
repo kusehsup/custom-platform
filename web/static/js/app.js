@@ -426,6 +426,7 @@ const app = {
                 <span class="sidebar-section">Код</span>
                 <a data-page="files">${ico.files}<span class="label">Файлы</span></a>
                 <span class="sidebar-section">Инструменты</span>
+                <a data-page="ai">${ico.ai}<span class="label">AI ассистент</span></a>
                 <a data-page="todo">${ico.todo}<span class="label">TODO</span><span id="todo-badge" class="sidebar-badge hidden"></span></a>
                 <a data-page="db">${ico.db}<span class="label">База данных</span></a>
                 <div class="sidebar-spacer"></div>

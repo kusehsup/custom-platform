@@ -1,91 +1,67 @@
-// ── AI Assistant widget (Claude via Max subscription) ───────────────
+// ── AI Assistant: compact widget ────────────────────────────────────
 
 const AiWidget = {
-    _state: null,
-    _bound: false,
-
-    _initState() {
-        if (this._state) return;
-        let restored = {};
-        try { restored = JSON.parse(localStorage.getItem('ai_chat') || '{}'); } catch {}
-        this._state = {
-            messages:   Array.isArray(restored.messages) ? restored.messages : [],
-            model:      restored.model || null,
-            includeConsole: !!restored.includeConsole,
-            consoleLines:   restored.consoleLines || 200,
-            includeFile:    restored.includeFile || '',
-            status:     null,
-            streaming:  false,
-            abortCtrl:  null,
-        };
-    },
-
-    _save() {
-        const s = this._state;
-        try {
-            localStorage.setItem('ai_chat', JSON.stringify({
-                messages:       s.messages.slice(-100),
-                model:          s.model,
-                includeConsole: s.includeConsole,
-                consoleLines:   s.consoleLines,
-                includeFile:    s.includeFile,
-            }));
-        } catch {}
-    },
+    _registered: false,
 
     toggle() {
-        this._initState();
+        AiChat.init();
+
         const existing = document.getElementById('widget-ai');
         if (existing) { Widgets.toggle('widget-ai'); return; }
 
         Widgets.create({
             id: 'widget-ai',
             title: '✦ AI ассистент',
-            width: 460,
-            height: 560,
+            width: 480,
+            height: 600,
             defaultPos: { right: 24, bottom: 80 },
             content: this._template(),
         });
 
-        this._bindUi();
-        this._renderMessages();
-        this._loadStatus();
-        this._loadFiles();
+        this._bind();
+        if (!this._registered) {
+            AiChat.registerView({
+                onChange: () => this._renderAll(),
+                onDelta:  idx => this._updateBubble(idx),
+            });
+            this._registered = true;
+        }
+
+        this._renderAll();
+        AiChat.loadStatus();
+        AiChat.loadFiles();
     },
 
     _template() {
         return `
-        <div class="ai-w">
-            <div class="ai-w-status" id="ai-w-status">Загрузка…</div>
+        <div class="ai">
+            <div class="ai-status" id="ai-w-status">Загрузка…</div>
 
-            <div class="ai-w-ctx">
-                <div class="ai-w-ctx-row">
-                    <label class="ai-w-field">
+            <div class="ai-ctx">
+                <div class="ai-ctx-row">
+                    <label class="ai-field" style="flex:1">
                         <span>Модель</span>
-                        <select id="ai-w-model" class="ai-w-select"></select>
+                        <select id="ai-w-model" class="ai-select"></select>
                     </label>
-                </div>
-                <div class="ai-w-ctx-row">
-                    <label class="ai-w-check">
+                    <label class="toggle ai-toggle-inline" title="Прикрепить логи сервера">
                         <input type="checkbox" id="ai-w-console" />
-                        <span>Консоль</span>
+                        <span class="toggle-track"></span>
+                        <span class="ai-toggle-label">Консоль</span>
                     </label>
-                    <input type="number" id="ai-w-lines" min="10" max="2000" value="200" class="ai-w-num" title="строк" />
-                    <label class="ai-w-field" style="flex:1;min-width:0">
-                        <span>Файл</span>
-                        <select id="ai-w-file" class="ai-w-select">
-                            <option value="">— не прикреплять —</option>
-                        </select>
-                    </label>
+                    <input type="number" id="ai-w-lines" min="10" max="2000" value="200" class="ai-num" title="строк лога" />
                 </div>
             </div>
 
-            <div id="ai-w-messages" class="ai-w-messages"></div>
+            <div id="ai-w-chips" class="ai-chips"></div>
 
-            <div class="ai-w-composer">
-                <textarea id="ai-w-input" placeholder="Спросить про код, ошибку, как реализовать… (Ctrl+Enter)" rows="2"></textarea>
-                <div class="ai-w-actions">
-                    <button class="btn btn-ghost btn-sm" id="ai-w-clear" title="Очистить чат">Очистить</button>
+            <div id="ai-w-messages" class="ai-messages"></div>
+
+            <div class="ai-composer-wrap">
+                <div class="ai-composer">
+                    <textarea id="ai-w-input" placeholder="Спросить про код. @ — прикрепить файл. Ctrl+Enter — отправить." rows="2"></textarea>
+                </div>
+                <div class="ai-actions">
+                    <button class="btn btn-ghost btn-sm" id="ai-w-clear">Очистить</button>
                     <button class="btn btn-primary btn-sm" id="ai-w-send">Отправить</button>
                     <button class="btn btn-danger btn-sm hidden" id="ai-w-stop">Стоп</button>
                 </div>
@@ -93,276 +69,159 @@ const AiWidget = {
         </div>`;
     },
 
-    _bindUi() {
-        const s = this._state;
-
+    _bind() {
         const $ = id => document.getElementById(id);
 
-        $('ai-w-clear').addEventListener('click', () => {
-            if (s.streaming) this._stop();
-            s.messages = [];
-            this._save();
-            this._renderMessages();
-        });
-
-        $('ai-w-send').addEventListener('click', () => this._send());
-        $('ai-w-stop').addEventListener('click', () => this._stop());
+        $('ai-w-clear').addEventListener('click', () => AiChat.clear());
+        $('ai-w-send').addEventListener('click', () => this._sendFromInput());
+        $('ai-w-stop').addEventListener('click', () => AiChat.stop());
 
         const input = $('ai-w-input');
         input.addEventListener('keydown', e => {
             if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
                 e.preventDefault();
-                this._send();
+                this._sendFromInput();
             }
         });
 
-        $('ai-w-console').checked = s.includeConsole;
-        $('ai-w-console').addEventListener('change', e => {
-            s.includeConsole = e.target.checked;
-            this._save();
-        });
+        $('ai-w-console').addEventListener('change', e => AiChat.setIncludeConsole(e.target.checked));
+        $('ai-w-lines').addEventListener('change', e => AiChat.setConsoleLines(e.target.value));
+        $('ai-w-model').addEventListener('change', e => AiChat.setModel(e.target.value));
 
-        $('ai-w-lines').value = s.consoleLines;
-        $('ai-w-lines').addEventListener('change', e => {
-            s.consoleLines = parseInt(e.target.value, 10) || 200;
-            this._save();
-        });
-
-        $('ai-w-file').addEventListener('change', e => {
-            s.includeFile = e.target.value;
-            this._save();
-        });
-
-        $('ai-w-model').addEventListener('change', e => {
-            s.model = e.target.value;
-            this._save();
-        });
+        // @-mentions
+        const composerWrap = input.closest('.ai-composer-wrap');
+        AiMentions.attach(input, composerWrap);
     },
 
-    async _loadStatus() {
-        const statusEl = document.getElementById('ai-w-status');
-        const sendBtn  = document.getElementById('ai-w-send');
-        const modelSel = document.getElementById('ai-w-model');
-        try {
-            const res = await API.get('/api/claude/status');
-            this._state.status = res;
+    _sendFromInput() {
+        const input = document.getElementById('ai-w-input');
+        if (!input) return;
+        const v = input.value;
+        input.value = '';
+        AiChat.send(v);
+    },
 
-            if (!res.allowed) {
-                statusEl.innerHTML = `<span class="ai-w-dot ai-w-dot-warn"></span>${res.reason || 'AI ассистент недоступен'}`;
-                sendBtn.disabled = true;
-                return;
-            }
-            if (!res.cli_installed || !res.logged_in) {
-                statusEl.innerHTML = `<span class="ai-w-dot ai-w-dot-warn"></span>CLI не готов — открой <a href="#" id="ai-w-go-settings">Настройки</a>`;
-                document.getElementById('ai-w-go-settings')?.addEventListener('click', e => {
-                    e.preventDefault();
-                    app.navigate('settings');
-                });
-                sendBtn.disabled = true;
-                return;
-            }
+    _renderAll() {
+        if (!document.getElementById('widget-ai')) return;
+        this._renderStatus();
+        this._renderModel();
+        this._renderControls();
+        this._renderChips();
+        this._renderMessages();
+    },
 
-            modelSel.innerHTML = (res.models || []).map(m =>
-                `<option value="${m.id}">${m.label}</option>`
-            ).join('');
-            const chosen = this._state.model || res.default_model || (res.models?.[0]?.id);
-            this._state.model = chosen;
-            modelSel.value = chosen;
+    _renderStatus() {
+        const el = document.getElementById('ai-w-status');
+        const send = document.getElementById('ai-w-send');
+        if (!el) return;
+        const st = AiChat.state.status;
+        if (!st) { el.textContent = 'Загрузка…'; return; }
+        if (st.error) { el.textContent = st.error; send.disabled = true; return; }
+        if (!st.allowed) {
+            el.innerHTML = `<span class="ai-dot ai-dot-warn"></span>${st.reason || 'AI ассистент недоступен'}`;
+            send.disabled = true;
+            return;
+        }
+        if (!st.cli_installed || !st.logged_in) {
+            el.innerHTML = `<span class="ai-dot ai-dot-warn"></span>CLI не готов — открой <a href="#" id="ai-w-go-settings">Настройки</a>`;
+            document.getElementById('ai-w-go-settings')?.addEventListener('click', e => {
+                e.preventDefault();
+                app.navigate('settings');
+            });
+            send.disabled = true;
+            return;
+        }
+        el.innerHTML = `<span class="ai-dot ai-dot-ok"></span>Подключено через Max подписку`;
+        send.disabled = AiChat.state.streaming;
+    },
 
-            statusEl.innerHTML = `<span class="ai-w-dot ai-w-dot-ok"></span>Подключено через Max подписку`;
-            sendBtn.disabled = false;
-        } catch (e) {
-            statusEl.textContent = e.message;
+    _renderModel() {
+        const sel = document.getElementById('ai-w-model');
+        if (!sel) return;
+        const st = AiChat.state.status;
+        if (!st?.models) return;
+        const wantValue = AiChat.state.model || st.default_model || st.models[0]?.id;
+        if (sel.options.length !== st.models.length) {
+            sel.innerHTML = st.models.map(m => `<option value="${m.id}">${m.label}</option>`).join('');
+        }
+        sel.value = wantValue;
+    },
+
+    _renderControls() {
+        const cb = document.getElementById('ai-w-console');
+        const num = document.getElementById('ai-w-lines');
+        if (cb) cb.checked = AiChat.state.includeConsole;
+        if (num) num.value = AiChat.state.consoleLines;
+
+        const send = document.getElementById('ai-w-send');
+        const stop = document.getElementById('ai-w-stop');
+        if (AiChat.state.streaming) {
+            send?.classList.add('hidden');
+            stop?.classList.remove('hidden');
+        } else {
+            send?.classList.remove('hidden');
+            stop?.classList.add('hidden');
         }
     },
 
-    async _loadFiles() {
-        try {
-            const data = await API.get('/api/files');
-            const sel = document.getElementById('ai-w-file');
-            if (!sel) return;
-            const ordered = data.project_files || Object.keys(data.files || {});
-            for (const fid of ordered) {
-                const meta = (data.files || {})[fid];
-                if (!meta) continue;
-                const opt = document.createElement('option');
-                opt.value = fid;
-                opt.textContent = meta.fullPath || meta.name || fid;
-                if (this._state.includeFile === fid) opt.selected = true;
-                sel.appendChild(opt);
-            }
-        } catch {}
-    },
-
-    _esc(s) {
-        return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    },
-
-    _renderMarkdown(text) {
-        const parts = [];
-        const re = /```(\w+)?\n?([\s\S]*?)```/g;
-        let m;
-        let last = 0;
-        while ((m = re.exec(text)) !== null) {
-            parts.push(this._renderInline(text.slice(last, m.index)));
-            const code = m[2] || '';
-            parts.push(`<pre class="ai-w-code"><code>${this._esc(code)}</code></pre>`);
-            last = re.lastIndex;
+    _renderChips() {
+        const wrap = document.getElementById('ai-w-chips');
+        if (!wrap) return;
+        const fids = AiChat.state.attachedFiles;
+        if (!fids.length) {
+            wrap.innerHTML = '';
+            wrap.style.display = 'none';
+            return;
         }
-        parts.push(this._renderInline(text.slice(last)));
-        return parts.join('');
-    },
-
-    _renderInline(text) {
-        return this._esc(text)
-            .replace(/`([^`\n]+)`/g, '<code class="ai-w-inline-code">$1</code>')
-            .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-            .replace(/\n/g, '<br>');
+        wrap.style.display = 'flex';
+        wrap.innerHTML = fids.map(fid => {
+            const meta = AiChat.getFile(fid) || {};
+            const name = meta.name || meta.fullPath || fid;
+            return `<span class="ai-chip" data-fid="${fid}" title="${AiChat.esc(meta.fullPath || name)}">
+                <span class="ai-chip-name">${AiChat.esc(name)}</span>
+                <button class="ai-chip-x" data-fid="${fid}">✕</button>
+            </span>`;
+        }).join('');
+        wrap.querySelectorAll('.ai-chip-x').forEach(btn => {
+            btn.addEventListener('click', () => AiChat.detachFile(btn.dataset.fid));
+        });
     },
 
     _renderMessages() {
         const wrap = document.getElementById('ai-w-messages');
         if (!wrap) return;
-        const s = this._state;
-        if (!s.messages.length) {
-            wrap.innerHTML = `<div class="ai-w-empty">
-                Задай вопрос — Claude увидит файл и логи, если они отмечены сверху.<br>
-                <span class="ai-w-hint">Ctrl+Enter — отправить</span>
+        const msgs = AiChat.state.messages;
+        if (!msgs.length) {
+            wrap.innerHTML = `<div class="ai-empty">
+                Задай вопрос. Через <code class="ai-inline-code">@</code> прикрепи файл.<br>
+                <span class="ai-hint">Ctrl+Enter — отправить</span>
             </div>`;
             return;
         }
-        wrap.innerHTML = s.messages.map((m, i) => this._renderBubble(m, i)).join('');
+        wrap.innerHTML = msgs.map((m, i) => this._renderBubble(m, i)).join('');
         wrap.scrollTop = wrap.scrollHeight;
     },
 
     _renderBubble(m, idx) {
         const isUser = m.role === 'user';
-        const cls = isUser ? 'ai-w-msg ai-w-msg-user' : 'ai-w-msg ai-w-msg-claude';
+        const cls = isUser ? 'ai-msg ai-msg-user' : 'ai-msg ai-msg-claude';
         const label = isUser ? 'Ты' : 'Claude';
         const body = isUser
-            ? this._esc(m.content).replace(/\n/g, '<br>')
-            : (this._renderMarkdown(m.content) || '<span class="ai-w-typing">…</span>');
+            ? AiChat.esc(m.content).replace(/\n/g, '<br>')
+            : (AiChat.renderMarkdown(m.content) || '<span class="ai-typing">…</span>');
         return `
         <div data-idx="${idx}" class="${cls}">
-            <div class="ai-w-msg-label">${label}</div>
-            <div class="ai-w-msg-body">${body}</div>
+            <div class="ai-msg-label">${label}</div>
+            <div class="ai-msg-body">${body}</div>
         </div>`;
-    },
-
-    async _send() {
-        const s = this._state;
-        if (s.streaming) return;
-        const input = document.getElementById('ai-w-input');
-        const text = input.value.trim();
-        if (!text) return;
-        input.value = '';
-
-        s.messages.push({ role: 'user', content: text });
-        s.messages.push({ role: 'assistant', content: '' });
-        this._renderMessages();
-        this._save();
-
-        const idx = s.messages.length - 1;
-        await this._stream(idx);
-    },
-
-    async _stream(idx) {
-        const s = this._state;
-        s.streaming = true;
-        document.getElementById('ai-w-send').classList.add('hidden');
-        document.getElementById('ai-w-stop').classList.remove('hidden');
-
-        const ctrl = new AbortController();
-        s.abortCtrl = ctrl;
-
-        const payloadMessages = s.messages.slice(0, idx).filter(m => m.content);
-
-        try {
-            const res = await fetch('/api/claude/chat', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    ...(API._token ? { 'Authorization': `Bearer ${API._token}` } : {}),
-                },
-                body: JSON.stringify({
-                    messages: payloadMessages,
-                    model: s.model || null,
-                    include_console: s.includeConsole,
-                    console_lines: s.consoleLines,
-                    include_file: s.includeFile || null,
-                }),
-                signal: ctrl.signal,
-            });
-
-            if (!res.ok) {
-                const t = await res.text();
-                throw new Error(`HTTP ${res.status}: ${t.slice(0, 200)}`);
-            }
-
-            const reader = res.body.getReader();
-            const decoder = new TextDecoder();
-            let buf = '';
-
-            while (true) {
-                const { value, done } = await reader.read();
-                if (done) break;
-                buf += decoder.decode(value, { stream: true });
-
-                let sep;
-                while ((sep = buf.indexOf('\n\n')) !== -1) {
-                    const rawEvent = buf.slice(0, sep);
-                    buf = buf.slice(sep + 2);
-                    this._handleSse(rawEvent, idx);
-                }
-            }
-        } catch (e) {
-            if (e.name !== 'AbortError') {
-                s.messages[idx].content += `\n\n*[ошибка: ${e.message}]*`;
-                this._renderMessages();
-            }
-        } finally {
-            s.streaming = false;
-            s.abortCtrl = null;
-            document.getElementById('ai-w-send')?.classList.remove('hidden');
-            document.getElementById('ai-w-stop')?.classList.add('hidden');
-            this._save();
-        }
-    },
-
-    _handleSse(raw, idx) {
-        let event = 'message';
-        const dataLines = [];
-        for (const line of raw.split('\n')) {
-            if (line.startsWith('event:')) event = line.slice(6).trim();
-            else if (line.startsWith('data:')) dataLines.push(line.slice(5).trim());
-        }
-        if (!dataLines.length) return;
-        let data;
-        try { data = JSON.parse(dataLines.join('\n')); } catch { return; }
-
-        const s = this._state;
-        if (event === 'error') {
-            s.messages[idx].content += `\n\n*[ошибка: ${data.error || 'unknown'}]*`;
-            this._renderMessages();
-        } else if (event === 'delta' && typeof data.text === 'string') {
-            s.messages[idx].content += data.text;
-            this._updateBubble(idx);
-        } else if (event === 'done') {
-            this._renderMessages();
-            this._save();
-        }
     },
 
     _updateBubble(idx) {
         const wrap = document.getElementById('ai-w-messages');
         if (!wrap) return;
-        const node = wrap.querySelector(`[data-idx="${idx}"] .ai-w-msg-body`);
+        const node = wrap.querySelector(`[data-idx="${idx}"] .ai-msg-body`);
         if (!node) { this._renderMessages(); return; }
-        node.innerHTML = this._renderMarkdown(this._state.messages[idx].content);
+        node.innerHTML = AiChat.renderMarkdown(AiChat.state.messages[idx].content);
         wrap.scrollTop = wrap.scrollHeight;
-    },
-
-    _stop() {
-        if (this._state?.abortCtrl) this._state.abortCtrl.abort();
     },
 };
