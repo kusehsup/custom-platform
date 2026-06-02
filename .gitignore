@@ -22,3 +22,6 @@ web/totp.json
 
 # GitHub PAT — не должен попасть в репозиторий
 web/github.json
+
+# Локальная статистика расхода Claude
+web/claude_usage.json

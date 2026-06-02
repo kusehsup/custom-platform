@@ -10,6 +10,7 @@ const AiChat = {
         status: null,
         streaming: false,
         abortCtrl: null,
+        usage: null,            // {date, total_input, total_output, total_cost_usd, by_model}
     },
     // Все известные файлы проекта: {file_id: meta}
     _files: {},
@@ -85,6 +86,23 @@ const AiChat = {
         } catch (e) {
             this.state.status = { error: e.message };
             this._emitAll();
+            return null;
+        }
+    },
+
+    async loadUsage() {
+        if (!this.state.status?.allowed) return;
+        try {
+            const res = await API.get('/api/claude/usage');
+            this.state.usage = res;
+            this._emitAll();
+        } catch {}
+    },
+
+    async loadUsageHistory(days = 30) {
+        try {
+            return await API.get('/api/claude/usage/history?days=' + days);
+        } catch {
             return null;
         }
     },
@@ -274,6 +292,9 @@ const AiChat = {
         } else if (event === 'edits') {
             m.edits = (data.edits || []).map(e => ({ ...e, status: 'pending' }));
             this._save();
+            this._emitAll();
+        } else if (event === 'usage') {
+            this.state.usage = data;
             this._emitAll();
         } else if (event === 'done') {
             this._save();
@@ -484,6 +505,26 @@ const AiChat = {
         AiDiffModal.show(e);
     },
 
+    /** Форматирует число токенов в k/M. */
+    fmtTokens(n) {
+        n = Number(n) || 0;
+        if (n >= 1_000_000) return (n / 1_000_000).toFixed(2) + 'M';
+        if (n >= 1_000)     return (n / 1_000).toFixed(1) + 'k';
+        return String(n);
+    },
+
+    /** Компактный HTML-индикатор расхода за сегодня (в шапке виджета/страницы). */
+    renderUsageBadge() {
+        const u = this.state.usage;
+        if (!u || !u.total_requests) {
+            return `<span class="ai-usage" title="За сегодня запросов ещё не было">сегодня: —</span>`;
+        }
+        const cost = u.total_cost_usd?.toFixed?.(3) ?? '0.000';
+        return `<span class="ai-usage" title="Запросов: ${u.total_requests} · in ${u.total_input} · out ${u.total_output} · cache_read ${u.total_cache_read}">
+            сегодня: <b>${this.fmtTokens(u.total_input + u.total_output)}</b> · ~$${cost}
+        </span>`;
+    },
+
     /** Привязывает обработчики к контейнеру с edit'ами. */
     bindEditActions(root) {
         root.querySelectorAll('[data-action]').forEach(btn => {
@@ -497,6 +538,91 @@ const AiChat = {
                 else if (action === 'diff') this.showDiff(msgIdx, idx);
             });
         });
+    },
+};
+
+
+// ── Modal для статистики расхода ────────────────────────────────────
+
+const AiUsageModal = {
+    async show() {
+        const existing = document.getElementById('ai-usage-modal');
+        if (existing) existing.remove();
+
+        const modal = document.createElement('div');
+        modal.id = 'ai-usage-modal';
+        modal.style.cssText = 'position:fixed;inset:0;z-index:9050;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;padding:24px';
+        modal.innerHTML = `
+        <div class="ai-usage-window">
+            <div class="ai-usage-header">
+                <span class="ai-usage-title">Расход Claude</span>
+                <button class="ai-usage-close">✕</button>
+            </div>
+            <div class="ai-usage-body" id="ai-usage-body">
+                <div class="ai-empty">Загрузка...</div>
+            </div>
+        </div>`;
+        document.body.appendChild(modal);
+        modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+        modal.querySelector('.ai-usage-close').addEventListener('click', () => modal.remove());
+
+        const body = document.getElementById('ai-usage-body');
+        const [today, hist] = await Promise.all([
+            API.get('/api/claude/usage').catch(() => null),
+            AiChat.loadUsageHistory(30),
+        ]);
+
+        const fmt = n => AiChat.fmtTokens(n);
+        const ec = AiChat.esc;
+
+        let todayHtml = '<div class="ai-usage-empty">Сегодня запросов ещё не было.</div>';
+        if (today && today.total_requests) {
+            const byModel = Object.entries(today.by_model || {});
+            todayHtml = `
+            <div class="ai-usage-section-title">Сегодня — ${ec(today.date)}</div>
+            <div class="ai-usage-grid">
+                <div class="ai-usage-stat"><span>Запросов</span><b>${today.total_requests}</b></div>
+                <div class="ai-usage-stat"><span>Input</span><b>${fmt(today.total_input)}</b></div>
+                <div class="ai-usage-stat"><span>Output</span><b>${fmt(today.total_output)}</b></div>
+                <div class="ai-usage-stat"><span>Cache read</span><b>${fmt(today.total_cache_read)}</b></div>
+                <div class="ai-usage-stat ai-usage-stat-accent"><span>Оценка</span><b>$${today.total_cost_usd.toFixed(3)}</b></div>
+            </div>
+            <div class="ai-usage-models">
+                ${byModel.map(([model, m]) => `
+                    <div class="ai-usage-model">
+                        <span class="ai-usage-model-name">${ec(model)}</span>
+                        <span class="ai-usage-model-stats">
+                            ${m.requests} req · in ${fmt(m.input)} · out ${fmt(m.output)} · cache ${fmt(m.cache_read)}
+                        </span>
+                        <span class="ai-usage-model-cost">$${m.cost_usd.toFixed(3)}</span>
+                    </div>`).join('')}
+            </div>`;
+        }
+
+        let historyHtml = '';
+        if (hist?.days?.length) {
+            const days = hist.days;
+            historyHtml = `
+            <div class="ai-usage-section-title">Последние 30 дней</div>
+            <div class="ai-usage-history">
+                ${days.map(d => `
+                    <div class="ai-usage-day">
+                        <span class="ai-usage-day-date">${ec(d.date)}</span>
+                        <span class="ai-usage-day-req">${d.total_requests} req</span>
+                        <span class="ai-usage-day-tok">${fmt(d.total_input + d.total_output)} tok</span>
+                        <span class="ai-usage-day-cost">$${d.total_cost_usd.toFixed(3)}</span>
+                    </div>`).join('')}
+            </div>`;
+        }
+
+        body.innerHTML = `
+            ${todayHtml}
+            ${historyHtml}
+            <div class="ai-usage-note">
+                Это локальные подсчёты по нашим запросам. Глобальный лимит Max-подписки
+                (5-часовое окно) Anthropic в API не отдаёт — увидишь его только когда
+                CLI начнёт возвращать ошибку rate-limit.
+            </div>`;
     },
 };
 

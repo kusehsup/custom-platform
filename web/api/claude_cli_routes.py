@@ -37,6 +37,7 @@ from pydantic import BaseModel
 
 from .auth import get_current_user
 from .sessions import get_session
+from . import claude_usage
 
 logger = logging.getLogger('claude')
 router = APIRouter()
@@ -286,6 +287,19 @@ class ApplyEditsRequest(BaseModel):
 
 # ── Endpoints ───────────────────────────────────────────────────────────
 
+@router.get('/api/claude/usage')
+async def claude_usage_today(login: str = Depends(get_current_user)):
+    _require_allowed(login)
+    return claude_usage.get_today(login)
+
+
+@router.get('/api/claude/usage/history')
+async def claude_usage_history(days: int = 30, login: str = Depends(get_current_user)):
+    _require_allowed(login)
+    days = max(1, min(days, 365))
+    return claude_usage.get_history(login, days)
+
+
 @router.get('/api/claude/status')
 async def claude_status(login: str = Depends(get_current_user)):
     if login not in ALLOWED_LOGINS:
@@ -397,12 +411,16 @@ async def claude_chat(body: ChatRequest, login: str = Depends(get_current_user))
                 yield f'event: error\ndata: {json.dumps({"error": str(e)})}\n\n'
                 return
 
+            # Собираем stderr — пригодится для распознавания rate-limit/quota
+            stderr_buffer = []
+
             async def forward_stderr():
                 try:
                     async for raw in proc.stderr:
                         text = raw.decode('utf-8', errors='replace').rstrip()
                         if text:
                             logger.warning(f'claude stderr: {text}')
+                            stderr_buffer.append(text)
                 except Exception:
                     pass
 
@@ -464,10 +482,18 @@ async def claude_chat(body: ChatRequest, login: str = Depends(get_current_user))
                         continue
 
                     if msg_type == 'result':
+                        # Записываем usage и шлём свежую сводку в UI
+                        usage_obj = msg.get('usage') or {}
+                        try:
+                            claude_usage.record_usage(login, model, usage_obj)
+                        except Exception as ex:
+                            logger.warning(f'usage record failed: {ex}')
+
+                        today_summary = claude_usage.get_today(login)
+                        yield f'event: usage\ndata: {json.dumps(today_summary)}\n\n'
+
                         # Считаем diff
                         edits = _diff_workspace(ws, snapshot)
-                        # Защита от слишком больших полезных нагрузок: не шлём content
-                        # > 200к символов целиком в одно SSE (но обычно файлы влезают)
                         edits_payload = []
                         for e in edits:
                             edits_payload.append({
@@ -477,11 +503,23 @@ async def claude_chat(body: ChatRequest, login: str = Depends(get_current_user))
                                 'new_content': e['new_content'],
                             })
                         yield f'event: edits\ndata: {json.dumps({"edits": edits_payload})}\n\n'
-                        yield f'event: done\ndata: {json.dumps({"usage": msg.get("usage")})}\n\n'
+                        yield f'event: done\ndata: {json.dumps({"usage": usage_obj})}\n\n'
 
                 await proc.wait()
                 if proc.returncode != 0:
-                    yield f'event: error\ndata: {json.dumps({"error": f"claude CLI exit code {proc.returncode}"})}\n\n'
+                    # Распознаём типовые причины
+                    stderr_text = '\n'.join(stderr_buffer[-20:])
+                    err_msg = f'claude CLI exit code {proc.returncode}'
+                    low = stderr_text.lower()
+                    if 'rate limit' in low or 'rate_limit' in low or 'too many requests' in low:
+                        err_msg = 'Достигнут лимит запросов Max-подписки. Подожди до сброса окна (≈5 часов).'
+                    elif 'quota' in low or 'usage limit' in low:
+                        err_msg = 'Превышена квота Max-подписки. Подожди сброса окна или смени модель на более дешёвую (Haiku).'
+                    elif 'unauthorized' in low or 'not logged in' in low:
+                        err_msg = 'Сессия Claude CLI не авторизована. Выполни `claude login` на сервере.'
+                    elif stderr_text:
+                        err_msg = f'{err_msg}: {stderr_text[-300:]}'
+                    yield f'event: error\ndata: {json.dumps({"error": err_msg})}\n\n'
             except Exception as e:
                 logger.exception('claude stream failed')
                 yield f'event: error\ndata: {json.dumps({"error": str(e)})}\n\n'

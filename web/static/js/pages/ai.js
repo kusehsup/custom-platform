@@ -12,7 +12,8 @@ const AiPage = {
                     <h2 style="font-size:18px;font-weight:600;color:var(--text);margin:0">AI ассистент</h2>
                     <div id="ai-p-status" class="ai-status ai-status-inline">Загрузка…</div>
                 </div>
-                <div style="display:flex;gap:6px;align-items:center">
+                <div style="display:flex;gap:8px;align-items:center">
+                    <button class="ai-usage-btn" id="ai-p-usage" title="Расход Claude за сегодня"></button>
                     <button class="btn btn-ghost btn-sm" id="ai-p-clear">Очистить чат</button>
                 </div>
             </div>
@@ -61,7 +62,7 @@ const AiPage = {
         }
 
         this._renderAll();
-        AiChat.loadStatus();
+        AiChat.loadStatus().then(() => AiChat.loadUsage());
         AiChat.loadFiles();
     },
 
@@ -72,6 +73,7 @@ const AiPage = {
         $('ai-p-send').addEventListener('click', () => this._sendFromInput());
         $('ai-p-stop').addEventListener('click', () => AiChat.stop());
         $('ai-p-attach').addEventListener('click', () => this._showFilePicker());
+        $('ai-p-usage').addEventListener('click', () => AiUsageModal.show());
 
         const input = $('ai-p-input');
         input.addEventListener('keydown', e => {
@@ -110,6 +112,8 @@ const AiPage = {
         this._renderControls();
         this._renderAttached();
         this._renderMessages();
+        const usageBtn = document.getElementById('ai-p-usage');
+        if (usageBtn) usageBtn.innerHTML = AiChat.renderUsageBadge();
     },
 
     _renderStatus() {

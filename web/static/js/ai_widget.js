@@ -28,14 +28,17 @@ const AiWidget = {
         }
 
         this._renderAll();
-        AiChat.loadStatus();
+        AiChat.loadStatus().then(() => AiChat.loadUsage());
         AiChat.loadFiles();
     },
 
     _template() {
         return `
         <div class="ai">
-            <div class="ai-status" id="ai-w-status">Загрузка…</div>
+            <div class="ai-statusbar">
+                <div class="ai-status" id="ai-w-status">Загрузка…</div>
+                <button class="ai-usage-btn" id="ai-w-usage" title="Расход Claude за сегодня"></button>
+            </div>
 
             <div class="ai-ctx">
                 <div class="ai-ctx-row">
@@ -77,6 +80,7 @@ const AiWidget = {
         $('ai-w-clear').addEventListener('click', () => AiChat.clear());
         $('ai-w-send').addEventListener('click', () => this._sendFromInput());
         $('ai-w-stop').addEventListener('click', () => AiChat.stop());
+        $('ai-w-usage').addEventListener('click', () => AiUsageModal.show());
 
         const input = $('ai-w-input');
         input.addEventListener('keydown', e => {
@@ -117,6 +121,8 @@ const AiWidget = {
         this._renderControls();
         this._renderChips();
         this._renderMessages();
+        const usageBtn = document.getElementById('ai-w-usage');
+        if (usageBtn) usageBtn.innerHTML = AiChat.renderUsageBadge();
     },
 
     _renderStatus() {
