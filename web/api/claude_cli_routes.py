@@ -126,39 +126,53 @@ def _build_system_prompt(client, body: ChatRequest) -> str:
     parts = [
         '# Кто ты',
         'Ты встроен в веб-платформу для разработки и обслуживания игрового сервера SA-MP, написанного на языке Pawn.',
-        'Это НЕ обычный программный проект — здесь нет Python, JS, README, тестов. Это серверная Pawn-кодовая база (.pwn, .inc).',
-        'Доступ к платформе и коду у пользователя ограничен — он видит только те части файлов, которые ему открыли модераторы.',
+        'Это НЕ обычный программный проект — здесь нет Python, JS, README, тестов, .git, скриптов деплоя.',
+        'Это серверная Pawn-кодовая база — файлы .pwn и .inc, ничего больше.',
+        'Доступ к коду у пользователя ограничен — он видит только те части файлов, которые ему открыли модераторы платформы.',
+        '',
+        '# Жёсткие запреты',
+        '- НИКОГДА не выдумывай файлы. Если в системном промпте нет списка файлов или конкретного файла — так и скажи "у меня нет доступа к списку файлов".',
+        '- НИКОГДА не упоминай файлы вроде config.py, web/app.py, hassle_platform/, bot/, deploy/setup.sh, .env, README — этого здесь нет. Это окружающая платформа, а не Pawn-проект.',
+        '- НЕ показывай "структуру проекта" наугад. Опирайся только на список ниже.',
         '',
         '# Правила ответов',
         '- Отвечай на русском.',
-        '- Будь краток и конкретен, без лишних дисклеймеров.',
+        '- Будь краток и конкретен, без дисклеймеров.',
         '- Pawn-код всегда оборачивай в ```pawn ... ```.',
-        '- Если нужен файл, который не приложен — попроси прикрепить через @имя_файла, а не выдумывай его содержимое.',
-        '- Никогда не описывай файлы платформы (web/, hassle_platform/, bot/) — это не твоя задача. Работай только с Pawn-кодом сервера.',
+        '- Если нужен файл, которого нет в прикреплённых — попроси прикрепить через @имя_файла.',
     ]
 
     # Структура проекта — всегда. Список всех доступных файлов с их fullPath.
     files = client.files or {}
     accessible_ids = set((client.code or {}).keys())
-    if files:
-        listing = []
-        ordered = [str(pid) for pid in (client.project_files or []) if str(pid) in accessible_ids]
-        for fid in ordered:
-            meta = files.get(fid) or {}
-            path = meta.get('fullPath') or meta.get('name') or fid
-            listing.append(f'- {path}')
-        # Остальные файлы (которые есть в files но нет в project_files)
+
+    listing = []
+    if files and accessible_ids:
+        seen_ids = set()
+        for pid in (client.project_files or []):
+            sid = str(pid)
+            if sid in accessible_ids and sid not in seen_ids:
+                meta = files.get(sid) or {}
+                path = meta.get('fullPath') or meta.get('name') or sid
+                listing.append(f'- {path}')
+                seen_ids.add(sid)
+        # Остальные доступные файлы, которых нет в project_files
         for fid in accessible_ids:
-            if str(fid) in (str(p) for p in (client.project_files or [])):
+            sid = str(fid)
+            if sid in seen_ids:
                 continue
-            meta = files.get(fid) or {}
-            path = meta.get('fullPath') or meta.get('name') or fid
+            meta = files.get(sid) or files.get(fid) or {}
+            path = meta.get('fullPath') or meta.get('name') or sid
             listing.append(f'- {path}')
-        if listing:
-            parts.append('')
-            parts.append('# Файлы Pawn-проекта, к которым у пользователя есть доступ')
-            parts.append('(содержимое НЕ приложено — попроси прикрепить через @ если нужно)')
-            parts.extend(listing)
+
+    parts.append('')
+    if listing:
+        parts.append('# Файлы Pawn-проекта, к которым у пользователя есть доступ')
+        parts.append('(содержимое НЕ приложено — попроси прикрепить через @ если нужно)')
+        parts.extend(listing)
+    else:
+        parts.append('# Файлы Pawn-проекта')
+        parts.append('Список файлов ещё не загружен из платформы — попроси пользователя подождать пару секунд и спросить снова, либо прикрепить нужный файл через @.')
 
     # Прикреплённые файлы — их содержимое целиком
     attached = body.attached_files or []
@@ -219,6 +233,13 @@ async def claude_chat(body: ChatRequest, login: str = Depends(get_current_user))
     if not client:
         raise HTTPException(status_code=401, detail='Сессия не найдена')
 
+    # Ждём пока данные платформы загрузятся (files + code), иначе модель
+    # не увидит список доступных файлов и начнёт фантазировать.
+    for _ in range(8):
+        if client.files and client.code:
+            break
+        await asyncio.sleep(0.5)
+
     model = body.model or DEFAULT_MODEL
     if model not in {m['id'] for m in AVAILABLE_MODELS}:
         raise HTTPException(status_code=400, detail='Неизвестная модель')
@@ -229,11 +250,14 @@ async def claude_chat(body: ChatRequest, login: str = Depends(get_current_user))
         raise HTTPException(status_code=400, detail='Пустой запрос')
 
     # Claude Code CLI: --print не-интерактивный режим, --output-format stream-json
-    # отдаёт NDJSON со всеми событиями (включая token deltas).
+    # отдаёт NDJSON. --include-partial-messages включает token-level deltas
+    # (stream_event с raw Anthropic SSE), чтобы пользователь видел ответ по мере
+    # генерации, а не одной вспышкой в конце.
     args = [
         bin_path,
         '--print',
         '--output-format', 'stream-json',
+        '--include-partial-messages',
         '--verbose',
         '--model', model,
         '--append-system-prompt', system_prompt,
@@ -262,6 +286,10 @@ async def claude_chat(body: ChatRequest, login: str = Depends(get_current_user))
 
         stderr_task = asyncio.create_task(forward_stderr())
 
+        # Если CLI шлёт partial stream_event'ы (token deltas), не дублируем
+        # их финальным `assistant` блоком.
+        got_partial_text = False
+
         try:
             async for raw in proc.stdout:
                 line = raw.decode('utf-8', errors='replace').strip()
@@ -272,17 +300,34 @@ async def claude_chat(body: ChatRequest, login: str = Depends(get_current_user))
                 except json.JSONDecodeError:
                     continue
 
-                # Claude Code SDK NDJSON events. Извлекаем текст ассистента.
                 msg_type = msg.get('type')
+
+                # 1) Token-level стриминг через partial messages
+                if msg_type == 'stream_event':
+                    ev = msg.get('event') or {}
+                    ev_type = ev.get('type')
+                    if ev_type == 'content_block_delta':
+                        delta = ev.get('delta') or {}
+                        if delta.get('type') == 'text_delta':
+                            text = delta.get('text', '')
+                            if text:
+                                got_partial_text = True
+                                yield f'event: delta\ndata: {json.dumps({"text": text})}\n\n'
+                    continue
+
+                # 2) Полное assistant сообщение — fallback если partial выключен
                 if msg_type == 'assistant':
+                    if got_partial_text:
+                        continue  # уже стримили — не дублируем
                     content = msg.get('message', {}).get('content', [])
                     for block in content:
                         if block.get('type') == 'text':
                             text = block.get('text', '')
                             if text:
                                 yield f'event: delta\ndata: {json.dumps({"text": text})}\n\n'
-                elif msg_type == 'result':
-                    # финальный итог; завершаем
+                    continue
+
+                if msg_type == 'result':
                     yield f'event: done\ndata: {json.dumps({"usage": msg.get("usage")})}\n\n'
 
             await proc.wait()
@@ -298,4 +343,12 @@ async def claude_chat(body: ChatRequest, login: str = Depends(get_current_user))
         finally:
             stderr_task.cancel()
 
-    return StreamingResponse(event_stream(), media_type='text/event-stream')
+    return StreamingResponse(
+        event_stream(),
+        media_type='text/event-stream',
+        headers={
+            'Cache-Control': 'no-cache, no-transform',
+            'X-Accel-Buffering': 'no',  # отключает буферизацию nginx
+            'Connection': 'keep-alive',
+        },
+    )

@@ -22,11 +22,13 @@ const AiPage = {
                     <span>Модель</span>
                     <select id="ai-p-model" class="ai-select"></select>
                 </label>
-                <label class="toggle ai-toggle-inline" title="Прикрепить логи сервера">
-                    <input type="checkbox" id="ai-p-console" />
-                    <span class="toggle-track"></span>
-                    <span class="ai-toggle-label">Консоль сервера</span>
-                </label>
+                <div class="ai-toggle-row" title="Прикрепить логи сервера">
+                    <label class="toggle">
+                        <input type="checkbox" id="ai-p-console" />
+                        <span class="toggle-track"></span>
+                    </label>
+                    <span class="ai-toggle-label" id="ai-p-console-lbl">Консоль сервера</span>
+                </div>
                 <label class="ai-field" style="width:120px">
                     <span>Строк</span>
                     <input type="number" id="ai-p-lines" min="10" max="2000" value="200" class="ai-num" style="width:100%" />
@@ -40,7 +42,7 @@ const AiPage = {
 
             <div class="ai-composer-wrap ai-composer-wrap-page">
                 <div class="ai-composer">
-                    <textarea id="ai-p-input" placeholder="Спросить про Pawn-код, ошибку из логов сервера, как реализовать… (@ — прикрепить файл, Ctrl+Enter — отправить)" rows="3"></textarea>
+                    <textarea id="ai-p-input" placeholder="Спросить про Pawn-код сервера. @ — прикрепить файл. Enter — отправить, Shift+Enter — новая строка." rows="3"></textarea>
                 </div>
                 <div class="ai-actions">
                     <button class="btn btn-primary btn-sm" id="ai-p-send">Отправить</button>
@@ -73,13 +75,19 @@ const AiPage = {
 
         const input = $('ai-p-input');
         input.addEventListener('keydown', e => {
-            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                if (input.closest('.ai-composer-wrap')?.querySelector('.ai-mentions')) return;
                 e.preventDefault();
                 this._sendFromInput();
             }
         });
 
         $('ai-p-console').addEventListener('change', e => AiChat.setIncludeConsole(e.target.checked));
+        $('ai-p-console-lbl')?.addEventListener('click', () => {
+            const cb = $('ai-p-console');
+            cb.checked = !cb.checked;
+            AiChat.setIncludeConsole(cb.checked);
+        });
         $('ai-p-lines').addEventListener('change', e => AiChat.setConsoleLines(e.target.value));
         $('ai-p-model').addEventListener('change', e => AiChat.setModel(e.target.value));
 

@@ -43,11 +43,13 @@ const AiWidget = {
                         <span>Модель</span>
                         <select id="ai-w-model" class="ai-select"></select>
                     </label>
-                    <label class="toggle ai-toggle-inline" title="Прикрепить логи сервера">
-                        <input type="checkbox" id="ai-w-console" />
-                        <span class="toggle-track"></span>
-                        <span class="ai-toggle-label">Консоль</span>
-                    </label>
+                    <div class="ai-toggle-row" title="Прикрепить логи сервера">
+                        <label class="toggle">
+                            <input type="checkbox" id="ai-w-console" />
+                            <span class="toggle-track"></span>
+                        </label>
+                        <span class="ai-toggle-label" id="ai-w-console-lbl">Консоль</span>
+                    </div>
                     <input type="number" id="ai-w-lines" min="10" max="2000" value="200" class="ai-num" title="строк лога" />
                 </div>
             </div>
@@ -58,7 +60,7 @@ const AiWidget = {
 
             <div class="ai-composer-wrap">
                 <div class="ai-composer">
-                    <textarea id="ai-w-input" placeholder="Спросить про код. @ — прикрепить файл. Ctrl+Enter — отправить." rows="2"></textarea>
+                    <textarea id="ai-w-input" placeholder="Спросить про Pawn-код. @ — прикрепить файл. Enter — отправить, Shift+Enter — новая строка." rows="2"></textarea>
                 </div>
                 <div class="ai-actions">
                     <button class="btn btn-ghost btn-sm" id="ai-w-clear">Очистить</button>
@@ -78,13 +80,20 @@ const AiWidget = {
 
         const input = $('ai-w-input');
         input.addEventListener('keydown', e => {
-            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+            // Если открыт popup автокомплита — AiMentions сам перехватит Enter
+            if (e.key === 'Enter' && !e.shiftKey) {
+                if (input.closest('.ai-composer-wrap')?.querySelector('.ai-mentions')) return;
                 e.preventDefault();
                 this._sendFromInput();
             }
         });
 
         $('ai-w-console').addEventListener('change', e => AiChat.setIncludeConsole(e.target.checked));
+        $('ai-w-console-lbl')?.addEventListener('click', () => {
+            const cb = $('ai-w-console');
+            cb.checked = !cb.checked;
+            AiChat.setIncludeConsole(cb.checked);
+        });
         $('ai-w-lines').addEventListener('change', e => AiChat.setConsoleLines(e.target.value));
         $('ai-w-model').addEventListener('change', e => AiChat.setModel(e.target.value));
 
@@ -194,7 +203,7 @@ const AiWidget = {
         if (!msgs.length) {
             wrap.innerHTML = `<div class="ai-empty">
                 Задай вопрос. Через <code class="ai-inline-code">@</code> прикрепи файл.<br>
-                <span class="ai-hint">Ctrl+Enter — отправить</span>
+                <span class="ai-hint">Enter — отправить · Shift+Enter — новая строка</span>
             </div>`;
             return;
         }
