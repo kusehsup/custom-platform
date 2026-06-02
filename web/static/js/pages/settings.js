@@ -15,28 +15,28 @@ app.register('settings', {
         root.innerHTML = `
         <div class="card">
             <div class="card-header"><span class="card-title">Уведомления</span></div>
-            <div class="stat-rows">
-                ${this._row('notify_compile',        'Уведомление о завершении компиляции',    s.notify_compile)}
-                ${this._row('notify_code_access',    'Уведомление об одобрении запроса кода',  s.notify_code_access)}
-                ${this._row('browser_notifications', 'Браузерные push-уведомления',            s.browser_notifications)}
+            <div>
+                ${this._row('notify_compile',        '🔨', 'Компиляция',          'Уведомление при завершении компиляции',     s.notify_compile)}
+                ${this._row('notify_code_access',    '✅', 'Доступ к коду',       'Уведомление при одобрении запроса кода',    s.notify_code_access)}
+                ${this._row('browser_notifications', '🔔', 'Push-уведомления',    'Браузерные уведомления через Notification API', s.browser_notifications)}
             </div>
-            <div id="notif-hint" style="margin-top:12px;font-size:12px;color:var(--text-2)"></div>
+            <div id="notif-hint" style="margin-top:10px;font-size:12px;color:var(--text-3)"></div>
         </div>
 
         <div class="card" id="totp-card">
             <div class="card-header">
-                <span class="card-title">🔐 Двухфакторная аутентификация</span>
+                <span class="card-title">Безопасность</span>
             </div>
-            <div id="totp-body" style="padding:4px 0">
+            <div id="totp-body" style="padding:2px 0">
                 <div style="color:var(--text-3);font-size:13px">Загрузка...</div>
             </div>
         </div>
 
         <div class="card">
             <div class="card-header"><span class="card-title">Данные</span></div>
-            <div class="btn-row">
-                <button class="btn btn-ghost btn-sm" id="btn-clear-console">🗑 Очистить консоль</button>
-                <button class="btn btn-ghost btn-sm" id="btn-clear-history">🗑 Очистить историю компиляций</button>
+            <div>
+                ${this._actionRow('🗑', 'Очистить консоль', 'Удалить все сохранённые строки из консоли', 'btn-clear-console', 'Очистить')}
+                ${this._actionRow('📋', 'История компиляций', 'Удалить журнал результатов компиляций', 'btn-clear-history', 'Очистить')}
             </div>
         </div>`;
 
@@ -63,6 +63,35 @@ app.register('settings', {
         this._loadTotpStatus(root);
     },
 
+    _row(key, icon, title, desc, checked) {
+        return `<div class="settings-row">
+            <div class="settings-row-icon">${icon}</div>
+            <div class="settings-row-body">
+                <div class="settings-row-title">${title}</div>
+                <div class="settings-row-desc">${desc}</div>
+            </div>
+            <div class="settings-row-action">
+                <label class="toggle">
+                    <input type="checkbox" data-key="${key}" ${checked ? 'checked' : ''} />
+                    <span class="toggle-track"></span>
+                </label>
+            </div>
+        </div>`;
+    },
+
+    _actionRow(icon, title, desc, btnId, btnLabel) {
+        return `<div class="settings-row">
+            <div class="settings-row-icon">${icon}</div>
+            <div class="settings-row-body">
+                <div class="settings-row-title">${title}</div>
+                <div class="settings-row-desc">${desc}</div>
+            </div>
+            <div class="settings-row-action">
+                <button class="btn btn-ghost btn-sm" id="${btnId}">${btnLabel}</button>
+            </div>
+        </div>`;
+    },
+
     // ── TOTP ──────────────────────────────────────────────────────
 
     async _loadTotpStatus(root) {
@@ -79,22 +108,25 @@ app.register('settings', {
     _renderTotpSection(body, enabled, hasSecret) {
         if (enabled) {
             body.innerHTML = `
-            <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
-                <span style="font-size:13px;color:var(--green);font-weight:500">✅ Включена</span>
-                <span style="font-size:12px;color:var(--text-3)">Google Authenticator активен</span>
-            </div>
-            <div style="font-size:13px;color:var(--text-2);margin-bottom:14px;line-height:1.6">
-                При каждом входе будет запрашиваться 6-значный код из приложения.
-            </div>
-            <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
-                <div style="display:flex;flex-direction:column;gap:6px">
-                    <label style="font-size:12px;color:var(--text-3)">Код для подтверждения отключения</label>
-                    <input id="totp-dis-code" type="text" placeholder="6 цифр" maxlength="6" inputmode="numeric"
-                        style="width:140px;letter-spacing:0.2em;font-family:var(--mono);text-align:center;font-size:16px" />
+            <div class="settings-row">
+                <div class="settings-row-icon">🔐</div>
+                <div class="settings-row-body">
+                    <div class="settings-row-title">Google Authenticator</div>
+                    <div class="settings-row-desc" style="color:var(--green)">Двухфакторная аутентификация включена</div>
                 </div>
-                <button class="btn btn-danger btn-sm" id="totp-disable-btn">Отключить 2FA</button>
+                <div class="settings-row-action">
+                    <span style="font-size:11px;color:var(--green);font-weight:600;background:var(--green-dim);border:1px solid rgba(52,211,153,0.2);padding:3px 10px;border-radius:99px">Активна</span>
+                </div>
             </div>
-            <div id="totp-err" style="margin-top:8px;font-size:12px;color:var(--red)"></div>`;
+            <div style="padding:14px 0 4px;border-top:1px solid var(--border);margin-top:4px">
+                <div style="font-size:12px;color:var(--text-3);margin-bottom:10px">Для отключения введите код из приложения:</div>
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                    <input id="totp-dis-code" type="text" placeholder="000 000" maxlength="6" inputmode="numeric"
+                        style="width:140px;letter-spacing:0.25em;font-family:var(--mono);text-align:center;font-size:18px" />
+                    <button class="btn btn-danger btn-sm" id="totp-disable-btn">Отключить 2FA</button>
+                </div>
+                <div id="totp-err" style="margin-top:8px;font-size:12px;color:var(--red)"></div>
+            </div>`;
 
             document.getElementById('totp-disable-btn').addEventListener('click', async () => {
                 const code = document.getElementById('totp-dis-code').value.trim();
@@ -114,15 +146,21 @@ app.register('settings', {
 
         } else {
             body.innerHTML = `
-            <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
-                <span style="font-size:13px;color:var(--text-3);font-weight:500">⬜ Отключена</span>
+            <div class="settings-row">
+                <div class="settings-row-icon">🔐</div>
+                <div class="settings-row-body">
+                    <div class="settings-row-title">Google Authenticator</div>
+                    <div class="settings-row-desc">Добавляет второй уровень защиты при входе</div>
+                </div>
+                <div class="settings-row-action">
+                    <span style="font-size:11px;color:var(--text-3);font-weight:500;background:var(--surface2);border:1px solid var(--border);padding:3px 10px;border-radius:99px">Не активна</span>
+                </div>
             </div>
-            <div style="font-size:13px;color:var(--text-2);margin-bottom:16px;line-height:1.6">
-                Двухфакторная аутентификация добавляет второй уровень защиты.<br>
-                После включения при каждом входе нужно будет вводить код из Google Authenticator.
+            <div style="padding:14px 0 4px;border-top:1px solid var(--border);margin-top:4px">
+                <div style="font-size:12px;color:var(--text-3);margin-bottom:12px">После включения при каждом входе нужно будет вводить 6-значный код из Google Authenticator.</div>
+                <button class="btn btn-primary btn-sm" id="totp-setup-btn">Настроить 2FA</button>
             </div>
-            <button class="btn btn-primary btn-sm" id="totp-setup-btn">Настроить Google Authenticator</button>
-            <div id="totp-setup-area" style="margin-top:16px"></div>`;
+            <div id="totp-setup-area" style="margin-top:0"></div>`;
 
             document.getElementById('totp-setup-btn').addEventListener('click', () => this._startSetup(body));
         }
@@ -137,20 +175,20 @@ app.register('settings', {
             const res = await API.post('/api/totp/setup');
             btn.style.display = 'none';
             area.innerHTML = `
-            <div style="display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start">
+            <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start">
                 <div>
                     <div style="font-size:12px;color:var(--text-3);margin-bottom:8px">1. Отсканируйте QR-код в Google Authenticator</div>
-                    <img src="${res.qr}" style="width:180px;height:180px;border-radius:var(--radius-sm);display:block" />
+                    <img src="${res.qr}" style="width:172px;height:172px;border-radius:var(--radius-sm);display:block;border:1px solid var(--border)" />
                     <details style="margin-top:8px">
-                        <summary style="font-size:11px;color:var(--text-3);cursor:pointer">Ввести вручную</summary>
-                        <div style="font-family:var(--mono);font-size:12px;color:var(--text-2);margin-top:6px;word-break:break-all;background:var(--surface2);padding:8px;border-radius:var(--radius-xs)">${res.secret}</div>
+                        <summary style="font-size:11px;color:var(--text-3);cursor:pointer;user-select:none">Ввести ключ вручную</summary>
+                        <div style="font-family:var(--mono);font-size:11px;color:var(--text-2);margin-top:6px;word-break:break-all;background:var(--surface2);padding:8px 10px;border-radius:var(--radius-xs);border:1px solid var(--border)">${res.secret}</div>
                     </details>
                 </div>
                 <div style="display:flex;flex-direction:column;gap:10px;min-width:200px">
                     <div style="font-size:12px;color:var(--text-3)">2. Введите код из приложения для подтверждения</div>
-                    <input id="totp-confirm-code" type="text" placeholder="6 цифр" maxlength="6" inputmode="numeric"
+                    <input id="totp-confirm-code" type="text" placeholder="000000" maxlength="6" inputmode="numeric"
                         style="width:140px;letter-spacing:0.25em;font-family:var(--mono);text-align:center;font-size:20px" autofocus />
-                    <button class="btn btn-primary btn-sm" id="totp-enable-btn" style="width:fit-content">✓ Включить 2FA</button>
+                    <button class="btn btn-primary btn-sm" id="totp-enable-btn" style="width:fit-content">Включить 2FA</button>
                     <div id="totp-err" style="font-size:12px;color:var(--red)"></div>
                 </div>
             </div>`;
@@ -166,11 +204,11 @@ app.register('settings', {
                 enableBtn.disabled = true; enableBtn.textContent = 'Проверка...';
                 try {
                     await API.post('/api/totp/enable', { code });
-                    app.toast('✅ 2FA включена!', 'success');
+                    app.toast('2FA включена', 'success');
                     this._renderTotpSection(body, true, true);
                 } catch (e) {
                     errEl.textContent = e.message;
-                    enableBtn.disabled = false; enableBtn.textContent = '✓ Включить 2FA';
+                    enableBtn.disabled = false; enableBtn.textContent = 'Включить 2FA';
                 }
             };
 
@@ -182,17 +220,8 @@ app.register('settings', {
 
         } catch (e) {
             area.innerHTML = `<div style="color:var(--red);font-size:13px">${e.message}</div>`;
-            btn.disabled = false; btn.textContent = 'Настроить Google Authenticator';
+            btn.disabled = false; btn.textContent = 'Настроить 2FA';
         }
-    },
-
-    _row(key, label, checked) {
-        return `<div class="stat-row">
-            <span class="stat-label">${label}</span>
-            <label style="cursor:pointer">
-                <input type="checkbox" data-key="${key}" ${checked ? 'checked' : ''} />
-            </label>
-        </div>`;
     },
 
     async _requestNotifPerm(root) {

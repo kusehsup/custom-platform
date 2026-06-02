@@ -386,7 +386,7 @@ const app = {
         document.body.innerHTML = `
         <div class="layout">
             <header class="topbar">
-                <span class="topbar-logo"><span>⚡</span>CustomPlatform</span>
+                <span class="topbar-logo"><span class="topbar-logo-icon">⚡</span>CustomPlatform</span>
                 <div id="topbar-actions" class="topbar-actions hidden">
                     <button class="btn btn-sm" id="tb-server-btn">—</button>
                     <span class="topbar-compile-wrap" id="tb-compile-wrap">
