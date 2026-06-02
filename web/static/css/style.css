@@ -502,11 +502,14 @@ input::placeholder { color: var(--text-3); }
 
 /* Toggle */
 .toggle {
+    display: inline-block;
     position: relative;
     width: 36px;
     height: 20px;
+    min-width: 36px;
     flex-shrink: 0;
     cursor: pointer;
+    vertical-align: middle;
 }
 .toggle input { opacity: 0; width: 0; height: 0; position: absolute; }
 .toggle-track {
