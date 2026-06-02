@@ -1403,21 +1403,21 @@ app.register('files', {
         if (modal) modal.remove();
         modal = document.createElement('div');
         modal.id = 'gh-archive-modal';
-        modal.style.cssText = `position:fixed;inset:0;z-index:8000;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;padding:24px`;
+        modal.style.cssText = `position:fixed;inset:0;z-index:8000;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;padding:20px`;
         modal.innerHTML = `
-        <div style="background:var(--surface);border:1px solid var(--border-2);border-radius:var(--radius-lg);width:100%;max-width:860px;max-height:80vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 16px 48px rgba(0,0,0,0.7)">
-            <div style="display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--border);flex-shrink:0">
+        <div style="background:var(--surface);border:1px solid var(--border-2);border-radius:var(--radius-lg);width:100%;height:100%;max-width:1100px;max-height:calc(100vh - 40px);display:flex;flex-direction:column;overflow:hidden;box-shadow:0 16px 48px rgba(0,0,0,0.7)">
+            <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--border);flex-shrink:0">
                 <span style="font-size:13px;font-weight:600;color:var(--text)">GitHub Архив</span>
                 <span id="gh-arc-path" style="font-size:11px;color:var(--text-3);font-family:var(--mono)"></span>
                 <button id="gh-arc-close" style="margin-left:auto;background:none;border:none;color:var(--text-2);cursor:pointer;font-size:18px;line-height:1;padding:2px 6px">✕</button>
             </div>
-            <div style="display:grid;grid-template-columns:220px 1fr;flex:1;overflow:hidden;min-height:0">
-                <div id="gh-arc-list" style="border-right:1px solid var(--border);overflow-y:auto;padding:6px 0;background:var(--bg)">
+            <div style="display:grid;grid-template-columns:260px 1fr;flex:1;overflow:hidden;min-height:0">
+                <div id="gh-arc-list" style="border-right:1px solid var(--border);overflow-y:auto;padding:4px 0;background:var(--bg)">
                     <div style="padding:16px;color:var(--text-3);font-size:12px">Загрузка...</div>
                 </div>
-                <div style="display:flex;flex-direction:column;overflow:hidden">
+                <div style="display:flex;flex-direction:column;overflow:hidden;min-height:0">
                     <div id="gh-arc-empty" style="display:flex;align-items:center;justify-content:center;flex:1;color:var(--text-3);font-size:13px">← Выберите версию</div>
-                    <div id="gh-arc-viewer" style="flex:1;display:none;position:relative"></div>
+                    <div id="gh-arc-viewer" style="flex:1;display:none;position:relative;min-height:0"></div>
                 </div>
             </div>
         </div>`;
