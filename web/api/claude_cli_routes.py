@@ -712,7 +712,9 @@ async def claude_chat(body: ChatRequest, login: str = Depends(get_current_user))
 
     system_prompt = _build_system_prompt(client, body, attached_paths, login)
 
-    # MCP-конфиг: поднимаем наш сервер с инструментами платформы и БД
+    # MCP-конфиг: поднимаем наш сервер с инструментами платформы и БД.
+    # Кладём ВНЕ workspace, чтобы Glob/Read не подобрали этот файл и Claude
+    # не пытался читать его как Pawn-код.
     mcp_config = {
         'mcpServers': {
             'cp-ai': {
@@ -721,8 +723,12 @@ async def claude_chat(body: ChatRequest, login: str = Depends(get_current_user))
             },
         },
     }
-    mcp_config_path = ws / '_mcp_config.json'
+    mcp_config_path = (Path(tempfile.gettempdir())
+                       / f'cp-ai-mcp-{uuid.uuid4().hex[:12]}.json')
     mcp_config_path.write_text(json.dumps(mcp_config), encoding='utf-8')
+    mcp_config_abs = str(mcp_config_path.resolve())
+    if not mcp_config_path.exists():
+        logger.error(f'MCP config not created: {mcp_config_abs}')
 
     # Короткоживущий токен для MCP-сервера (он постучится к нам по HTTP).
     mcp_token = create_token(login)
@@ -746,6 +752,7 @@ async def claude_chat(body: ChatRequest, login: str = Depends(get_current_user))
 
     args = [
         bin_path,
+        '--mcp-config', mcp_config_abs,
         '--print',
         '--output-format', 'stream-json',
         '--include-partial-messages',
@@ -756,9 +763,20 @@ async def claude_chat(body: ChatRequest, login: str = Depends(get_current_user))
         '--disallowed-tools', DISALLOWED_TOOLS,
         '--append-system-prompt', system_prompt,
         '--permission-mode', 'acceptEdits',  # Edit/Write + MCP вызовы без интерактива
-        '--mcp-config', str(mcp_config_path),
         user_prompt,
     ]
+    # Лог сокращённой команды (без огромного system_prompt) для отладки
+    args_log = []
+    skip_next = False
+    for i, a in enumerate(args):
+        if skip_next:
+            args_log.append('<system_prompt>')
+            skip_next = False
+            continue
+        args_log.append(a)
+        if a == '--append-system-prompt':
+            skip_next = True
+    logger.info(f'AI launch args: {args_log}')
 
     async def event_stream():
         proc = None
@@ -995,6 +1013,10 @@ async def claude_chat(body: ChatRequest, login: str = Depends(get_current_user))
                 stderr_task.cancel()
         finally:
             _cleanup_workspace(ws)
+            try:
+                mcp_config_path.unlink(missing_ok=True)
+            except Exception:
+                pass
 
     return StreamingResponse(
         event_stream(),
