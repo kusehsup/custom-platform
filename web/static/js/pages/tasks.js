@@ -185,6 +185,7 @@ const TasksPage = {
         <div class="task-detail-header">
             <input id="task-title" type="text" value="${this._esc(t.title)}" />
             <div class="task-detail-actions">
+                <button class="btn btn-ghost btn-sm" id="task-open-chat">✦ Чат AI</button>
                 ${isActive
                     ? `<button class="btn btn-ghost btn-sm" id="task-deactivate">Снять активность</button>`
                     : `<button class="btn btn-primary btn-sm" id="task-activate">Сделать активной</button>`}
@@ -273,6 +274,18 @@ const TasksPage = {
             this._renderDetail();
             this._renderList();
             app.toast('Задача удалена', 'info');
+        });
+
+        document.getElementById('task-open-chat').addEventListener('click', async () => {
+            if (typeof AiChat === 'undefined') return;
+            AiChat.init();
+            await AiChat.openTaskThread(t.id);
+            // Открываем виджет, чтобы сразу видеть результат
+            if (typeof AiWidget !== 'undefined' && !document.getElementById('widget-ai')) {
+                AiWidget.toggle();
+            } else if (document.getElementById('widget-ai')) {
+                document.getElementById('widget-ai').style.display = 'flex';
+            }
         });
 
         if (document.getElementById('task-activate')) {

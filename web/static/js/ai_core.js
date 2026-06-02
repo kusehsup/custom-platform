@@ -2,7 +2,7 @@
 
 const AiChat = {
     state: {
-        messages: [],           // [{role, content}]
+        messages: [],           // [{role, content, tools?, edits?}]
         model: null,
         includeConsole: false,
         consoleLines: 200,
@@ -10,7 +10,10 @@ const AiChat = {
         status: null,
         streaming: false,
         abortCtrl: null,
-        usage: null,            // {date, total_input, total_output, total_cost_usd, by_model}
+        usage: null,
+        // Треды
+        threads: [],            // [{id, title, task_id, message_count, updated_at}]
+        currentThread: 'main',
     },
     // Все известные файлы проекта: {file_id: meta}
     _files: {},
@@ -24,30 +27,23 @@ const AiChat = {
             const raw = localStorage.getItem('ai_chat');
             if (!raw) return;
             const data = JSON.parse(raw);
-            const msgs = Array.isArray(data.messages) ? data.messages : [];
-            // Миграция старых записей: гарантируем поля tools/edits
-            for (const m of msgs) {
-                if (m.role === 'assistant') {
-                    if (!Array.isArray(m.tools)) m.tools = [];
-                    if (!Array.isArray(m.edits)) m.edits = [];
-                }
-            }
-            this.state.messages       = msgs;
             this.state.model          = data.model || null;
             this.state.includeConsole = !!data.includeConsole;
             this.state.consoleLines   = data.consoleLines || 200;
             this.state.attachedFiles  = Array.isArray(data.attachedFiles) ? data.attachedFiles : [];
+            this.state.currentThread  = data.currentThread || 'main';
         } catch {}
     },
 
     _save() {
+        // История сообщений теперь на сервере. В localStorage — только настройки.
         try {
             localStorage.setItem('ai_chat', JSON.stringify({
-                messages:       this.state.messages.slice(-100),
                 model:          this.state.model,
                 includeConsole: this.state.includeConsole,
                 consoleLines:   this.state.consoleLines,
                 attachedFiles:  this.state.attachedFiles,
+                currentThread:  this.state.currentThread,
             }));
         } catch {}
     },
@@ -63,6 +59,12 @@ const AiChat = {
         }
     },
 
+    /** Вызывается виджетом/страницей при открытии — гарантированно подтягивает треды. */
+    async ensureThreadsLoaded() {
+        await this.loadThreads();
+        await this.loadThreadMessages();
+    },
+
     registerView(view) {
         this._views.push(view);
     },
@@ -76,6 +78,90 @@ const AiChat = {
     _emitDelta(idx) {
         for (const v of this._views) {
             try { v.onDelta?.(idx); } catch {}
+        }
+    },
+
+    async loadThreads() {
+        try {
+            const res = await API.get('/api/claude/threads');
+            this.state.threads = res.threads || [];
+            // Если currentThread не существует среди тредов — переключаемся на main
+            if (!this.state.threads.some(t => t.id === this.state.currentThread)) {
+                this.state.currentThread = res.current_thread || 'main';
+            }
+            this._save();
+            this._emitAll();
+        } catch {}
+    },
+
+    async loadThreadMessages(threadId = null) {
+        const tid = threadId || this.state.currentThread || 'main';
+        try {
+            const res = await API.get(`/api/claude/threads/${encodeURIComponent(tid)}`);
+            const thread = res.thread || {};
+            const msgs = Array.isArray(thread.messages) ? thread.messages : [];
+            // Гарантируем поля tools/edits в assistant-сообщениях
+            for (const m of msgs) {
+                if (m.role === 'assistant') {
+                    if (!Array.isArray(m.tools)) m.tools = [];
+                    if (!Array.isArray(m.edits)) m.edits = [];
+                }
+            }
+            this.state.messages = msgs;
+            this._emitAll();
+        } catch {}
+    },
+
+    async switchThread(threadId) {
+        if (this.state.streaming) {
+            app.toast('Сначала останови текущий ответ', 'info');
+            return;
+        }
+        this.state.currentThread = threadId;
+        this._save();
+        try {
+            await API.post('/api/claude/threads/current', { thread_id: threadId });
+        } catch (e) {
+            app.toast(e.message, 'error');
+        }
+        await this.loadThreadMessages(threadId);
+        await this.loadThreads();
+    },
+
+    async openTaskThread(taskId) {
+        await this.switchThread(`task:${taskId}`);
+    },
+
+    async renameThread(threadId, title) {
+        try {
+            await API.post(`/api/claude/threads/${encodeURIComponent(threadId)}/rename`, { title });
+            await this.loadThreads();
+        } catch (e) {
+            app.toast(e.message, 'error');
+        }
+    },
+
+    async deleteThread(threadId) {
+        try {
+            await API.delete(`/api/claude/threads/${encodeURIComponent(threadId)}`);
+            if (this.state.currentThread === threadId) {
+                this.state.currentThread = 'main';
+                await this.loadThreadMessages('main');
+            }
+            await this.loadThreads();
+        } catch (e) {
+            app.toast(e.message, 'error');
+        }
+    },
+
+    async clearCurrentThread() {
+        if (this.state.streaming) this.stop();
+        try {
+            await API.post(`/api/claude/threads/${encodeURIComponent(this.state.currentThread)}/clear`);
+            this.state.messages = [];
+            this._emitAll();
+        } catch (e) {
+            app.toast(e.message, 'error');
         }
     },
 
@@ -182,10 +268,8 @@ const AiChat = {
     setModel(m)          { this.state.model = m; this._save(); this._emitAll(); },
 
     clear() {
-        if (this.state.streaming) this.stop();
-        this.state.messages = [];
-        this._save();
-        this._emitAll();
+        // Сейчас clear ходит на сервер чтобы стереть и серверную копию
+        this.clearCurrentThread();
     },
 
     async send(text) {
@@ -231,6 +315,7 @@ const AiChat = {
                     include_console: s.includeConsole,
                     console_lines: s.consoleLines,
                     attached_files: s.attachedFiles,
+                    thread_id: s.currentThread || 'main',
                 }),
                 signal: ctrl.signal,
             });
@@ -266,6 +351,8 @@ const AiChat = {
             s.abortCtrl = null;
             this._save();
             this._emitAll();
+            // Подтягиваем список тредов чтобы обновить message_count/updated_at
+            this.loadThreads();
         }
     },
 
@@ -510,57 +597,119 @@ const AiChat = {
         AiDiffModal.show(e);
     },
 
-    /** HTML-индикатор активной задачи + dropdown для смены. */
-    renderActiveTaskPicker() {
-        const active = TasksStore.getActive?.();
-        const label = active ? this.esc(active.title) : '— нет активной задачи —';
-        const cls = active ? 'ai-active-task ai-active-task-on' : 'ai-active-task';
-        return `<button class="${cls}" data-action="pick-task" title="${active ? 'Сменить или снять активную задачу' : 'Выбрать активную задачу'}">
-            <span class="ai-active-task-icon">⎘</span>
-            <span class="ai-active-task-label">${label}</span>
+    /** HTML-индикатор текущего треда + кнопка для смены. */
+    renderThreadPicker() {
+        const current = this.getCurrentThread();
+        const label = current ? this.esc(current.title) : 'Основной чат';
+        const isTask = current?.task_id;
+        const cls = `ai-thread-pill${isTask ? ' ai-thread-pill-task' : ''}`;
+        return `<button class="${cls}" data-action="pick-thread" title="Сменить тред (Ctrl+/)">
+            <span class="ai-thread-icon">${isTask ? '⎘' : '✦'}</span>
+            <span class="ai-thread-label">${label}</span>
         </button>`;
     },
 
-    showTaskPicker() {
-        const existing = document.getElementById('ai-task-picker');
+    getCurrentThread() {
+        return this.state.threads.find(t => t.id === this.state.currentThread)
+            || this.state.threads.find(t => t.id === 'main');
+    },
+
+    showThreadPicker() {
+        const existing = document.getElementById('ai-thread-picker');
         if (existing) existing.remove();
         const modal = document.createElement('div');
-        modal.id = 'ai-task-picker';
+        modal.id = 'ai-thread-picker';
         modal.style.cssText = 'position:fixed;inset:0;z-index:9020;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;padding:24px';
-        const tasks = TasksStore.list().filter(t => t.status !== 'done');
-        const activeId = TasksStore.activeId();
+
+        const threads = this.state.threads || [];
+        const current = this.state.currentThread;
+        const openTasks = (typeof TasksStore !== 'undefined'
+            ? TasksStore.list().filter(t => t.status !== 'done')
+            : []);
+
+        // Открытые задачи без созданного треда — отдельный блок "Создать тред"
+        const threadTaskIds = new Set(threads.filter(t => t.task_id).map(t => t.task_id));
+        const taskOptions = openTasks.filter(t => !threadTaskIds.has(t.id));
+
         modal.innerHTML = `
-        <div class="ai-picker">
+        <div class="ai-picker ai-thread-picker">
             <div class="ai-picker-header">
-                <span style="flex:1;font-size:13px;color:var(--text);font-weight:600">Активная задача</span>
+                <span style="flex:1;font-size:13px;color:var(--text);font-weight:600">Чат / тред</span>
                 <button class="ai-picker-close">✕</button>
             </div>
             <div class="ai-picker-list">
-                <div class="ai-picker-item ${activeId == null ? 'attached' : ''}" data-id="">
-                    <span class="ai-picker-name">— не назначать —</span>
-                    <span class="ai-picker-state">${activeId == null ? 'выбрано' : ''}</span>
-                </div>
-                ${tasks.length ? tasks.map(t => `
-                    <div class="ai-picker-item ${activeId === t.id ? 'attached' : ''}" data-id="${t.id}">
-                        <span class="ai-picker-name">${this.esc(t.title)}</span>
-                        <span class="ai-picker-path">${t.status} · ${t.priority || 'medium'}</span>
-                        <span class="ai-picker-state">${activeId === t.id ? 'активная' : 'выбрать'}</span>
-                    </div>`).join('') : `<div class="ai-empty" style="padding:32px">Нет открытых задач. Создай в разделе <a href="#" id="ai-tp-go-tasks" style="color:var(--text);text-decoration:underline">Задачи</a>.</div>`}
+                <div class="ai-thread-section">Существующие</div>
+                ${threads.map(t => {
+                    const isCurrent = t.id === current;
+                    const isMain = t.id === 'main';
+                    const sub = isMain ? 'без привязки' : (t.task_id ? `задача · ${t.message_count} сообщ.` : `${t.message_count} сообщ.`);
+                    return `
+                    <div class="ai-picker-item ai-thread-row ${isCurrent ? 'attached' : ''}" data-thread="${this.esc(t.id)}">
+                        <div class="ai-thread-row-body">
+                            <div class="ai-thread-row-title">${isMain ? '✦ ' : '⎘ '}${this.esc(t.title)}</div>
+                            <div class="ai-thread-row-sub">${sub}</div>
+                        </div>
+                        <div class="ai-thread-row-actions">
+                            ${isCurrent ? '<span class="ai-picker-state" style="color:var(--green)">текущий</span>' : ''}
+                            ${!isMain ? `<button class="ai-thread-mini" data-act="rename" data-thread="${this.esc(t.id)}" title="Переименовать">✎</button>
+                                          <button class="ai-thread-mini" data-act="delete" data-thread="${this.esc(t.id)}" title="Удалить">🗑</button>` : ''}
+                        </div>
+                    </div>`;
+                }).join('')}
+                ${taskOptions.length ? `
+                    <div class="ai-thread-section">Создать тред для задачи</div>
+                    ${taskOptions.map(t => `
+                        <div class="ai-picker-item ai-thread-row" data-create-task="${t.id}">
+                            <div class="ai-thread-row-body">
+                                <div class="ai-thread-row-title">+ ${this.esc(t.title)}</div>
+                                <div class="ai-thread-row-sub">${t.status} · ${t.priority || 'medium'}</div>
+                            </div>
+                        </div>`).join('')}
+                ` : ''}
             </div>
         </div>`;
+
         document.body.appendChild(modal);
         modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
         modal.querySelector('.ai-picker-close').addEventListener('click', () => modal.remove());
-        document.getElementById('ai-tp-go-tasks')?.addEventListener('click', e => {
-            e.preventDefault(); modal.remove(); app.navigate('tasks');
-        });
-        modal.querySelectorAll('.ai-picker-item').forEach(item => {
-            item.addEventListener('click', async () => {
-                const id = item.dataset.id;
-                await TasksStore.setActive(id || null);
+
+        modal.querySelectorAll('[data-thread]').forEach(row => {
+            if (row.classList.contains('ai-thread-mini')) return;
+            // Только сам row, не кнопки-действия внутри
+            row.addEventListener('click', async (e) => {
+                if (e.target.closest('.ai-thread-mini')) return;
+                const tid = row.dataset.thread;
                 modal.remove();
-                this._emitAll();
-                app.toast(id ? 'Задача активна' : 'Активность снята', 'info');
+                await this.switchThread(tid);
+            });
+        });
+        modal.querySelectorAll('[data-create-task]').forEach(row => {
+            row.addEventListener('click', async () => {
+                const taskId = row.dataset.createTask;
+                modal.remove();
+                await this.openTaskThread(taskId);
+            });
+        });
+        modal.querySelectorAll('.ai-thread-mini').forEach(btn => {
+            btn.addEventListener('click', async e => {
+                e.stopPropagation();
+                const tid = btn.dataset.thread;
+                const act = btn.dataset.act;
+                if (act === 'delete') {
+                    if (!confirm('Удалить этот тред со всей историей?')) return;
+                    await this.deleteThread(tid);
+                    modal.remove();
+                    this.showThreadPicker();
+                } else if (act === 'rename') {
+                    const t = (this.state.threads || []).find(x => x.id === tid);
+                    const cur = t?.title || '';
+                    const next = prompt('Новое название треда:', cur);
+                    if (next && next.trim() && next !== cur) {
+                        await this.renameThread(tid, next.trim());
+                        modal.remove();
+                        this.showThreadPicker();
+                    }
+                }
             });
         });
     },

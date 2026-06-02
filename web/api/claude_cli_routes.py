@@ -39,6 +39,7 @@ from .auth import get_current_user
 from .sessions import get_session
 from . import claude_usage
 from . import tasks_store
+from . import ai_threads_store
 
 logger = logging.getLogger('claude')
 router = APIRouter()
@@ -232,9 +233,16 @@ def _build_system_prompt(client, body: 'ChatRequest', attached_paths: list[str],
         '- Если делаешь правку — НЕ дублируй её ещё и текстом в ответе, пользователь увидит её в diff. Достаточно короткого пояснения "что и зачем".',
     ]
 
-    # Активная задача всегда в контексте
+    # Задача треда (если есть) > глобальная активная задача
+    active = None
     try:
-        active = tasks_store.get_active_task(login)
+        thread_id = getattr(body, '_resolved_thread_id', None)
+        if thread_id:
+            tid = ai_threads_store.thread_task_id(login, thread_id)
+            if tid:
+                active = tasks_store.get_task(login, tid)
+        if not active:
+            active = tasks_store.get_active_task(login)
     except Exception:
         active = None
     if active:
@@ -333,6 +341,8 @@ class ChatRequest(BaseModel):
     include_console: bool = False
     console_lines: int = 200
     attached_files: list[str] = []
+    # Тред, в который пишется этот запрос. Если не указан — main.
+    thread_id: Optional[str] = None
 
 
 class EditToApply(BaseModel):
@@ -345,6 +355,78 @@ class ApplyEditsRequest(BaseModel):
 
 
 # ── Endpoints ───────────────────────────────────────────────────────────
+
+# ── Threads ────────────────────────────────────────────────────────
+
+class RenameThreadRequest(BaseModel):
+    title: str
+
+
+class SetCurrentRequest(BaseModel):
+    thread_id: str
+
+
+@router.get('/api/claude/threads')
+async def list_threads(login: str = Depends(get_current_user)):
+    _require_allowed(login)
+    return ai_threads_store.list_threads(login)
+
+
+@router.get('/api/claude/threads/{thread_id:path}')
+async def get_thread(thread_id: str, login: str = Depends(get_current_user)):
+    _require_allowed(login)
+    thread = ai_threads_store.get_thread(login, thread_id)
+    if not thread:
+        raise HTTPException(status_code=404, detail='Тред не найден')
+    return {'thread': thread}
+
+
+@router.post('/api/claude/threads/current')
+async def set_current_thread(body: SetCurrentRequest,
+                              login: str = Depends(get_current_user)):
+    _require_allowed(login)
+    tid = body.thread_id
+    if tid.startswith('task:'):
+        task_id = tid.split(':', 1)[1]
+        task = tasks_store.get_task(login, task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail='Задача не найдена')
+        ai_threads_store.ensure_task_thread(login, task_id, task.get('title', ''))
+    elif not ai_threads_store.get_thread(login, tid):
+        raise HTTPException(status_code=404, detail='Тред не найден')
+    ai_threads_store.set_current(login, tid)
+    return {'current_thread': tid}
+
+
+@router.post('/api/claude/threads/{thread_id:path}/rename')
+async def rename_thread(thread_id: str, body: RenameThreadRequest,
+                         login: str = Depends(get_current_user)):
+    _require_allowed(login)
+    if thread_id == ai_threads_store.MAIN_ID:
+        raise HTTPException(status_code=400, detail='Нельзя переименовать основной чат')
+    if not ai_threads_store.get_thread(login, thread_id):
+        raise HTTPException(status_code=404, detail='Тред не найден')
+    ai_threads_store.rename_thread(login, thread_id, body.title)
+    return {'ok': True}
+
+
+@router.post('/api/claude/threads/{thread_id:path}/clear')
+async def clear_thread(thread_id: str, login: str = Depends(get_current_user)):
+    _require_allowed(login)
+    if not ai_threads_store.get_thread(login, thread_id):
+        raise HTTPException(status_code=404, detail='Тред не найден')
+    ai_threads_store.clear_messages(login, thread_id)
+    return {'ok': True}
+
+
+@router.delete('/api/claude/threads/{thread_id:path}')
+async def delete_thread(thread_id: str, login: str = Depends(get_current_user)):
+    _require_allowed(login)
+    ok = ai_threads_store.delete_thread(login, thread_id)
+    if not ok:
+        raise HTTPException(status_code=400, detail='Нельзя удалить этот тред')
+    return {'ok': True}
+
 
 @router.get('/api/claude/usage')
 async def claude_usage_today(login: str = Depends(get_current_user)):
@@ -427,6 +509,22 @@ async def claude_chat(body: ChatRequest, login: str = Depends(get_current_user))
     if not user_prompt.strip():
         raise HTTPException(status_code=400, detail='Пустой запрос')
 
+    # Резолвим thread_id (по умолчанию main, или текущий пользователя)
+    requested_thread = body.thread_id or ai_threads_store.get_current(login)
+    # Если тред — для задачи, убедимся что он существует
+    if requested_thread.startswith('task:'):
+        task_id = requested_thread.split(':', 1)[1]
+        t = tasks_store.get_task(login, task_id)
+        if t:
+            ai_threads_store.ensure_task_thread(login, task_id, t.get('title', ''))
+        else:
+            requested_thread = ai_threads_store.MAIN_ID
+    elif not ai_threads_store.get_thread(login, requested_thread):
+        requested_thread = ai_threads_store.MAIN_ID
+    ai_threads_store.set_current(login, requested_thread)
+    # Прокидываем в _build_system_prompt через атрибут body
+    body._resolved_thread_id = requested_thread
+
     # Готовим workspace
     ws, snapshot = _build_workspace(client)
     logger.info(f'AI workspace ({login}): {ws} — {len(snapshot)} files')
@@ -487,6 +585,9 @@ async def claude_chat(body: ChatRequest, login: str = Depends(get_current_user))
 
             got_partial_text = False
             tool_uses_emitted = set()
+            # Сборка состояния ответа ассистента для записи в тред
+            assistant_text_parts: list = []
+            assistant_tools: list = []
 
             try:
                 async for raw in proc.stdout:
@@ -509,6 +610,7 @@ async def claude_chat(body: ChatRequest, login: str = Depends(get_current_user))
                                 text = delta.get('text', '')
                                 if text:
                                     got_partial_text = True
+                                    assistant_text_parts.append(text)
                                     yield f'event: delta\ndata: {json.dumps({"text": text})}\n\n'
                         continue
 
@@ -533,10 +635,12 @@ async def claude_chat(body: ChatRequest, login: str = Depends(get_current_user))
                                             path = rel
                                     except Exception:
                                         pass
+                                assistant_tools.append({'tool': tool_name, 'path': path})
                                 yield f'event: tool\ndata: {json.dumps({"tool": tool_name, "path": path})}\n\n'
                             elif block.get('type') == 'text' and not got_partial_text:
                                 text = block.get('text', '')
                                 if text:
+                                    assistant_text_parts.append(text)
                                     yield f'event: delta\ndata: {json.dumps({"text": text})}\n\n'
                         continue
 
@@ -561,31 +665,67 @@ async def claude_chat(body: ChatRequest, login: str = Depends(get_current_user))
                                 'old_content': e['old_content'],
                                 'new_content': e['new_content'],
                             })
-                        # Логируем активность AI в активную задачу
+                        # Логируем активность AI в задачу (тред задачи > глобальная)
                         try:
-                            active = tasks_store.get_active_task(login)
-                            if active:
+                            log_task_id = None
+                            resolved_thread = getattr(body, '_resolved_thread_id', None)
+                            if resolved_thread:
+                                log_task_id = ai_threads_store.thread_task_id(login, resolved_thread)
+                            if not log_task_id:
+                                act = tasks_store.get_active_task(login)
+                                log_task_id = act['id'] if act else None
+                            if log_task_id:
                                 if edits_payload:
                                     paths = [e['path'] for e in edits_payload]
                                     tasks_store.append_ai_log(
-                                        login, active['id'], 'edit',
+                                        login, log_task_id, 'edit',
                                         f'Предложено правок: {len(paths)}',
                                         files=paths,
                                     )
                                 else:
-                                    # Просто диалог без правок — короткая запись
                                     last_user = next((m for m in reversed(body.messages)
                                                        if m.role == 'user'), None)
                                     if last_user:
                                         tasks_store.append_ai_log(
-                                            login, active['id'], 'chat',
+                                            login, log_task_id, 'chat',
                                             last_user.content[:200],
                                         )
                         except Exception as ex:
                             logger.warning(f'ai_log failed: {ex}')
 
                         yield f'event: edits\ndata: {json.dumps({"edits": edits_payload})}\n\n'
-                        yield f'event: done\ndata: {json.dumps({"usage": usage_obj})}\n\n'
+
+                        # Сохраняем тред: добавляем последнее user-сообщение и
+                        # собранный assistant-ответ
+                        try:
+                            last_user = next((m for m in reversed(body.messages)
+                                              if m.role == 'user'), None)
+                            new_msgs = []
+                            if last_user:
+                                new_msgs.append({
+                                    'role': 'user',
+                                    'content': last_user.content,
+                                })
+                            assistant_content = ''.join(assistant_text_parts)
+                            new_msgs.append({
+                                'role': 'assistant',
+                                'content': assistant_content,
+                                'tools': assistant_tools,
+                                'edits': [{
+                                    'file_id': e['file_id'],
+                                    'path': e['path'],
+                                    'old_content': e['old_content'],
+                                    'new_content': e['new_content'],
+                                    'status': 'pending',
+                                } for e in edits_payload],
+                            })
+                            ai_threads_store.append_messages(
+                                login, requested_thread, new_msgs,
+                            )
+                        except Exception as ex:
+                            logger.warning(f'thread save failed: {ex}')
+
+                        yield f'event: done\ndata: {json.dumps({"usage": usage_obj, "thread_id": requested_thread})}\n\n'
 
                 await proc.wait()
                 if proc.returncode != 0:

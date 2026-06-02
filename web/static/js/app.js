@@ -493,7 +493,7 @@ const app = {
         P.register({ id: 'view.wslog',   title: 'Виджет: WS Log',      icon: '📡', group: 'Виджеты', run: () => this.toggleDebug() });
         P.register({ id: 'view.ai',      title: 'Виджет: AI ассистент', icon: '✦', group: 'Виджеты', run: () => AiWidget.toggle() });
         P.register({ id: 'tasks.open',   title: 'Перейти к задачам',   icon: '⎘', group: 'Навигация', run: () => this.navigate('tasks') });
-        P.register({ id: 'tasks.pick',   title: 'Активная задача...',  icon: '⎘', group: 'Задачи', run: () => { if (typeof AiChat !== 'undefined') { AiChat.init(); AiChat.showTaskPicker(); } } });
+        P.register({ id: 'ai.thread',    title: 'AI: выбрать тред...', icon: '✦', hint: 'Ctrl+/', group: 'AI', run: () => { if (typeof AiChat !== 'undefined') { AiChat.init(); AiChat.ensureThreadsLoaded().then(() => AiChat.showThreadPicker()); } } });
         P.register({ id: 'sidebar.toggle', title: 'Свернуть/Развернуть сайдбар', icon: '◧', group: 'Интерфейс', run: () => document.getElementById('sidebar-toggle')?.click() });
         P.register({ id: 'logout',       title: 'Выйти',               icon: '🚪', group: 'Прочее', run: () => document.getElementById('btn-logout')?.click() });
         // Команды редактора
@@ -558,6 +558,15 @@ window.app = app;
 // Глобальные хоткеи
 document.addEventListener('keydown', e => {
     if (!app._ws) return;
+    // Ctrl+/ — AI thread picker
+    if ((e.ctrlKey || e.metaKey) && e.key === '/') {
+        if (typeof AiChat !== 'undefined') {
+            e.preventDefault();
+            AiChat.init();
+            AiChat.ensureThreadsLoaded().then(() => AiChat.showThreadPicker());
+        }
+        return;
+    }
     if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'b') {
         e.preventDefault(); app._doCompile();
     } else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 's') {

@@ -30,6 +30,7 @@ const AiWidget = {
         this._renderAll();
         AiChat.loadStatus().then(() => AiChat.loadUsage());
         AiChat.loadFiles();
+        AiChat.ensureThreadsLoaded();
     },
 
     _template() {
@@ -124,10 +125,10 @@ const AiWidget = {
         this._renderMessages();
         const usageBtn = document.getElementById('ai-w-usage');
         if (usageBtn) usageBtn.innerHTML = AiChat.renderUsageBadge();
-        const activeTaskBar = document.getElementById('ai-w-active-task');
-        if (activeTaskBar) {
-            activeTaskBar.innerHTML = AiChat.renderActiveTaskPicker();
-            activeTaskBar.querySelector('[data-action="pick-task"]')?.addEventListener('click', () => AiChat.showTaskPicker());
+        const threadBar = document.getElementById('ai-w-active-task');
+        if (threadBar) {
+            threadBar.innerHTML = AiChat.renderThreadPicker();
+            threadBar.querySelector('[data-action="pick-thread"]')?.addEventListener('click', () => AiChat.showThreadPicker());
         }
     },
 

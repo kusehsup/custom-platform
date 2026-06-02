@@ -1476,6 +1476,26 @@ mark.palette-hl { background: rgba(234,179,8,0.15); color: var(--yellow); border
 .ai-active-task-icon { font-size: 11px; opacity: .8; }
 .ai-active-task-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 280px; font-family: var(--mono); }
 
+/* Thread pill */
+.ai-thread-pill { display: inline-flex; align-items: center; gap: 7px; padding: 5px 11px; background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); font-size: 11.5px; color: var(--text); cursor: pointer; max-width: 100%; transition: background .15s, border-color .15s; }
+.ai-thread-pill:hover { background: var(--surface3); border-color: var(--border-2); }
+.ai-thread-pill-task { border-color: var(--border-2); background: var(--bg); }
+.ai-thread-icon { font-size: 11px; opacity: .85; }
+.ai-thread-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 280px; font-family: var(--mono); }
+
+/* Thread picker modal */
+.ai-thread-picker { max-width: 540px; height: 70vh; }
+.ai-thread-section { font-size: 10px; color: var(--text-3); text-transform: uppercase; letter-spacing: .06em; padding: 10px 14px 4px; font-weight: 600; }
+.ai-thread-row { padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; gap: 10px; cursor: pointer; border-bottom: 1px solid transparent; transition: background .12s; }
+.ai-thread-row:hover { background: var(--surface2); }
+.ai-thread-row.attached { background: var(--surface3); }
+.ai-thread-row-body { flex: 1; min-width: 0; }
+.ai-thread-row-title { color: var(--text); font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ai-thread-row-sub { color: var(--text-3); font-size: 10.5px; margin-top: 2px; font-family: var(--mono); }
+.ai-thread-row-actions { display: flex; gap: 4px; align-items: center; flex-shrink: 0; }
+.ai-thread-mini { background: none; border: 1px solid var(--border); color: var(--text-3); border-radius: var(--radius); padding: 2px 7px; font-size: 11px; cursor: pointer; transition: all .12s; }
+.ai-thread-mini:hover { color: var(--text); border-color: var(--border-2); background: var(--surface2); }
+
 /* ─── Tasks page ─────────────────────────────────────────────── */
 .tasks-page { display: flex; flex-direction: column; height: calc(100vh - 90px); min-height: 0; }
 .tasks-page-header { display: flex; justify-content: space-between; align-items: flex-start; padding-bottom: 10px; flex-shrink: 0; }

@@ -29,3 +29,6 @@ web/claude_usage.json
 # TODO задачи и их вложения
 web/tasks.json
 web/uploads/
+
+# AI чаты (треды и история)
+web/ai_threads.json
