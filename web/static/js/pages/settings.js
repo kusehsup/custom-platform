@@ -356,96 +356,59 @@ app.register('settings', {
     },
 
     _renderClaudeSection(body, status) {
-        const models = status.models || [];
-        const modelOptions = models.map(m =>
-            `<option value="${m.id}" ${m.id === status.model ? 'selected' : ''}>${m.label}</option>`
-        ).join('');
-
-        if (status.connected) {
+        if (!status.allowed) {
             body.innerHTML = `
             <div class="settings-row">
                 <div class="settings-row-body">
-                    <div class="settings-row-title">Подключено</div>
-                    <div class="settings-row-desc">Личный API-ключ Anthropic используется только для твоих запросов</div>
-                </div>
-                <div class="settings-row-action">
-                    <span style="font-size:11px;color:var(--green);font-weight:600;background:var(--green-dim);border:1px solid rgba(52,211,153,0.2);padding:3px 10px;border-radius:99px">Активно</span>
-                </div>
-            </div>
-            <div style="padding:14px 0 4px;border-top:1px solid var(--border);margin-top:4px;display:flex;flex-direction:column;gap:10px">
-                <div style="display:flex;flex-direction:column;gap:6px">
-                    <label style="font-size:11px;color:var(--text-3)">Модель</label>
-                    <select id="claude-model" style="font-size:12px;padding:6px 8px;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:var(--radius-xs)">
-                        ${modelOptions}
-                    </select>
-                </div>
-                <div style="display:flex;gap:6px">
-                    <button class="btn btn-danger btn-sm" id="claude-disconnect-btn">Отключить</button>
+                    <div class="settings-row-title">Недоступно</div>
+                    <div class="settings-row-desc">${status.reason || 'AI ассистент доступен только владельцу платформы'}</div>
                 </div>
             </div>`;
-
-            document.getElementById('claude-model').addEventListener('change', async (e) => {
-                try {
-                    await API.post('/api/claude/model', { model: e.target.value });
-                    app.toast('Модель обновлена', 'info');
-                } catch (err) {
-                    app.toast(err.message, 'error');
-                }
-            });
-
-            document.getElementById('claude-disconnect-btn').addEventListener('click', async () => {
-                if (!confirm('Отключить Claude? API-ключ будет удалён.')) return;
-                try {
-                    await API.delete('/api/claude/connect');
-                    app.toast('Claude отключён', 'info');
-                    await this._loadClaudeStatus(document.getElementById('claude-card').parentElement);
-                } catch (e) {
-                    app.toast(e.message, 'error');
-                }
-            });
-
-        } else {
-            body.innerHTML = `
-            <div class="settings-row">
-                <div class="settings-row-body">
-                    <div class="settings-row-title">Не подключено</div>
-                    <div class="settings-row-desc">Ассистент использует личный аккаунт Anthropic. Получи ключ на console.anthropic.com</div>
-                </div>
-            </div>
-            <div style="padding:14px 0 4px;border-top:1px solid var(--border);margin-top:4px;display:flex;flex-direction:column;gap:10px">
-                <div style="display:flex;flex-direction:column;gap:6px">
-                    <label style="font-size:11px;color:var(--text-3)">API key</label>
-                    <input id="claude-key" type="password" placeholder="sk-ant-..." style="font-family:var(--mono);font-size:12px" />
-                </div>
-                <div style="display:flex;flex-direction:column;gap:6px">
-                    <label style="font-size:11px;color:var(--text-3)">Модель по умолчанию</label>
-                    <select id="claude-model-pick" style="font-size:12px;padding:6px 8px;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:var(--radius-xs)">
-                        ${modelOptions}
-                    </select>
-                </div>
-                <div style="display:flex;gap:8px;align-items:center">
-                    <button class="btn btn-primary btn-sm" id="claude-connect-btn">Подключить</button>
-                    <div id="claude-err" style="font-size:12px;color:var(--red)"></div>
-                </div>
-            </div>`;
-
-            document.getElementById('claude-connect-btn').addEventListener('click', async () => {
-                const api_key = document.getElementById('claude-key').value.trim();
-                const model   = document.getElementById('claude-model-pick').value;
-                const err     = document.getElementById('claude-err');
-                const btn     = document.getElementById('claude-connect-btn');
-                if (!api_key) { err.textContent = 'Введите API key'; return; }
-                btn.disabled = true; btn.textContent = 'Проверка...'; err.textContent = '';
-                try {
-                    await API.post('/api/claude/connect', { api_key, model });
-                    app.toast('Claude подключён', 'success');
-                    await this._loadClaudeStatus(document.getElementById('claude-card').parentElement);
-                } catch (e) {
-                    err.textContent = e.message;
-                    btn.disabled = false; btn.textContent = 'Подключить';
-                }
-            });
+            return;
         }
+
+        const cliBadge = status.cli_installed
+            ? `<span style="font-size:11px;color:var(--green);font-weight:600;background:var(--green-dim);border:1px solid rgba(52,211,153,0.2);padding:3px 10px;border-radius:99px">CLI установлен${status.cli_version ? ` (${status.cli_version})` : ''}</span>`
+            : `<span style="font-size:11px;color:var(--red);font-weight:600;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.2);padding:3px 10px;border-radius:99px">CLI не найден</span>`;
+
+        const loginBadge = status.logged_in
+            ? `<span style="font-size:11px;color:var(--green);font-weight:600;background:var(--green-dim);border:1px solid rgba(52,211,153,0.2);padding:3px 10px;border-radius:99px">Авторизация активна</span>`
+            : `<span style="font-size:11px;color:var(--orange,#f59e0b);font-weight:600;background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.2);padding:3px 10px;border-radius:99px">Не авторизован</span>`;
+
+        let hint = '';
+        if (!status.cli_installed) {
+            hint = `
+            <div style="padding:14px 0 4px;border-top:1px solid var(--border);margin-top:4px;font-size:12px;color:var(--text-3);line-height:1.6">
+                Установи Claude Code CLI на сервере:
+                <pre style="background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-xs);padding:8px 10px;margin-top:6px;font-family:var(--mono);font-size:11px;overflow-x:auto">npm install -g @anthropic-ai/claude-code</pre>
+            </div>`;
+        } else if (!status.logged_in) {
+            hint = `
+            <div style="padding:14px 0 4px;border-top:1px solid var(--border);margin-top:4px;font-size:12px;color:var(--text-3);line-height:1.6">
+                Зайди на сервер по SSH и выполни:
+                <pre style="background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-xs);padding:8px 10px;margin-top:6px;font-family:var(--mono);font-size:11px;overflow-x:auto">sudo -u <span style="color:var(--text-2)">&lt;user-сервиса&gt;</span> claude login</pre>
+                Откроется браузер с OAuth — войди под своим аккаунтом с Max подпиской.
+                После авторизации перезагрузи эту страницу.
+            </div>`;
+        } else {
+            hint = `
+            <div style="padding:14px 0 4px;border-top:1px solid var(--border);margin-top:4px;font-size:12px;color:var(--text-3);line-height:1.6">
+                Ассистент использует твою Max-подписку через локальный <code style="font-family:var(--mono);font-size:11px;background:var(--bg);padding:1px 5px;border-radius:3px">claude</code> CLI. Расходы по лимитам подписки, а не по API.
+            </div>`;
+        }
+
+        body.innerHTML = `
+        <div class="settings-row">
+            <div class="settings-row-body">
+                <div class="settings-row-title">Claude Code через Max подписку</div>
+                <div class="settings-row-desc">Работает только локально на сервере, под твоим аккаунтом</div>
+            </div>
+            <div class="settings-row-action" style="display:flex;gap:6px;flex-wrap:wrap">
+                ${cliBadge}
+                ${loginBadge}
+            </div>
+        </div>
+        ${hint}`;
     },
 
     async _requestNotifPerm(root) {

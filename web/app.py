@@ -20,7 +20,7 @@ from .api.routes import router
 from .api.db_routes import router as db_router
 from .api.totp_routes import router as totp_router
 from .api.github_routes import router as github_router
-from .api.claude_routes import router as claude_router
+from .api.claude_cli_routes import router as claude_router
 
 app = FastAPI(title='CustomPlatform')
 app.include_router(router)

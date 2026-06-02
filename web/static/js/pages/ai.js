@@ -25,6 +25,11 @@ const AiPage = {
             </div>
 
             <div id="ai-context-bar" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:8px 12px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:8px;flex-shrink:0">
+                <label style="display:flex;gap:6px;align-items:center;font-size:12px;color:var(--text-2)">
+                    Модель
+                    <select id="ai-model" style="font-size:12px;padding:3px 6px;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:var(--radius-xs)"></select>
+                </label>
+                <div style="width:1px;height:18px;background:var(--border)"></div>
                 <label style="display:flex;gap:6px;align-items:center;font-size:12px;color:var(--text-2);cursor:pointer">
                     <input type="checkbox" id="ai-include-console" style="margin:0" />
                     Консоль сервера
@@ -70,6 +75,10 @@ const AiPage = {
         document.getElementById('ai-include-file').addEventListener('change', e => {
             this._opts.include_file = e.target.value;
         });
+        document.getElementById('ai-model').addEventListener('change', e => {
+            this._opts.model = e.target.value;
+            this._saveState();
+        });
 
         this._restoreState();
         this._renderMessages();
@@ -79,22 +88,42 @@ const AiPage = {
 
     async _loadStatus() {
         const el = document.getElementById('ai-status');
+        const send = document.getElementById('ai-send');
         try {
             const res = await API.get('/api/claude/status');
-            if (!res.connected) {
-                el.innerHTML = `<span style="color:var(--orange,#f59e0b)">Claude не подключён. Открой <a href="#" id="ai-go-settings" style="color:var(--text-2);text-decoration:underline">Настройки</a></span>`;
+            this._status = res;
+
+            if (!res.allowed) {
+                el.innerHTML = `<span style="color:var(--orange,#f59e0b)">${res.reason || 'AI ассистент недоступен'}</span>`;
+                send.disabled = true;
+                return;
+            }
+            if (!res.cli_installed || !res.logged_in) {
+                el.innerHTML = `<span style="color:var(--orange,#f59e0b)">CLI не готов. Открой <a href="#" id="ai-go-settings" style="color:var(--text-2);text-decoration:underline">Настройки</a></span>`;
                 document.getElementById('ai-go-settings')?.addEventListener('click', e => {
                     e.preventDefault();
                     app.navigate('settings');
                 });
-                document.getElementById('ai-send').disabled = true;
+                send.disabled = true;
                 return;
             }
-            const modelLabel = (res.models || []).find(m => m.id === res.model)?.label || res.model;
-            el.innerHTML = `<span style="color:var(--green)">●</span> Модель: ${modelLabel}`;
+
+            this._populateModelSelector(res);
+            const modelLabel = (res.models || []).find(m => m.id === this._opts.model)?.label || this._opts.model;
+            el.innerHTML = `<span style="color:var(--green)">●</span> Подключено через Max подписку`;
+            send.disabled = false;
         } catch (e) {
             el.textContent = e.message;
         }
+    },
+
+    _populateModelSelector(status) {
+        const sel = document.getElementById('ai-model');
+        if (!sel) return;
+        sel.innerHTML = (status.models || []).map(m =>
+            `<option value="${m.id}" ${m.id === (this._opts.model || status.default_model) ? 'selected' : ''}>${m.label}</option>`
+        ).join('');
+        if (!this._opts.model) this._opts.model = status.default_model || sel.value;
     },
 
     async _loadFiles() {
@@ -240,10 +269,10 @@ const AiPage = {
                 },
                 body: JSON.stringify({
                     messages: payloadMessages,
+                    model: this._opts.model || null,
                     include_console: this._opts.include_console,
                     console_lines: this._opts.console_lines,
                     include_file: this._opts.include_file || null,
-                    max_tokens: 4096,
                 }),
                 signal: ctrl.signal,
             });
@@ -285,7 +314,6 @@ const AiPage = {
     },
 
     _handleSseEvent(raw, assistantIdx) {
-        // Парсим SSE-блок: строки event:/data:
         let event = 'message';
         const dataLines = [];
         for (const line of raw.split('\n')) {
@@ -298,17 +326,12 @@ const AiPage = {
         try { data = JSON.parse(dataStr); } catch { return; }
 
         if (event === 'error') {
-            this._messages[assistantIdx].content += `\n\n*[ошибка Anthropic: ${data.error || 'unknown'}]*`;
+            this._messages[assistantIdx].content += `\n\n*[ошибка: ${data.error || 'unknown'}]*`;
             this._renderMessages();
-            return;
-        }
-
-        // Anthropic SSE events
-        const t = data.type;
-        if (t === 'content_block_delta' && data.delta?.type === 'text_delta') {
-            this._messages[assistantIdx].content += data.delta.text;
+        } else if (event === 'delta' && typeof data.text === 'string') {
+            this._messages[assistantIdx].content += data.text;
             this._updateAssistantBubble(assistantIdx);
-        } else if (t === 'message_stop') {
+        } else if (event === 'done') {
             this._renderMessages();
             this._saveState();
         }
