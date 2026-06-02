@@ -275,7 +275,7 @@ async def save_code(body: SaveCodeRequest, login: str = Depends(get_current_user
 async def _github_autocommit(client, file_id: str, part_index: int):
     """Коммитит актуальный файл в GitHub архив после сохранения."""
     from . import github_store
-    from .github_routes import commit_file, _file_path_for, _build_content, _ensure_branch
+    from .github_routes import commit_file, _file_path_for, _build_content
     if not github_store.is_configured():
         return
     try:
@@ -285,13 +285,15 @@ async def _github_autocommit(client, file_id: str, part_index: int):
         if not content.strip():
             return
         file_path = _file_path_for(client, file_id)
-        await _ensure_branch(pat, repo, 'platform/archive')
         fname = client.files.get(file_id, {}).get('name', file_path)
         await commit_file(pat, repo, file_path, content,
                           f'auto: save {fname} (part {part_index})')
     except Exception as e:
         import logging
-        logging.getLogger('github').warning(f'Autocommit failed: {e}')
+        import traceback
+        logging.getLogger('github').warning(
+            f'Autocommit failed: {e}\n{traceback.format_exc()}'
+        )
 
 
 # ------------------------------------------------------------------ #

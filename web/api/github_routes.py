@@ -105,10 +105,10 @@ async def _init_repo_if_empty(pat: str, repo: str, branch: str):
 async def _get_branch_sha(pat: str, repo: str, branch: str) -> Optional[str]:
     """Получить SHA последнего коммита ветки. None если ветки нет."""
     try:
-        data = await _gh('GET', f'/repos/{repo}/git/ref/heads/{branch}', pat)
-        return data['object']['sha']
+        data = await _gh('GET', f'/repos/{repo}/branches/{branch}', pat)
+        return data['commit']['sha']
     except HTTPException as e:
-        if e.status_code == 404:
+        if e.status_code in (404, 422):
             return None
         raise
 
