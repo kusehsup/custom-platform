@@ -46,10 +46,19 @@ async def _gh(method: str, path: str, pat: str, **kwargs) -> dict:
     except ImportError:
         raise HTTPException(status_code=500, detail='httpx не установлен. Выполните: pip install httpx')
     url = f'{GITHUB_API}{path}'
+    logger.info(f'GH {method} {path}')
     async with httpx.AsyncClient(timeout=15) as client:
         resp = await client.request(method, url, headers=_headers(pat), **kwargs)
     if resp.status_code >= 400:
-        detail = resp.json().get('message', resp.text) if resp.content else resp.status_code
+        try:
+            err_body = resp.json()
+            detail = err_body.get('message', resp.text)
+            # GitHub часто отдаёт errors: [{resource, field, code, message}]
+            if 'errors' in err_body:
+                detail = f"{detail} | errors={err_body['errors']}"
+        except Exception:
+            detail = resp.text or str(resp.status_code)
+        logger.error(f'GH {method} {path} → {resp.status_code}: {detail}')
         raise HTTPException(status_code=resp.status_code, detail=f'GitHub: {detail}')
     if resp.status_code == 204:
         return {}
@@ -358,8 +367,10 @@ async def github_sync(login: str = Depends(get_current_user)):
         return {'synced': [], 'errors': [], 'message': 'Нет доступных файлов для синхронизации'}
 
     try:
+        logger.info(f'SYNC start: repo={repo} branch={branch} files={len(files)}')
         # 0. Гарантируем ветку и получаем базовый SHA
         base_sha = await _ensure_branch_base(pat, repo, branch)
+        logger.info(f'SYNC base_sha={base_sha}')
 
         # 1. Создаём blob для каждого файла параллельно
         async def make_blob(path, content):
