@@ -246,10 +246,38 @@ def tool_console_clear(_args: dict) -> str:
     return r.get('message', 'OK')
 
 
+def _flatten_blocks(blocks, depth: int = 0, path: list = None) -> list:
+    """Рекурсивно собираем имена блоков из дерева поиска платформы.
+
+    Платформа возвращает {block_id: {name, lines, children: {...}}} или
+    плоский dict {block_id: block_data} с возможными вложенностями.
+    """
+    if path is None:
+        path = []
+    out = []
+    if not isinstance(blocks, dict):
+        return out
+    for bid, bdata in blocks.items():
+        if not isinstance(bdata, dict):
+            continue
+        name = bdata.get('name') or bdata.get('queryName') or bid
+        lines = bdata.get('lines') or bdata.get('line') or ''
+        block_path = path + [name]
+        out.append({
+            'path': ' › '.join(block_path),
+            'lines': lines,
+        })
+        # Children — могут лежать под 'children' или прямо в нём
+        children = bdata.get('children')
+        if isinstance(children, dict):
+            out.extend(_flatten_blocks(children, depth + 1, block_path))
+    return out
+
+
 def tool_search_code(args: dict) -> str:
     """
-    Поиск по Pawn-коду через ту же платформу (map_find).
-    Это read-only — выполняется сразу.
+    Поиск по ВСЕМУ Pawn-коду игрового сервера через платформу (map_find).
+    Read-only, выполняется сразу.
     """
     text = args.get('text') or ''
     file = args.get('file') or '-1'
@@ -271,28 +299,50 @@ def tool_search_code(args: dict) -> str:
     if r.get('_error'):
         return f'Ошибка поиска: {r["_error"]}'
 
-    result = r.get('result') or {}
-    # result обычно {file_name: [{line, content}, ...]}
-    if not isinstance(result, dict) or not result:
+    result = r.get('result')
+    # Спецзначения от платформы
+    if result == 'too_much':
+        return 'Слишком много результатов — уточни запрос (text/file/range).'
+    if result == 'regex_incorrect':
+        return 'Некорректный regexp.'
+    if not result or not isinstance(result, dict):
         return '(ничего не найдено)'
 
-    lines_out = []
-    total = 0
-    for fname, matches in result.items():
-        if not matches:
+    # Резолвим file_id → fullPath через /api/files
+    files_resp = _http('GET', '/api/files')
+    files_map = (files_resp or {}).get('files') or {}
+
+    lines_out = ['# Найдено по всему коду сервера:']
+    total_blocks = 0
+    total_files = 0
+
+    for file_id, file_data in result.items():
+        if not file_data:
             continue
-        lines_out.append(f'\n# {fname}')
-        for m in matches[:30]:  # лимит на файл
-            ln = m.get('line') or '?'
-            ct = (m.get('content') or '').strip()[:200]
-            lines_out.append(f'  {ln}: {ct}')
-            total += 1
-            if total >= 100:
-                lines_out.append('  …')
+        # file_data — это dict блоков; могут быть пустыми
+        blocks = _flatten_blocks(file_data)
+        if not blocks:
+            continue
+        meta = files_map.get(str(file_id)) or files_map.get(file_id) or {}
+        fname = meta.get('fullPath') or meta.get('name') or f'#{file_id}'
+        lines_out.append(f'\n## {fname}  (file_id={file_id})')
+        for b in blocks[:15]:  # ограничение блоков на файл
+            ln = b['lines'] or '?'
+            lines_out.append(f'  - {b["path"]} (строки {ln})')
+            total_blocks += 1
+            if total_blocks >= 80:
                 break
-        if total >= 100:
+        total_files += 1
+        if total_blocks >= 80 or total_files >= 30:
+            lines_out.append('\n…')
             break
-    return '\n'.join(lines_out) if lines_out else '(ничего не найдено)'
+
+    lines_out.append(
+        f'\nИтого: {total_blocks} блоков в {total_files} файлах. '
+        f'Если нужен сам код одного из блоков — используй '
+        f'mcp__cp-ai__request_code_access (file_name, query_name).'
+    )
+    return '\n'.join(lines_out)
 
 
 # Глобальный счётчик запросов доступа в текущей сессии MCP-процесса
