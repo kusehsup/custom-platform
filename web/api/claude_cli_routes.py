@@ -42,6 +42,7 @@ from . import claude_usage
 from . import tasks_store
 from . import ai_threads_store
 from . import pending_actions
+from . import ai_settings_store
 
 logger = logging.getLogger('claude')
 router = APIRouter()
@@ -229,6 +230,11 @@ def _cleanup_workspace(ws: Path):
 
 def _build_system_prompt(client, body: 'ChatRequest', attached_paths: list[str],
                           login: str) -> str:
+    # Структура промпта оптимизирована для prompt caching:
+    # 1) STATIC PART — те же байты между запросами, попадает в Anthropic
+    #    prefix cache (90% скидка на input-токены при попадании).
+    # 2) DYNAMIC PART — меняется между запросами (задача, теги, логи).
+    # Большой стабильный префикс существенно режет расход.
     parts = [
         '# Кто ты',
         'Ты встроенный ассистент в веб-платформу разработки игрового сервера SA-MP на языке Pawn.',
@@ -242,8 +248,12 @@ def _build_system_prompt(client, body: 'ChatRequest', attached_paths: list[str],
         'Если ты не уверен, нужна ли правка — спроси у пользователя, прежде чем редактировать.',
         'НЕ переоформляй файлы под "лучший стиль" по своей инициативе. НЕ переноси переводы строк, BOM, отступы — это всё засчитается как правка и засрёт пользовательский diff.',
         '',
+        '# Экономия токенов',
+        '- При Read используй параметры offset/limit когда нужен конкретный фрагмент. НЕ читай большие файлы целиком если можно сначала Grep\'нуть.',
+        '- НЕ пересказывай содержимое файлов в ответе — пользователь видит их сам.',
+        '',
         '# Как работать',
-        '- Изучай код через Glob → Read / Grep.',
+        '- Изучай код через Glob → Grep → Read (с offset/limit).',
         '- Когда пользователь явно просит правку — используй Edit/MultiEdit (точечно), Write (только если файла раньше не было). Твои правки появятся у пользователя как diff с кнопкой "Применить".',
         '- НЕ выходи за пределы рабочей директории. Никаких Bash, WebFetch, обращений к интернету.',
         '- При изменениях сохраняй стиль соседнего кода: отступы (часто tabs), скобки, паттерны именования.',
@@ -276,6 +286,12 @@ def _build_system_prompt(client, body: 'ChatRequest', attached_paths: list[str],
         '- Не вызывай server_action / compile / db_write без ясного запроса пользователя. Уточни если не уверен.',
         '- После вызова инструмента кратко сообщи результат — не повторяй output дословно.',
     ]
+
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # ▼ Конец СТАТИЧНОЙ части. Anthropic prefix cache хранит ровно то,
+    #   что совпадает байт-в-байт между запросами; всё что ниже —
+    #   динамика и кэшу мешает.
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     # Задача треда (если есть) > глобальная активная задача
     active = None
@@ -359,16 +375,47 @@ def _build_system_prompt(client, body: 'ChatRequest', attached_paths: list[str],
     return '\n'.join(parts)
 
 
+# Сколько последних реплик (user+assistant) включать в prompt.
+# Всё что старше — резюмируем одной строкой. Это режет расход в
+# 3-5 раз на длинных беседах и почти не теряет качество, т.к. AI
+# обычно опирается на последние сообщения.
+RECENT_HISTORY_TURNS = 10
+# Максимум символов одного сообщения в истории — длинные обрезаем
+MAX_HISTORY_MSG_CHARS = 1500
+
+
 def _build_user_prompt(messages: list) -> str:
     if not messages:
         return ''
     if len(messages) == 1:
         return messages[0].content
+
+    # Последнее сообщение — текущий запрос, его не трогаем
+    last = messages[-1]
+    prior = messages[:-1]
+
+    # Резюмируем самые старые если превысили лимит
+    trimmed_summary = ''
+    if len(prior) > RECENT_HISTORY_TURNS:
+        old = prior[:-RECENT_HISTORY_TURNS]
+        kept = prior[-RECENT_HISTORY_TURNS:]
+        old_user = [m.content for m in old if m.role == 'user']
+        trimmed_summary = (
+            f'(в этом треде уже было {len(old)} ранних сообщений; '
+            f'основные темы: {"; ".join(t[:80] for t in old_user[-3:])}). '
+        )
+        prior = kept
+
     lines = []
-    for m in messages[:-1]:
+    if trimmed_summary:
+        lines.append(trimmed_summary)
+    for m in prior:
         prefix = 'User' if m.role == 'user' else 'Assistant'
-        lines.append(f'{prefix}: {m.content}')
-    lines.append(f'User: {messages[-1].content}')
+        content = m.content or ''
+        if len(content) > MAX_HISTORY_MSG_CHARS:
+            content = content[:MAX_HISTORY_MSG_CHARS] + '… [обрезано]'
+        lines.append(f'{prefix}: {content}')
+    lines.append(f'User: {last.content}')
     return '\n\n'.join(lines)
 
 
@@ -677,7 +724,14 @@ async def delete_thread(thread_id: str, login: str = Depends(get_current_user)):
 @router.get('/api/claude/usage')
 async def claude_usage_today(login: str = Depends(get_current_user)):
     _require_allowed(login)
-    return claude_usage.get_today(login)
+    today = claude_usage.get_today(login)
+    budget = ai_settings_store.get_daily_budget(login)
+    today['daily_budget_usd'] = budget
+    if budget:
+        spent = today.get('total_cost_usd') or 0
+        today['budget_used_pct'] = round((spent / budget) * 100, 1)
+        today['over_budget'] = spent > budget
+    return today
 
 
 @router.get('/api/claude/usage/history')
@@ -685,6 +739,18 @@ async def claude_usage_history(days: int = 30, login: str = Depends(get_current_
     _require_allowed(login)
     days = max(1, min(days, 365))
     return claude_usage.get_history(login, days)
+
+
+class BudgetRequest(BaseModel):
+    daily_budget_usd: Optional[float] = None
+
+
+@router.post('/api/claude/budget')
+async def claude_set_budget(body: BudgetRequest,
+                              login: str = Depends(get_current_user)):
+    _require_allowed(login)
+    ai_settings_store.set_daily_budget(login, body.daily_budget_usd)
+    return {'daily_budget_usd': ai_settings_store.get_daily_budget(login)}
 
 
 @router.get('/api/claude/status')

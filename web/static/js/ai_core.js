@@ -766,8 +766,24 @@ const AiChat = {
             return `<span class="ai-usage" title="За сегодня запросов ещё не было">сегодня: —</span>`;
         }
         const cost = u.total_cost_usd?.toFixed?.(3) ?? '0.000';
-        return `<span class="ai-usage" title="Запросов: ${u.total_requests} · in ${u.total_input} · out ${u.total_output} · cache_read ${u.total_cache_read}">
-            сегодня: <b>${this.fmtTokens(u.total_input + u.total_output)}</b> · ~$${cost}
+        const budget = u.daily_budget_usd;
+        let budgetHtml = '';
+        let extraCls = '';
+        if (budget) {
+            const pct = u.budget_used_pct ?? 0;
+            const over = u.over_budget;
+            if (over) {
+                extraCls = ' ai-usage-over';
+                budgetHtml = ` · <b style="color:var(--red)">${pct.toFixed(0)}% бюджета</b>`;
+            } else if (pct >= 75) {
+                extraCls = ' ai-usage-warn';
+                budgetHtml = ` · ${pct.toFixed(0)}% бюджета`;
+            } else {
+                budgetHtml = ` · из $${budget.toFixed(2)}`;
+            }
+        }
+        return `<span class="ai-usage${extraCls}" title="Запросов: ${u.total_requests} · in ${u.total_input} · out ${u.total_output} · cache_read ${u.total_cache_read}">
+            сегодня: <b>${this.fmtTokens(u.total_input + u.total_output)}</b> · ~$${cost}${budgetHtml}
         </span>`;
     },
 
@@ -897,14 +913,41 @@ const AiUsageModal = {
             </div>`;
         }
 
+        const currentBudget = today?.daily_budget_usd ?? '';
+        const budgetHtml = `
+            <div class="ai-usage-section-title">Дневной бюджет</div>
+            <div class="ai-usage-budget">
+                <span>Лимит в $/день (0 — без лимита):</span>
+                <input id="ai-budget-input" type="number" min="0" step="0.5" value="${currentBudget || 0}" />
+                <button class="btn btn-primary btn-sm" id="ai-budget-save">Сохранить</button>
+            </div>
+            <div class="ai-usage-note" style="margin-top:6px">
+                При превышении бейдж становится <span style="color:var(--red)">красным</span>,
+                запросы НЕ блокируются — только предупреждение.
+            </div>`;
+
         body.innerHTML = `
             ${todayHtml}
+            ${budgetHtml}
             ${historyHtml}
             <div class="ai-usage-note">
                 Это локальные подсчёты по нашим запросам. Глобальный лимит Max-подписки
                 (5-часовое окно) Anthropic в API не отдаёт — увидишь его только когда
                 CLI начнёт возвращать ошибку rate-limit.
             </div>`;
+
+        document.getElementById('ai-budget-save')?.addEventListener('click', async () => {
+            const val = parseFloat(document.getElementById('ai-budget-input').value);
+            try {
+                await API.post('/api/claude/budget', {
+                    daily_budget_usd: val > 0 ? val : null,
+                });
+                app.toast('Бюджет сохранён', 'success');
+                AiChat.loadUsage();
+            } catch (e) {
+                app.toast(e.message, 'error');
+            }
+        });
     },
 };
 

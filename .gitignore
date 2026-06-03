@@ -38,3 +38,6 @@ web/ai_threads.json
 
 # Pending-actions от AI (action confirmations)
 web/pending_actions.json
+
+# Настройки AI per-user (бюджет)
+web/ai_settings.json

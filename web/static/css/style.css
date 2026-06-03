@@ -1462,6 +1462,12 @@ mark.palette-hl { background: rgba(234,179,8,0.15); color: var(--yellow); border
 .ai-usage-btn { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); padding: 4px 10px; font-size: 11px; color: var(--text-2); cursor: pointer; font-family: var(--mono); transition: background .15s, color .15s; }
 .ai-usage-btn:hover { background: var(--surface3); color: var(--text); }
 .ai-usage { display: inline-flex; gap: 4px; align-items: center; }
+.ai-usage-warn { color: #F59E0B; }
+.ai-usage-over { color: var(--red); background: var(--red-dim); padding: 1px 6px; border-radius: 4px; border: 1px solid rgba(239,68,68,0.3); }
+.ai-usage-budget { display: flex; gap: 8px; align-items: center; padding: 10px 12px; background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); margin-top: 4px; }
+.ai-usage-budget span { font-size: 12px; color: var(--text-2); flex: 1; }
+.ai-usage-budget input { width: 80px; padding: 5px 8px; font-family: var(--mono); font-size: 12px; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius); outline: none; text-align: right; }
+.ai-usage-budget input:focus { border-color: var(--border-2); }
 .ai-usage b { color: var(--text); font-weight: 600; }
 
 .ai-usage-window { width: 100%; max-width: 720px; max-height: 80vh; background: var(--surface); border: 1px solid var(--border-2); border-radius: var(--radius-lg); display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 16px 48px rgba(0,0,0,0.7); }
