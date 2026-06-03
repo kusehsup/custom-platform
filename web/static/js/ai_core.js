@@ -1026,6 +1026,201 @@ const AiUsageModal = {
 };
 
 
+// ── Modal для памяти AI ─────────────────────────────────────────────
+
+const AiMemoryModal = {
+    _editor: null,
+    _files: [],
+    _currentName: null,
+    _dirty: false,
+
+    async show() {
+        this._closeWithoutRemove();
+        const modal = document.createElement('div');
+        modal.id = 'ai-memory-modal';
+        modal.style.cssText = 'position:fixed;inset:0;z-index:9080;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;padding:20px';
+        modal.innerHTML = `
+        <div class="ai-mem-window">
+            <div class="ai-mem-header">
+                <span class="ai-mem-title">Память AI</span>
+                <span class="ai-mem-sub">.md / .txt — общая для всех чатов</span>
+                <button class="ai-mem-close">✕</button>
+            </div>
+            <div class="ai-mem-body">
+                <div class="ai-mem-sidebar">
+                    <div class="ai-mem-list-actions">
+                        <button class="btn btn-primary btn-sm" id="ai-mem-new">+ Новый</button>
+                        <button class="btn btn-ghost btn-sm" id="ai-mem-refresh">↻</button>
+                    </div>
+                    <div id="ai-mem-list" class="ai-mem-list"></div>
+                </div>
+                <div class="ai-mem-editor-pane">
+                    <div class="ai-mem-editor-bar" id="ai-mem-bar">
+                        <span class="ai-mem-current" id="ai-mem-current">— выбери файл —</span>
+                        <button class="btn btn-primary btn-sm hidden" id="ai-mem-save">Сохранить</button>
+                        <button class="btn btn-danger btn-sm hidden" id="ai-mem-delete">Удалить</button>
+                    </div>
+                    <div id="ai-mem-editor" class="ai-mem-editor"></div>
+                </div>
+            </div>
+        </div>`;
+        document.body.appendChild(modal);
+        modal.addEventListener('click', e => { if (e.target === modal) this.close(); });
+        modal.querySelector('.ai-mem-close').addEventListener('click', () => this.close());
+
+        document.getElementById('ai-mem-new').addEventListener('click', () => this._createNew());
+        document.getElementById('ai-mem-refresh').addEventListener('click', () => this._loadList());
+        document.getElementById('ai-mem-save').addEventListener('click', () => this._save());
+        document.getElementById('ai-mem-delete').addEventListener('click', () => this._delete());
+
+        await this._loadList();
+    },
+
+    async _loadList() {
+        try {
+            const res = await API.get('/api/claude/memory');
+            this._files = res.files || [];
+            this._renderList();
+        } catch (e) {
+            app.toast(e.message, 'error');
+        }
+    },
+
+    _renderList() {
+        const wrap = document.getElementById('ai-mem-list');
+        if (!wrap) return;
+        if (!this._files.length) {
+            wrap.innerHTML = `<div class="ai-empty" style="padding:24px 12px">Пусто. AI будет сюда записывать заметки, или ты сам создашь новый файл.</div>`;
+            return;
+        }
+        const fmt = ts => {
+            if (!ts) return '';
+            const d = new Date(ts * 1000);
+            return d.toLocaleString('ru-RU', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
+        };
+        const fmtSize = n => {
+            if (n < 1024) return n + 'B';
+            return (n / 1024).toFixed(1) + 'KB';
+        };
+        wrap.innerHTML = this._files.map(f => `
+            <div class="ai-mem-item ${f.name === this._currentName ? 'active' : ''}" data-name="${AiChat.esc(f.name)}">
+                <div class="ai-mem-item-name">${AiChat.esc(f.name)}</div>
+                <div class="ai-mem-item-meta">${fmt(f.modified)} · ${fmtSize(f.size)}</div>
+            </div>`).join('');
+        wrap.querySelectorAll('.ai-mem-item').forEach(el => {
+            el.addEventListener('click', () => this._loadFile(el.dataset.name));
+        });
+    },
+
+    async _loadFile(name) {
+        if (this._dirty && !confirm('Несохранённые изменения будут потеряны. Продолжить?')) return;
+        try {
+            const res = await API.get(`/api/claude/memory/file?name=${encodeURIComponent(name)}`);
+            this._currentName = name;
+            this._dirty = false;
+            this._renderList();
+            document.getElementById('ai-mem-current').textContent = name;
+            document.getElementById('ai-mem-save').classList.add('hidden');
+            document.getElementById('ai-mem-delete').classList.remove('hidden');
+            this._mountEditor(res.content || '');
+        } catch (e) {
+            app.toast(e.message, 'error');
+        }
+    },
+
+    _createNew() {
+        const name = prompt('Имя нового файла (например, notes.md):');
+        if (!name || !name.trim()) return;
+        let n = name.trim();
+        if (!/\.(md|txt)$/i.test(n)) n += '.md';
+        this._currentName = n;
+        this._dirty = true;
+        document.getElementById('ai-mem-current').textContent = n + ' *';
+        document.getElementById('ai-mem-save').classList.remove('hidden');
+        document.getElementById('ai-mem-delete').classList.add('hidden');
+        this._mountEditor('# ' + n + '\n\n');
+    },
+
+    _mountEditor(content) {
+        const wrap = document.getElementById('ai-mem-editor');
+        if (!wrap) return;
+        wrap.innerHTML = '';
+        if (this._editor) { try { this._editor.dispose(); } catch {} this._editor = null; }
+        const theme = localStorage.getItem('theme') === 'light' ? 'vs' : 'custom-dark';
+        this._editor = monaco.editor.create(wrap, {
+            value: content,
+            language: 'markdown',
+            theme,
+            minimap: { enabled: false },
+            wordWrap: 'on',
+            fontSize: 13,
+            lineNumbers: 'on',
+            scrollBeyondLastLine: false,
+            padding: { top: 8 },
+        });
+        this._editor.onDidChangeModelContent(() => {
+            if (!this._dirty) {
+                this._dirty = true;
+                const cur = document.getElementById('ai-mem-current');
+                if (cur && !cur.textContent.endsWith(' *')) cur.textContent += ' *';
+                document.getElementById('ai-mem-save').classList.remove('hidden');
+            }
+        });
+        setTimeout(() => this._editor?.layout(), 50);
+    },
+
+    async _save() {
+        if (!this._currentName || !this._editor) return;
+        const content = this._editor.getValue();
+        try {
+            await API.post('/api/claude/memory/file', {
+                name: this._currentName, content,
+            });
+            this._dirty = false;
+            document.getElementById('ai-mem-current').textContent = this._currentName;
+            document.getElementById('ai-mem-save').classList.add('hidden');
+            document.getElementById('ai-mem-delete').classList.remove('hidden');
+            await this._loadList();
+            app.toast('Сохранено', 'success');
+        } catch (e) {
+            app.toast(e.message, 'error');
+        }
+    },
+
+    async _delete() {
+        if (!this._currentName) return;
+        if (!confirm(`Удалить ${this._currentName}?`)) return;
+        try {
+            await API.delete(`/api/claude/memory/file?name=${encodeURIComponent(this._currentName)}`);
+            this._currentName = null;
+            this._dirty = false;
+            if (this._editor) { try { this._editor.dispose(); } catch {} this._editor = null; }
+            document.getElementById('ai-mem-editor').innerHTML = '';
+            document.getElementById('ai-mem-current').textContent = '— выбери файл —';
+            document.getElementById('ai-mem-save').classList.add('hidden');
+            document.getElementById('ai-mem-delete').classList.add('hidden');
+            await this._loadList();
+            app.toast('Удалено', 'info');
+        } catch (e) {
+            app.toast(e.message, 'error');
+        }
+    },
+
+    close() {
+        if (this._dirty && !confirm('Несохранённые изменения будут потеряны. Закрыть?')) return;
+        this._closeWithoutRemove();
+    },
+
+    _closeWithoutRemove() {
+        if (this._editor) { try { this._editor.dispose(); } catch {} this._editor = null; }
+        this._dirty = false;
+        this._currentName = null;
+        const m = document.getElementById('ai-memory-modal');
+        if (m) m.remove();
+    },
+};
+
+
 // ── Modal для просмотра diff ────────────────────────────────────────
 
 const AiDiffModal = {

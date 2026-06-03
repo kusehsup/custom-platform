@@ -1642,6 +1642,26 @@ mark.palette-hl { background: rgba(234,179,8,0.15); color: var(--yellow); border
 .ai-action-badge-err   { background: var(--red-dim); color: var(--red); border: 1px solid rgba(239,68,68,0.25); cursor: help; }
 .ai-action-badge-muted { background: var(--surface2); color: var(--text-3); border: 1px solid var(--border); }
 
+/* AI memory modal */
+.ai-mem-window { width: 100%; height: 100%; max-width: 1400px; max-height: calc(100vh - 40px); background: var(--surface); border: 1px solid var(--border-2); border-radius: var(--radius-lg); display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 16px 48px rgba(0,0,0,0.7); }
+.ai-mem-header { display: flex; align-items: baseline; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.ai-mem-title { font-size: 13px; font-weight: 600; color: var(--text); text-transform: uppercase; letter-spacing: .04em; }
+.ai-mem-sub { font-size: 11px; color: var(--text-3); flex: 1; }
+.ai-mem-close { background: none; border: none; color: var(--text-2); cursor: pointer; font-size: 16px; padding: 4px 8px; }
+.ai-mem-body { flex: 1; display: grid; grid-template-columns: 280px 1fr; min-height: 0; }
+.ai-mem-sidebar { border-right: 1px solid var(--border); display: flex; flex-direction: column; min-height: 0; background: var(--bg); }
+.ai-mem-list-actions { display: flex; gap: 6px; padding: 8px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.ai-mem-list { flex: 1; overflow-y: auto; }
+.ai-mem-item { padding: 8px 12px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background .12s; }
+.ai-mem-item:hover { background: var(--surface2); }
+.ai-mem-item.active { background: var(--surface3); }
+.ai-mem-item-name { font-size: 12px; color: var(--text); font-family: var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ai-mem-item-meta { font-size: 10px; color: var(--text-3); margin-top: 2px; font-family: var(--mono); }
+.ai-mem-editor-pane { display: flex; flex-direction: column; min-height: 0; }
+.ai-mem-editor-bar { display: flex; gap: 8px; align-items: center; padding: 8px 14px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.ai-mem-current { font-size: 12px; color: var(--text); font-family: var(--mono); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ai-mem-editor { flex: 1; min-height: 0; }
+
 /* Diff modal */
 .ai-diff-window { width: 100%; height: 100%; max-width: 1600px; max-height: calc(100vh - 40px); background: var(--surface); border: 1px solid var(--border-2); border-radius: var(--radius-lg); display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 16px 48px rgba(0,0,0,0.7); }
 .ai-diff-header { display: flex; gap: 10px; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--border); flex-shrink: 0; }

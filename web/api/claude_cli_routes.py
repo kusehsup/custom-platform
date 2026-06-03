@@ -43,6 +43,7 @@ from . import tasks_store
 from . import ai_threads_store
 from . import pending_actions
 from . import ai_settings_store
+from . import ai_memory_store
 
 logger = logging.getLogger('claude')
 router = APIRouter()
@@ -243,6 +244,11 @@ def _build_system_prompt(client, body: 'ChatRequest', attached_paths: list[str],
         'Твоя рабочая директория (cwd) — временное зеркало Pawn-проекта пользователя.',
         'В ней лежат ТОЛЬКО .pwn и .inc файлы — настоящая структура (например gamemodes/gamelogic.pwn).',
         'Никаких Python, JS, README, .git, deploy-скриптов здесь нет и быть не должно.',
+        '',
+        '# Память',
+        'В папке `memory/` (рядом с кодом, в твоей рабочей директории) лежат файлы памяти — то что ты накапливаешь между разговорами с этим пользователем. Это `.md`-заметки про найденные паттерны, договорённости, важные функции и т.п.',
+        'Перед началом работы можешь Glob `memory/**/*.md` и прочитать актуальные. Дополняй и создавай новые через Write/Edit — они сохранятся для следующих чатов.',
+        'Файлы оттуда переживают перезапуск; рабочая директория `gamemodes/`, `include/` — нет.',
         '',
         '# ВАЖНО: два разных типа поиска',
         '⚠️ Различай локальный и глобальный поиск — это разные источники:',
@@ -806,6 +812,50 @@ async def claude_set_budget(body: BudgetRequest,
     return {'daily_budget_usd': ai_settings_store.get_daily_budget(login)}
 
 
+# ── Memory ────────────────────────────────────────────────────────
+
+class MemoryWriteRequest(BaseModel):
+    name: str
+    content: str
+
+
+@router.get('/api/claude/memory')
+async def memory_list(login: str = Depends(get_current_user)):
+    _require_allowed(login)
+    return {'files': ai_memory_store.list_files(login)}
+
+
+@router.get('/api/claude/memory/file')
+async def memory_read(name: str, login: str = Depends(get_current_user)):
+    _require_allowed(login)
+    content = ai_memory_store.read_file(login, name)
+    if content is None:
+        raise HTTPException(status_code=404, detail='Файл не найден')
+    return {'name': name, 'content': content}
+
+
+@router.post('/api/claude/memory/file')
+async def memory_write(body: MemoryWriteRequest,
+                        login: str = Depends(get_current_user)):
+    _require_allowed(login)
+    name = (body.name or '').strip()
+    if not name:
+        raise HTTPException(status_code=400, detail='Имя файла обязательно')
+    ok = ai_memory_store.write_file(login, name, body.content or '')
+    if not ok:
+        raise HTTPException(status_code=400, detail='Недопустимое имя файла')
+    return {'ok': True}
+
+
+@router.delete('/api/claude/memory/file')
+async def memory_delete(name: str, login: str = Depends(get_current_user)):
+    _require_allowed(login)
+    ok = ai_memory_store.delete_file(login, name)
+    if not ok:
+        raise HTTPException(status_code=404, detail='Файл не найден')
+    return {'ok': True}
+
+
 @router.get('/api/claude/status')
 async def claude_status(login: str = Depends(get_current_user)):
     if login not in ALLOWED_LOGINS:
@@ -894,6 +944,13 @@ async def claude_chat(body: ChatRequest, request: Request,
     # Готовим workspace
     ws, snapshot = _build_workspace(client)
     logger.info(f'AI workspace ({login}): {ws} — {len(snapshot)} files')
+
+    # Кладём накопленную память юзера в workspace/memory — Claude увидит её
+    # через стандартный Read и сможет дополнять.
+    try:
+        ai_memory_store.copy_into_workspace(login, ws)
+    except Exception as ex:
+        logger.warning(f'memory copy_into_workspace failed: {ex}')
 
     # Карта file_id -> rel_path для прикреплённых
     fid_to_rel = {info['file_id']: rel for rel, info in snapshot.items()}
@@ -1217,6 +1274,17 @@ async def claude_chat(body: ChatRequest, request: Request,
             finally:
                 stderr_task.cancel()
         finally:
+            # Сохраняем память обратно ДО удаления workspace
+            try:
+                summary = ai_memory_store.sync_from_workspace(login, ws)
+                if summary['created'] or summary['updated']:
+                    logger.info(
+                        f'memory sync: +{len(summary["created"])} '
+                        f'~{len(summary["updated"])}'
+                    )
+            except Exception as ex:
+                logger.warning(f'memory sync_from_workspace failed: {ex}')
+
             _cleanup_workspace(ws)
             try:
                 mcp_config_path.unlink(missing_ok=True)

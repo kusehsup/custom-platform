@@ -14,6 +14,7 @@ const AiPage = {
                 </div>
                 <div style="display:flex;gap:8px;align-items:center">
                     <div id="ai-p-active-task"></div>
+                    <button class="ai-usage-btn" id="ai-p-memory" title="Память AI">⎙ Память</button>
                     <button class="ai-usage-btn" id="ai-p-usage" title="Расход Claude за сегодня"></button>
                     <button class="btn btn-ghost btn-sm" id="ai-p-clear">Очистить чат</button>
                 </div>
@@ -76,6 +77,7 @@ const AiPage = {
         $('ai-p-stop').addEventListener('click', () => AiChat.stop());
         $('ai-p-attach').addEventListener('click', () => this._showFilePicker());
         $('ai-p-usage').addEventListener('click', () => AiUsageModal.show());
+        $('ai-p-memory').addEventListener('click', () => AiMemoryModal.show());
 
         const input = $('ai-p-input');
         input.addEventListener('keydown', e => {
