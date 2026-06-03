@@ -916,6 +916,41 @@ const AiChat = {
 
 // ── Modal для статистики расхода ────────────────────────────────────
 
+// Лениво подгружает Monaco, если он ещё не загружен (другие страницы
+// — Files/DB — грузят его при открытии редактора кода; модалки AI тоже
+// должны уметь работать без них).
+function ensureMonaco() {
+    return new Promise((resolve, reject) => {
+        if (window.monaco) return resolve(window.monaco);
+
+        const startWait = () => {
+            const t0 = Date.now();
+            const id = setInterval(() => {
+                if (window.monaco) { clearInterval(id); resolve(window.monaco); }
+                else if (Date.now() - t0 > 15000) { clearInterval(id); reject(new Error('Monaco не загрузился')); }
+            }, 100);
+        };
+
+        if (document.querySelector('script[src*="monaco-editor"]')) {
+            // Уже грузится другой страницей — просто подождём
+            startWait();
+            return;
+        }
+
+        const s = document.createElement('script');
+        s.src = 'https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs/loader.js';
+        s.onload = () => {
+            try {
+                require.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs' } });
+                require(['vs/editor/editor.main'], () => resolve(window.monaco));
+            } catch (e) { reject(e); }
+        };
+        s.onerror = () => reject(new Error('Не удалось загрузить Monaco'));
+        document.head.appendChild(s);
+    });
+}
+
+
 const AiUsageModal = {
     async show() {
         const existing = document.getElementById('ai-usage-modal');
@@ -1141,9 +1176,16 @@ const AiMemoryModal = {
         this._mountEditor('# ' + n + '\n\n');
     },
 
-    _mountEditor(content) {
+    async _mountEditor(content) {
         const wrap = document.getElementById('ai-mem-editor');
         if (!wrap) return;
+        wrap.innerHTML = '<div style="padding:20px;color:var(--text-3);font-size:12px">Загрузка редактора…</div>';
+        try {
+            await ensureMonaco();
+        } catch (e) {
+            wrap.innerHTML = `<div style="padding:20px;color:var(--red);font-size:12px">${e.message}</div>`;
+            return;
+        }
         wrap.innerHTML = '';
         if (this._editor) { try { this._editor.dispose(); } catch {} this._editor = null; }
         const theme = localStorage.getItem('theme') === 'light' ? 'vs' : 'custom-dark';
@@ -1225,7 +1267,7 @@ const AiMemoryModal = {
 
 const AiDiffModal = {
     _editor: null,
-    show(edit) {
+    async show(edit) {
         this.close();
         const modal = document.createElement('div');
         modal.id = 'ai-diff-modal';
@@ -1243,8 +1285,15 @@ const AiDiffModal = {
         modal.addEventListener('click', e => { if (e.target === modal) this.close(); });
         modal.querySelector('.ai-diff-close').addEventListener('click', () => this.close());
 
-        // Создаём Monaco diff editor
         const wrap = document.getElementById('ai-diff-body');
+        wrap.innerHTML = '<div style="padding:20px;color:var(--text-3);font-size:12px">Загрузка редактора…</div>';
+        try {
+            await ensureMonaco();
+        } catch (e) {
+            wrap.innerHTML = `<div style="padding:20px;color:var(--red);font-size:12px">${e.message}</div>`;
+            return;
+        }
+        wrap.innerHTML = '';
         const theme = localStorage.getItem('theme') === 'light' ? 'vs' : 'custom-dark';
         const lang = edit.path.endsWith('.inc') || edit.path.endsWith('.pwn') ? 'pawn' : 'plaintext';
         this._editor = monaco.editor.createDiffEditor(wrap, {
