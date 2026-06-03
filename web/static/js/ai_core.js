@@ -795,6 +795,7 @@ const AiChat = {
             compile: '🔨',
             console_clear: '🧹',
             db_write: '🗄',
+            request_code_access: '🔑',
         };
         return `<div class="ai-actions-list">
             ${msg.actions.map((a, i) => {

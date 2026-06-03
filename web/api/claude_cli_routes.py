@@ -72,6 +72,8 @@ ALLOWED_TOOLS = ' '.join([
     'mcp__cp-ai__compile',
     'mcp__cp-ai__console_clear',
     'mcp__cp-ai__db_write',
+    'mcp__cp-ai__search_code',
+    'mcp__cp-ai__request_code_access',
 ])
 DISALLOWED_TOOLS = 'Bash WebFetch WebSearch TodoWrite NotebookEdit'
 
@@ -277,9 +279,11 @@ def _build_system_prompt(client, body: 'ChatRequest', attached_paths: list[str],
         '- `mcp__cp-ai__server_action` (start/stop/restart) — управление игровым сервером',
         '- `mcp__cp-ai__compile` — запуск компиляции',
         '- `mcp__cp-ai__console_clear` — очистка буфера консоли',
+        '- `mcp__cp-ai__search_code` — поиск по Pawn-коду через платформу (read-only)',
         '',
-        '## Запись в БД (создаёт подтверждение):',
+        '## С подтверждением:',
         '- `mcp__cp-ai__db_write` — INSERT/UPDATE/DELETE/REPLACE. Не выполняется сразу: пользователь жмёт «Подтвердить» в чате.',
+        '- `mcp__cp-ai__request_code_access` — запрос фрагмента кода у модератора. ИСПОЛЬЗУЙ ТОЛЬКО ЕСЛИ фрагмент действительно нужен прямо сейчас; не более 3 раз в ответе.',
         '',
         'ВАЖНО:',
         '- DROP / TRUNCATE / ALTER / GRANT / REVOKE / RENAME — ПОЛНОСТЬЮ ЗАПРЕЩЕНЫ. Не вызывай db_write с ними; попроси пользователя выполнить вручную.',
@@ -585,6 +589,30 @@ async def _execute_action(login: str, client, action: dict) -> tuple[bool, str]:
                     conn.close()
             affected = await asyncio.get_event_loop().run_in_executor(None, _run)
             return True, f'Выполнено. Затронуто строк: {affected}'
+
+        if kind == 'request_code_access':
+            file_name = payload.get('file_name') or ''
+            query_name = payload.get('query_name') or ''
+            if not file_name or not query_name:
+                return False, 'Не хватает file_name / query_name.'
+            # Найдём file_id по имени (среди доступных файлов платформы)
+            target_fid = None
+            for fid, meta in (client.files or {}).items():
+                name = (meta or {}).get('name') or ''
+                full = (meta or {}).get('fullPath') or ''
+                if name == file_name or full == file_name or full.endswith('/' + file_name):
+                    target_fid = fid
+                    break
+            if target_fid is None:
+                return False, f'Файл не найден: {file_name}'
+            # Запрос доступа: type='edit' создаёт запрос на модерацию
+            try:
+                file_id_int = int(target_fid) if str(target_fid).isdigit() else target_fid
+                result = await client.get_code_ack('edit', file_id_int, [], query_name)
+                return True, f'Запрос отправлен. Платформа: {result}'
+            except asyncio.TimeoutError:
+                # Для edit это норма — запрос ушёл к модератору
+                return True, 'Запрос ушёл модератору, ждём одобрения.'
 
         return False, f'Неизвестный kind: {kind}'
     except Exception as e:

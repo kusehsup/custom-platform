@@ -246,6 +246,87 @@ def tool_console_clear(_args: dict) -> str:
     return r.get('message', 'OK')
 
 
+def tool_search_code(args: dict) -> str:
+    """
+    Поиск по Pawn-коду через ту же платформу (map_find).
+    Это read-only — выполняется сразу.
+    """
+    text = args.get('text') or ''
+    file = args.get('file') or '-1'
+    regexp = bool(args.get('regexp'))
+    if not text.strip():
+        return 'Пустой поисковый запрос.'
+    if len(text) > 200:
+        return 'Слишком длинный запрос (>200 символов).'
+
+    body = {'text': text, 'file': file, 'regexp': regexp}
+    start_line = args.get('start_line')
+    end_line = args.get('end_line')
+    if start_line:
+        body['start_line'] = str(start_line)
+    if end_line:
+        body['end_line'] = str(end_line)
+
+    r = _http('POST', '/api/search', json_body=body)
+    if r.get('_error'):
+        return f'Ошибка поиска: {r["_error"]}'
+
+    result = r.get('result') or {}
+    # result обычно {file_name: [{line, content}, ...]}
+    if not isinstance(result, dict) or not result:
+        return '(ничего не найдено)'
+
+    lines_out = []
+    total = 0
+    for fname, matches in result.items():
+        if not matches:
+            continue
+        lines_out.append(f'\n# {fname}')
+        for m in matches[:30]:  # лимит на файл
+            ln = m.get('line') or '?'
+            ct = (m.get('content') or '').strip()[:200]
+            lines_out.append(f'  {ln}: {ct}')
+            total += 1
+            if total >= 100:
+                lines_out.append('  …')
+                break
+        if total >= 100:
+            break
+    return '\n'.join(lines_out) if lines_out else '(ничего не найдено)'
+
+
+# Глобальный счётчик запросов доступа в текущей сессии MCP-процесса
+# (новый процесс на каждый chat — счётчик автоматически сбрасывается)
+_access_requests_count = 0
+ACCESS_REQUESTS_PER_CHAT = 3
+
+
+def tool_request_code_access(args: dict) -> str:
+    """Создаёт pending action — запрос доступа к фрагменту кода.
+
+    Ограничение: не более ACCESS_REQUESTS_PER_CHAT в одном ответе AI.
+    """
+    global _access_requests_count
+    if _access_requests_count >= ACCESS_REQUESTS_PER_CHAT:
+        return (f'Достигнут лимит запросов доступа в одном ответе '
+                f'({ACCESS_REQUESTS_PER_CHAT}). Дай пользователю ответить — '
+                f'можно будет запросить ещё.')
+
+    file_name = (args.get('file_name') or '').strip()
+    query_name = (args.get('query_name') or '').strip()
+    if not file_name or not query_name:
+        return 'Нужны параметры file_name и query_name (название/строки нужного фрагмента).'
+
+    aid = create_pending(LOGIN, 'request_code_access',
+                          {'file_name': file_name, 'query_name': query_name},
+                          f'Запросить доступ к коду: {file_name} → {query_name}')
+    _access_requests_count += 1
+    return (f'Создано подтверждение #{aid}: «Запросить доступ к коду '
+            f'{file_name} → {query_name}». После подтверждения модератор '
+            f'получит запрос; код придёт через несколько минут или часов '
+            f'(не дожидайся — продолжай разговор без него).')
+
+
 def tool_db_write(args: dict) -> str:
     sql = args.get('sql') or ''
     db = args.get('database') or ''
@@ -365,6 +446,38 @@ TOOLS = {
                 'database': {'type': 'string'},
             },
             'required': ['sql'],
+        },
+    },
+    'search_code': {
+        'fn': tool_search_code,
+        'description': ('Поиск по Pawn-коду через платформу. Возвращает '
+                        'найденные строки с номерами. Это read-only, '
+                        'выполняется сразу. Лимит вывода — 100 совпадений.'),
+        'input': {
+            'type': 'object',
+            'properties': {
+                'text': {'type': 'string', 'description': 'Что искать'},
+                'file': {'type': 'string', 'description': 'ID файла или -1 (по всем)'},
+                'regexp': {'type': 'boolean', 'description': 'Использовать regexp'},
+                'start_line': {'type': 'string'},
+                'end_line': {'type': 'string'},
+            },
+            'required': ['text'],
+        },
+    },
+    'request_code_access': {
+        'fn': tool_request_code_access,
+        'description': ('Создать запрос на доступ к фрагменту кода — '
+                        'это требует подтверждения пользователя и одобрения '
+                        'модератора. Используй только если фрагмент реально '
+                        'нужен. Не больше 3 запросов в одном ответе.'),
+        'input': {
+            'type': 'object',
+            'properties': {
+                'file_name': {'type': 'string'},
+                'query_name': {'type': 'string', 'description': 'Название блока/функции или диапазон строк'},
+            },
+            'required': ['file_name', 'query_name'],
         },
     },
 }
