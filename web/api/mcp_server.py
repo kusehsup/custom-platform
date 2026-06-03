@@ -326,15 +326,15 @@ def tool_search_code(args: dict) -> str:
         meta = files_map.get(str(file_id)) or files_map.get(file_id) or {}
         fname = meta.get('fullPath') or meta.get('name') or f'#{file_id}'
         lines_out.append(f'\n## {fname}  (file_id={file_id})')
-        for b in blocks[:15]:  # ограничение блоков на файл
+        for b in blocks[:25]:  # ограничение блоков на файл
             ln = b['lines'] or '?'
             lines_out.append(f'  - {b["path"]} (строки {ln})')
             total_blocks += 1
-            if total_blocks >= 80:
+            if total_blocks >= 200:
                 break
         total_files += 1
-        if total_blocks >= 80 or total_files >= 30:
-            lines_out.append('\n…')
+        if total_blocks >= 200 or total_files >= 60:
+            lines_out.append('\n…(вывод обрезан, уточни запрос)')
             break
 
     lines_out.append(

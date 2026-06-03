@@ -508,13 +508,86 @@ const AiChat = {
         let m;
         let last = 0;
         while ((m = re.exec(text)) !== null) {
-            parts.push(this._renderInline(text.slice(last, m.index)));
+            parts.push(this._renderBlocks(text.slice(last, m.index)));
             const code = m[2] || '';
             parts.push(`<pre class="ai-code"><code>${this.esc(code)}</code></pre>`);
             last = re.lastIndex;
         }
-        parts.push(this._renderInline(text.slice(last)));
+        parts.push(this._renderBlocks(text.slice(last)));
         return parts.join('');
+    },
+
+    /** Между code-fence: ищем таблицы (GFM), остальное — inline. */
+    _renderBlocks(text) {
+        if (!text) return '';
+        const lines = text.split('\n');
+        const out = [];
+        let i = 0;
+        while (i < lines.length) {
+            // Detect table: header line with |, then separator line ---|---
+            const line = lines[i];
+            const next = lines[i + 1] || '';
+            if (this._looksLikeTableHeader(line) && this._looksLikeTableSep(next)) {
+                // Сбор таблицы
+                const headers = this._splitRow(line);
+                const tbodyRows = [];
+                let j = i + 2;
+                while (j < lines.length && lines[j].includes('|') && lines[j].trim()) {
+                    tbodyRows.push(this._splitRow(lines[j]));
+                    j++;
+                }
+                out.push(this._tableHtml(headers, tbodyRows));
+                i = j;
+                continue;
+            }
+            // Обычная строка — копим до следующей таблицы / конца
+            const buf = [];
+            while (i < lines.length) {
+                const cur = lines[i];
+                const nxt = lines[i + 1] || '';
+                if (this._looksLikeTableHeader(cur) && this._looksLikeTableSep(nxt)) break;
+                buf.push(cur);
+                i++;
+            }
+            out.push(this._renderInline(buf.join('\n')));
+        }
+        return out.join('');
+    },
+
+    _looksLikeTableHeader(line) {
+        if (!line) return false;
+        const t = line.trim();
+        if (!t.includes('|')) return false;
+        // Хотя бы 2 столбца
+        const cells = t.replace(/^\|/, '').replace(/\|$/, '').split('|');
+        return cells.length >= 2;
+    },
+
+    _looksLikeTableSep(line) {
+        if (!line) return false;
+        const t = line.trim();
+        if (!t.includes('|') || !t.includes('-')) return false;
+        // Каждая ячейка должна состоять из -, :, пробелов
+        const cells = t.replace(/^\|/, '').replace(/\|$/, '').split('|');
+        return cells.every(c => /^\s*:?-{2,}:?\s*$/.test(c));
+    },
+
+    _splitRow(line) {
+        return line.trim()
+            .replace(/^\|/, '')
+            .replace(/\|$/, '')
+            .split('|')
+            .map(c => c.trim());
+    },
+
+    _tableHtml(headers, rows) {
+        const head = headers.map(h => `<th>${this._renderInline(h)}</th>`).join('');
+        const body = rows.map(r => {
+            // Защита: padding до длины headers
+            while (r.length < headers.length) r.push('');
+            return '<tr>' + r.map(c => `<td>${this._renderInline(c)}</td>`).join('') + '</tr>';
+        }).join('');
+        return `<div class="ai-table-wrap"><table class="ai-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
     },
 
     _renderInline(text) {
