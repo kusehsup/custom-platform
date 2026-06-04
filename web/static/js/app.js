@@ -371,6 +371,29 @@ const app = {
 
     // ── Boot ──────────────────────────────────────────────────────────
     async boot() {
+        // Регистрируем Service Worker — нужен чтобы браузер предлагал
+        // "Установить как приложение". Кэширования агрессивного нет,
+        // ошибки регистрации игнорируем (на http не запустится — это норма).
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker
+                .register('/service-worker.js', { scope: '/' })
+                .catch(() => {});
+        }
+
+        // PWA install prompt — кнопка "Установить" в топбаре
+        // (показывается только когда браузер реально предложит установку)
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            this._installPrompt = e;
+            const btn = document.getElementById('btn-install');
+            if (btn) btn.classList.remove('hidden');
+        });
+        window.addEventListener('appinstalled', () => {
+            this._installPrompt = null;
+            document.getElementById('btn-install')?.classList.add('hidden');
+            this.toast('Установлено как приложение', 'success');
+        });
+
         try {
             const info = await API.get('/api/info');
             this.platformHost = info.platform_host || '';
@@ -494,6 +517,7 @@ const app = {
                     </span>
                 </div>
                 <div class="topbar-right">
+                    <button class="topbar-btn hidden" id="btn-install" title="Установить как приложение">⬇ Установить</button>
                     <button class="topbar-btn" id="btn-ai" title="AI ассистент">${ico.ai} AI</button>
                     <button class="topbar-btn" id="btn-console" title="Консоль">${ico.console} Консоль</button>
                     <button class="topbar-btn" id="btn-debug" title="WS лог">${ico.ws} WS</button>
@@ -529,6 +553,21 @@ const app = {
         document.getElementById('btn-console').addEventListener('click', () => this.toggleConsole());
         document.getElementById('btn-ai').addEventListener('click', () => AiWidget.toggle());
         document.getElementById('btn-theme').addEventListener('click', () => this.toggleTheme());
+
+        // PWA install
+        document.getElementById('btn-install')?.addEventListener('click', async () => {
+            if (!this._installPrompt) return;
+            try {
+                this._installPrompt.prompt();
+                await this._installPrompt.userChoice;
+            } catch {}
+            this._installPrompt = null;
+            document.getElementById('btn-install')?.classList.add('hidden');
+        });
+        // Если событие пришло до того как топбар был отрисован — показываем сразу
+        if (this._installPrompt) {
+            document.getElementById('btn-install')?.classList.remove('hidden');
+        }
 
         // Подгружаем задачи в фоне — для бэйджа в сайдбаре и активной задачи в AI
         if (typeof TasksStore !== 'undefined') TasksStore.load().catch(() => {});

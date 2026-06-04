@@ -51,6 +51,29 @@ static_dir = Path(__file__).parent / 'static'
 app.mount('/static', StaticFiles(directory=static_dir), name='static')
 
 
+# ── PWA: SW и manifest с корня, чтобы scope покрывал всё приложение ──
+
+@app.get('/service-worker.js')
+async def service_worker():
+    # MIME важно: application/javascript, иначе браузер не зарегистрирует
+    return FileResponse(
+        static_dir / 'service-worker.js',
+        media_type='application/javascript',
+        headers={
+            'Service-Worker-Allowed': '/',
+            'Cache-Control': 'no-cache',
+        },
+    )
+
+
+@app.get('/manifest.webmanifest')
+async def manifest():
+    return FileResponse(
+        static_dir / 'manifest.webmanifest',
+        media_type='application/manifest+json',
+    )
+
+
 @app.get('/{full_path:path}')
 async def serve_spa(full_path: str):
     return FileResponse(static_dir / 'index.html')
