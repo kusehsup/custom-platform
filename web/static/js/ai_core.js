@@ -907,6 +907,8 @@ const AiChat = {
             console_clear: '🧹',
             db_write: '🗄',
             request_code_access: '🔑',
+            task_delete_batch: '🗑',
+            case_merge_batch: '⇄',
         };
         return `<div class="ai-actions-list">
             ${msg.actions.map((a, i) => {

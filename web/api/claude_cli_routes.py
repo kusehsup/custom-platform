@@ -76,8 +76,11 @@ ALLOWED_TOOLS = ' '.join([
     'mcp__cp-ai__search_code',
     'mcp__cp-ai__request_code_access',
     'mcp__cp-ai__task_list_brief',
+    'mcp__cp-ai__task_get',
     'mcp__cp-ai__task_create',
     'mcp__cp-ai__task_add_case',
+    'mcp__cp-ai__task_delete_batch',
+    'mcp__cp-ai__case_merge_batch',
 ])
 DISALLOWED_TOOLS = 'Bash WebFetch WebSearch TodoWrite NotebookEdit'
 
@@ -311,13 +314,16 @@ def _build_system_prompt(client, body: 'ChatRequest', attached_paths: list[str],
         '- `mcp__cp-ai__compile` — запуск компиляции',
         '- `mcp__cp-ai__console_clear` — очистка буфера консоли',
         '- `mcp__cp-ai__search_code` — поиск по Pawn-коду через платформу (read-only)',
-        '- `mcp__cp-ai__task_list_brief` — список задач юзера (title, status, id, кейсы)',
+        '- `mcp__cp-ai__task_list_brief` — все задачи + заголовки кейсов внутри (для обзора и дедупа)',
+        '- `mcp__cp-ai__task_get` — ПОЛНАЯ карточка задачи (описания кейсов, ai_analysis, ai_proposal)',
         '- `mcp__cp-ai__task_create` — создать новую задачу верхнего уровня',
         '- `mcp__cp-ai__task_add_case` — добавить кейс в задачу (или создать новую задачу по title)',
         '',
         '## С подтверждением:',
         '- `mcp__cp-ai__db_write` — INSERT/UPDATE/DELETE/REPLACE. Не выполняется сразу: пользователь жмёт «Подтвердить» в чате.',
         '- `mcp__cp-ai__request_code_access` — запрос фрагмента кода у модератора. ИСПОЛЬЗУЙ ТОЛЬКО ЕСЛИ фрагмент действительно нужен прямо сейчас; не более 3 раз в ответе.',
+        '- `mcp__cp-ai__task_delete_batch` — удалить пачку задач/кейсов. Одна карточка подтверждения на всё, удаление необратимо.',
+        '- `mcp__cp-ai__case_merge_batch` — слить пачку похожих кейсов (source→target, source удаляется).',
         '',
         'ВАЖНО:',
         '- DROP / TRUNCATE / ALTER / GRANT / REVOKE / RENAME — ПОЛНОСТЬЮ ЗАПРЕЩЕНЫ. Не вызывай db_write с ними; попроси пользователя выполнить вручную.',
@@ -343,6 +349,22 @@ def _build_system_prompt(client, body: 'ChatRequest', attached_paths: list[str],
         'ЖЁСТКО: если `task_add_case` вернул сообщение "УЖЕ СУЩЕСТВУЕТ" — значит сервер тоже подтвердил дубликат. НЕ пытайся обойти это переформулировкой title. Просто учти в финальном резюме.',
         '',
         'Если пользователь даёт список ПОВТОРНО (через несколько часов или второй раз) — task_list_brief покажет уже все прошлые кейсы. Не дублируй их даже если пользователь повторил тот же список.',
+        '',
+        '## Поиск и устранение дубликатов',
+        'Если пользователь просит «перепроверь дубликаты», «почисти дубли», «удали дубли», «слить похожие» — действуй так:',
+        '',
+        '1. Вызови `task_list_brief` чтобы увидеть все задачи и заголовки кейсов.',
+        '2. Найди подозрительные пары задач/кейсов где title похож по смыслу (не только по словам — «Доработать уведомление» и «Уведомление дополнить описание» это одно).',
+        '3. Для каждой подозрительной задачи вызови `task_get` чтобы посмотреть полные описания, ai_analysis, ai_proposal. По ним подтверди что это правда дубликат — может быть разный контекст.',
+        '4. Раздели находки на две группы:',
+        '   - **Удалить полностью** (точный дубликат, источник пустой и менее детальный) → собери в один список `items` для `task_delete_batch`.',
+        '   - **Слить** (похожи, но source содержит что-то полезное) → собери `merges` для `case_merge_batch`. Target = более богатый кейс.',
+        '5. Если есть что удалять — вызови `task_delete_batch` ОДИН раз со всем списком (НЕ по одному).',
+        '6. Если есть что сливать — `case_merge_batch` тоже ОДИН вызов со всем.',
+        '7. После вызова инструмента просто ЖДИ — пользователь увидит карточку подтверждения. Не вызывай повторно «на всякий случай».',
+        '8. Финальный ответ — короткий обзор: «Нашёл N дубликатов: K к удалению, M к слиянию. Подтверди в чате».',
+        '',
+        'Никогда НЕ удаляй задачу целиком если у неё больше 1 кейса и хотя бы один не дубликат. В таком случае только конкретные кейсы.',
     ]
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -672,6 +694,64 @@ async def _execute_action(login: str, client, action: dict) -> tuple[bool, str]:
             except asyncio.TimeoutError:
                 # Для edit это норма — запрос ушёл к модератору
                 return True, 'Запрос ушёл модератору, ждём одобрения.'
+
+        if kind == 'task_delete_batch':
+            items = payload.get('items') or []
+            deleted_tasks = 0
+            deleted_cases = 0
+            errors = []
+            for it in items:
+                ikind = it.get('kind')
+                task_id = it.get('task_id')
+                if ikind == 'task' and task_id:
+                    try:
+                        if tasks_store.delete_task(login, task_id):
+                            deleted_tasks += 1
+                        else:
+                            errors.append(f'задача {task_id}: не найдена')
+                    except Exception as e:
+                        errors.append(f'задача {task_id}: {e}')
+                elif ikind == 'case' and task_id and it.get('case_id'):
+                    try:
+                        tasks_store.delete_case(login, task_id, it['case_id'])
+                        deleted_cases += 1
+                    except KeyError:
+                        errors.append(f'кейс {it["case_id"]}: не найден')
+                    except Exception as e:
+                        errors.append(f'кейс {it["case_id"]}: {e}')
+            parts = []
+            if deleted_tasks:
+                parts.append(f'удалено задач: {deleted_tasks}')
+            if deleted_cases:
+                parts.append(f'удалено кейсов: {deleted_cases}')
+            if errors:
+                parts.append(f'ошибок: {len(errors)}')
+            msg = '. '.join(parts) if parts else 'ничего не сделано'
+            return (not errors or (deleted_tasks + deleted_cases > 0)), msg
+
+        if kind == 'case_merge_batch':
+            merges = payload.get('merges') or []
+            done = 0
+            errors = []
+            for m in merges:
+                try:
+                    result = tasks_store.merge_case(
+                        login,
+                        m.get('source_task_id'),
+                        m.get('source_case_id'),
+                        m.get('target_task_id'),
+                        m.get('target_case_id'),
+                    )
+                    if result is not None:
+                        done += 1
+                    else:
+                        errors.append('кейс не найден')
+                except Exception as e:
+                    errors.append(str(e))
+            msg = f'слито пар: {done}'
+            if errors:
+                msg += f', ошибок: {len(errors)}'
+            return (done > 0), msg
 
         return False, f'Неизвестный kind: {kind}'
     except Exception as e:

@@ -505,6 +505,169 @@ def tool_task_add_case(args: dict) -> str:
     return f'Добавлен кейс "{case_title}" в задачу id={task_id} (case_id={case_id}).'
 
 
+def tool_task_get(args: dict) -> str:
+    """Полная карточка одной задачи со ВСЕМИ полями кейсов."""
+    task_id = (args.get('task_id') or '').strip()
+    if not task_id:
+        return 'Нужен task_id.'
+    r = _http('GET', '/api/tasks')
+    if r.get('_error'):
+        return f'Ошибка: {r["_error"]}'
+    task = next((t for t in r.get('tasks') or [] if t.get('id') == task_id), None)
+    if not task:
+        return f'Задача id={task_id} не найдена.'
+    lines = [f'# {task.get("title")}  (id={task["id"]})',
+             f'статус: {task.get("status")} · приоритет: {task.get("priority")}']
+    if task.get('description'):
+        lines.append('')
+        lines.append('## Описание')
+        lines.append(task['description'][:1500])
+    cases = task.get('cases') or []
+    if cases:
+        lines.append('')
+        lines.append(f'## Кейсы ({len(cases)})')
+        for c in cases:
+            lines.append('')
+            lines.append(f'### [{c.get("status")}] {c.get("title")}  (case_id={c["id"]})')
+            desc = (c.get('description') or '').strip()
+            if desc:
+                lines.append(f'**Описание:** {desc[:500]}')
+            ana = (c.get('ai_analysis') or '').strip()
+            if ana:
+                lines.append(f'**AI-анализ:** {ana[:400]}')
+            prop = (c.get('ai_proposal') or '').strip()
+            if prop:
+                lines.append(f'**AI-предложение:** {prop[:400]}')
+    else:
+        lines.append('')
+        lines.append('(кейсов нет)')
+    return '\n'.join(lines)
+
+
+def tool_task_delete_batch(args: dict) -> str:
+    """
+    Запрос на удаление пачки задач/кейсов. Создаёт ОДНО подтверждение
+    с полным списком — пользователь подтверждает все сразу либо все
+    отклоняет.
+
+    Аргументы:
+      items: [{"kind": "task" | "case", "task_id": str, "case_id": str?, "reason": str?}]
+    """
+    items = args.get('items') or []
+    if not isinstance(items, list) or not items:
+        return 'Нужно items (непустой массив объектов с kind/task_id[/case_id]).'
+    if len(items) > 100:
+        return 'Слишком большая пачка (>100). Разбей на несколько вызовов.'
+
+    # Резолвим красивые заголовки чтобы карточка подтверждения была информативной
+    tasks_resp = _http('GET', '/api/tasks')
+    tasks_map = {}
+    if not tasks_resp.get('_error'):
+        for t in tasks_resp.get('tasks') or []:
+            tasks_map[t.get('id')] = t
+
+    normalized = []
+    summary_lines = []
+    for it in items:
+        kind = (it.get('kind') or '').lower()
+        if kind not in ('task', 'case'):
+            continue
+        task_id = it.get('task_id') or ''
+        if not task_id:
+            continue
+        if kind == 'task':
+            t = tasks_map.get(task_id)
+            label = t.get('title') if t else f'(id={task_id})'
+            normalized.append({'kind': 'task', 'task_id': task_id})
+            summary_lines.append(f'• задача «{label}»')
+        else:
+            case_id = it.get('case_id') or ''
+            if not case_id:
+                continue
+            t = tasks_map.get(task_id) or {}
+            c = next((c for c in t.get('cases') or [] if c.get('id') == case_id), {})
+            task_title = t.get('title', f'id={task_id}')
+            case_title = c.get('title', f'id={case_id}')
+            normalized.append({
+                'kind': 'case', 'task_id': task_id, 'case_id': case_id,
+            })
+            summary_lines.append(f'• кейс «{case_title}» из «{task_title}»')
+
+    if not normalized:
+        return 'Ничего не распознал для удаления.'
+
+    summary = f'Удалить {len(normalized)} элементов:\n' + '\n'.join(summary_lines[:30])
+    if len(summary_lines) > 30:
+        summary += f'\n…и ещё {len(summary_lines) - 30}'
+
+    aid = create_pending(LOGIN, 'task_delete_batch',
+                          {'items': normalized}, summary)
+    return (f'Создано подтверждение #{aid} на удаление {len(normalized)} элементов. '
+            f'Пользователь должен нажать «Подтвердить» в чате. '
+            f'Не вызывай инструмент повторно — жди решения пользователя.')
+
+
+def tool_case_merge_batch(args: dict) -> str:
+    """
+    Запрос на слияние кейсов пачкой. Каждая операция: source-кейс
+    сливается в target-кейс и удаляется.
+
+    Аргументы:
+      merges: [{"source_task_id", "source_case_id",
+                 "target_task_id", "target_case_id", "reason"?}]
+    """
+    merges = args.get('merges') or []
+    if not isinstance(merges, list) or not merges:
+        return 'Нужно merges (массив объектов).'
+    if len(merges) > 50:
+        return 'Слишком большая пачка (>50). Разбей.'
+
+    tasks_resp = _http('GET', '/api/tasks')
+    tasks_map = {}
+    if not tasks_resp.get('_error'):
+        for t in tasks_resp.get('tasks') or []:
+            tasks_map[t.get('id')] = t
+
+    normalized = []
+    summary_lines = []
+    for m in merges:
+        s_tid = m.get('source_task_id') or ''
+        s_cid = m.get('source_case_id') or ''
+        t_tid = m.get('target_task_id') or ''
+        t_cid = m.get('target_case_id') or ''
+        if not (s_tid and s_cid and t_tid and t_cid):
+            continue
+        if s_cid == t_cid:
+            continue
+
+        s_task = tasks_map.get(s_tid) or {}
+        t_task = tasks_map.get(t_tid) or {}
+        s_case = next((c for c in s_task.get('cases') or [] if c.get('id') == s_cid), {})
+        t_case = next((c for c in t_task.get('cases') or [] if c.get('id') == t_cid), {})
+        s_lbl = s_case.get('title', f'id={s_cid}')
+        t_lbl = t_case.get('title', f'id={t_cid}')
+
+        normalized.append({
+            'source_task_id': s_tid, 'source_case_id': s_cid,
+            'target_task_id': t_tid, 'target_case_id': t_cid,
+        })
+        summary_lines.append(f'• «{s_lbl}» → «{t_lbl}»')
+
+    if not normalized:
+        return 'Ничего не распознал для merge.'
+
+    summary = (f'Слить {len(normalized)} пар кейсов '
+                f'(source удаляется, его описание добавится к target):\n'
+                + '\n'.join(summary_lines[:30]))
+    if len(summary_lines) > 30:
+        summary += f'\n…и ещё {len(summary_lines) - 30}'
+
+    aid = create_pending(LOGIN, 'case_merge_batch',
+                          {'merges': normalized}, summary)
+    return (f'Создано подтверждение #{aid} на слияние {len(normalized)} пар. '
+            f'Пользователь должен нажать «Подтвердить».')
+
+
 def tool_db_write(args: dict) -> str:
     sql = args.get('sql') or ''
     db = args.get('database') or ''
@@ -678,6 +841,78 @@ TOOLS = {
                 'priority': {'type': 'string', 'enum': ['low', 'medium', 'high']},
             },
             'required': ['title'],
+        },
+    },
+    'task_get': {
+        'fn': tool_task_get,
+        'description': ('Полная карточка одной задачи: описание задачи + '
+                        'все её кейсы с описанием, ai_analysis, ai_proposal. '
+                        'Используй ПЕРЕД анализом на дубликаты — task_list_brief '
+                        'показывает только заголовки.'),
+        'input': {
+            'type': 'object',
+            'properties': {'task_id': {'type': 'string'}},
+            'required': ['task_id'],
+        },
+    },
+    'task_delete_batch': {
+        'fn': tool_task_delete_batch,
+        'description': ('Удалить пачку задач/кейсов. Создаёт ОДНУ карточку '
+                        'подтверждения со всем списком — пользователь жмёт '
+                        '«Подтвердить» один раз и все удаляются. Удаление '
+                        'НЕОБРАТИМО, поэтому требуется ручное подтверждение.\n\n'
+                        'Используй для дедупа: сначала task_get на каждую '
+                        'задачу с подозрением, собери список дублей, ОДИН раз '
+                        'вызови этот инструмент с полным items.'),
+        'input': {
+            'type': 'object',
+            'properties': {
+                'items': {
+                    'type': 'array',
+                    'items': {
+                        'type': 'object',
+                        'properties': {
+                            'kind': {'type': 'string', 'enum': ['task', 'case']},
+                            'task_id': {'type': 'string'},
+                            'case_id': {'type': 'string'},
+                            'reason': {'type': 'string'},
+                        },
+                        'required': ['kind', 'task_id'],
+                    },
+                },
+            },
+            'required': ['items'],
+        },
+    },
+    'case_merge_batch': {
+        'fn': tool_case_merge_batch,
+        'description': ('Слияние нескольких пар кейсов. Source-кейс '
+                        'сливается в target (описание добавляется, файлы '
+                        'объединяются, AI-поля переносятся если у target '
+                        'пусто), потом удаляется. Тоже через подтверждение.\n\n'
+                        'Используй когда два кейса похожи но не идентичны: '
+                        'тот в котором меньше деталей сливается в более '
+                        'богатый.'),
+        'input': {
+            'type': 'object',
+            'properties': {
+                'merges': {
+                    'type': 'array',
+                    'items': {
+                        'type': 'object',
+                        'properties': {
+                            'source_task_id': {'type': 'string'},
+                            'source_case_id': {'type': 'string'},
+                            'target_task_id': {'type': 'string'},
+                            'target_case_id': {'type': 'string'},
+                            'reason': {'type': 'string'},
+                        },
+                        'required': ['source_task_id', 'source_case_id',
+                                      'target_task_id', 'target_case_id'],
+                    },
+                },
+            },
+            'required': ['merges'],
         },
     },
     'task_add_case': {

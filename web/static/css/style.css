@@ -1659,10 +1659,11 @@ mark.palette-hl { background: rgba(234,179,8,0.15); color: var(--yellow); border
 /* Pending action cards */
 .ai-actions-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; max-width: 92%; }
 .ai-page .ai-actions-list { max-width: min(800px, 92%); }
-.ai-action { display: flex; gap: 10px; align-items: center; padding: 9px 12px; background: var(--surface); border: 1px solid var(--border-2); border-radius: var(--radius-md); font-size: 12.5px; }
+.ai-action { display: flex; gap: 10px; align-items: flex-start; padding: 9px 12px; background: var(--surface); border: 1px solid var(--border-2); border-radius: var(--radius-md); font-size: 12.5px; }
+.ai-action-state { padding-top: 2px; }
 .ai-action-done { opacity: .7; }
 .ai-action-icon { font-size: 16px; flex-shrink: 0; }
-.ai-action-summary { color: var(--text); flex: 1; min-width: 0; }
+.ai-action-summary { color: var(--text); flex: 1; min-width: 0; white-space: pre-wrap; word-break: break-word; line-height: 1.5; }
 .ai-action-state { display: flex; gap: 4px; align-items: center; flex-shrink: 0; }
 .ai-action-badge { display: inline-block; padding: 3px 10px; border-radius: 99px; font-size: 10px; text-transform: uppercase; letter-spacing: .04em; font-weight: 600; }
 .ai-action-badge-ok    { background: var(--green-dim); color: var(--green); border: 1px solid rgba(34,197,94,0.25); }

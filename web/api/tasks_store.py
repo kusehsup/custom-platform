@@ -402,3 +402,46 @@ def find_task_by_title(login: str, title: str) -> Optional[dict]:
         if (t.get('title') or '').strip().lower() == title_low:
             return t
     return None
+
+
+def merge_case(login: str, source_task_id: str, source_case_id: str,
+                target_task_id: str, target_case_id: str) -> Optional[dict]:
+    """
+    Объединяет source-кейс в target. Описания соединяются, AI-поля
+    сливаются если у target пусто. Source удаляется. Возвращает
+    обновлённый target-task.
+    """
+    with _LOCK:
+        data = _read()
+        bucket = _user_bucket(data, login)
+        src_task = bucket['tasks'].get(source_task_id)
+        tgt_task = bucket['tasks'].get(target_task_id)
+        if not src_task or not tgt_task:
+            return None
+        src = next((c for c in src_task.get('cases') or [] if c.get('id') == source_case_id), None)
+        tgt = next((c for c in tgt_task.get('cases') or [] if c.get('id') == target_case_id), None)
+        if not src or not tgt:
+            return None
+
+        # Объединяем поля
+        if src.get('description'):
+            old_desc = tgt.get('description') or ''
+            merged = old_desc + ('\n\n---\n\n' if old_desc else '') + src['description']
+            tgt['description'] = merged
+        if src.get('ai_analysis') and not tgt.get('ai_analysis'):
+            tgt['ai_analysis'] = src['ai_analysis']
+        if src.get('ai_proposal') and not tgt.get('ai_proposal'):
+            tgt['ai_proposal'] = src['ai_proposal']
+        # Файлы — union
+        all_files = list(dict.fromkeys(
+            (tgt.get('attached_files') or []) + (src.get('attached_files') or [])
+        ))
+        tgt['attached_files'] = all_files
+        tgt['updated_at'] = _now()
+
+        # Удаляем source-кейс
+        src_task['cases'] = [c for c in src_task.get('cases') or [] if c.get('id') != source_case_id]
+        src_task['updated_at'] = _now()
+        tgt_task['updated_at'] = _now()
+        _write(data)
+        return tgt_task
