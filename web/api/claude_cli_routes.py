@@ -75,6 +75,9 @@ ALLOWED_TOOLS = ' '.join([
     'mcp__cp-ai__db_write',
     'mcp__cp-ai__search_code',
     'mcp__cp-ai__request_code_access',
+    'mcp__cp-ai__task_list_brief',
+    'mcp__cp-ai__task_create',
+    'mcp__cp-ai__task_add_case',
 ])
 DISALLOWED_TOOLS = 'Bash WebFetch WebSearch TodoWrite NotebookEdit'
 
@@ -308,6 +311,9 @@ def _build_system_prompt(client, body: 'ChatRequest', attached_paths: list[str],
         '- `mcp__cp-ai__compile` — запуск компиляции',
         '- `mcp__cp-ai__console_clear` — очистка буфера консоли',
         '- `mcp__cp-ai__search_code` — поиск по Pawn-коду через платформу (read-only)',
+        '- `mcp__cp-ai__task_list_brief` — список задач юзера (title, status, id, кейсы)',
+        '- `mcp__cp-ai__task_create` — создать новую задачу верхнего уровня',
+        '- `mcp__cp-ai__task_add_case` — добавить кейс в задачу (или создать новую задачу по title)',
         '',
         '## С подтверждением:',
         '- `mcp__cp-ai__db_write` — INSERT/UPDATE/DELETE/REPLACE. Не выполняется сразу: пользователь жмёт «Подтвердить» в чате.',
@@ -317,6 +323,21 @@ def _build_system_prompt(client, body: 'ChatRequest', attached_paths: list[str],
         '- DROP / TRUNCATE / ALTER / GRANT / REVOKE / RENAME — ПОЛНОСТЬЮ ЗАПРЕЩЕНЫ. Не вызывай db_write с ними; попроси пользователя выполнить вручную.',
         '- Не вызывай server_action / compile / db_write без ясного запроса пользователя. Уточни если не уверен.',
         '- После вызова инструмента кратко сообщи результат — не повторяй output дословно.',
+        '',
+        '## Раскладка списка задач на кейсы',
+        'Если пользователь даёт «сырой» список пунктов («— Метро. ...», «— Электрик. ...» и т.п.) и просит «разложи» / «проанализируй» / «занеси в задачи» — следуй алгоритму:',
+        '',
+        '1. ВСЕГДА сначала вызови `task_list_brief` — чтобы знать какие задачи и кейсы УЖЕ есть.',
+        '2. Группируй пункты по теме (Метро, Электрик, Кейсы, Светофор, Промокод, Оффтоп — обычно сам пользователь префиксом подсказывает).',
+        '3. На каждый префикс — ОДНА задача верхнего уровня:',
+        '   - Если задача с таким title уже есть в task_list_brief — НЕ создавай новую, кейс добавится туда.',
+        '   - Иначе она будет создана автоматически при первом `task_add_case` с этим task_title.',
+        '4. Каждый пункт списка = отдельный КЕЙС через `task_add_case`. case_title — короткая суть пункта (1 строка без префикса), description — оригинальный текст пункта без сокращений.',
+        '5. Для каждого кейса заполни `ai_analysis` (1-3 предложения: что это значит, какой риск, что важно учесть) и `ai_proposal` (1-3 предложения: как ты предлагаешь это решить — БЕЗ КОДА, только подход).',
+        '6. НЕ генерируй сами правки кода в этом шаге. Код будет генерироваться позже, по запросу пользователя на конкретный кейс.',
+        '7. Когда закончил — напиши краткое резюме: "Создал N кейсов в M задачах: [перечисление через запятую]". Без markdown-таблицы.',
+        '',
+        'Не дублируй кейсы — если в task_list_brief похожий уже есть, не добавляй ещё раз. Если сомневаешься — проверь существующие кейсы через сам task_list_brief (он не показывает кейсы, но показывает их количество — резкий рост = надо быть осторожнее).',
     ]
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -390,7 +411,9 @@ def _build_system_prompt(client, body: 'ChatRequest', attached_paths: list[str],
         parts.append('')
         parts.append('# Другие открытые задачи (краткий список)')
         for t in other_open[:15]:
-            parts.append(f'- [{t.get("status")}] {t.get("title")}')
+            cases_n = len(t.get('cases') or [])
+            cases_str = f', кейсов: {cases_n}' if cases_n else ''
+            parts.append(f'- [{t.get("status")}] {t.get("title")} (id={t.get("id")}{cases_str})')
 
     if attached_paths:
         parts.append('')

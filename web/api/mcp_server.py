@@ -377,6 +377,107 @@ def tool_request_code_access(args: dict) -> str:
             f'(не дожидайся — продолжай разговор без него).')
 
 
+def tool_task_list_brief(_args: dict) -> str:
+    """Краткий список существующих задач — заголовок + статус + кейсы."""
+    r = _http('GET', '/api/tasks')
+    if r.get('_error'):
+        return f'Ошибка: {r["_error"]}'
+    tasks = r.get('tasks') or []
+    if not tasks:
+        return '(задач пока нет)'
+    lines = ['# Существующие задачи']
+    for t in tasks[:50]:
+        cases = t.get('cases') or []
+        lines.append(
+            f'- [{t.get("status")}] {t.get("title")} '
+            f'(id={t.get("id")}, кейсов: {len(cases)})'
+        )
+    return '\n'.join(lines)
+
+
+def tool_task_create(args: dict) -> str:
+    title = (args.get('title') or '').strip()
+    if not title:
+        return 'Нужен title.'
+    description = args.get('description') or ''
+    priority = args.get('priority') or 'medium'
+    r = _http('POST', '/api/tasks', json_body={
+        'title': title,
+        'description': description,
+        'priority': priority,
+        'make_active': False,
+    })
+    if r.get('_error'):
+        return f'Ошибка: {r["_error"]}'
+    task = r.get('task') or {}
+    return f'Создана задача "{task.get("title")}" (id={task.get("id")}).'
+
+
+def tool_task_add_case(args: dict) -> str:
+    """
+    Добавляет кейс в задачу.
+    Если task_id указан — используем его.
+    Если task_title — ищем существующую по точному совпадению; не находим — создаём.
+    """
+    case_title = (args.get('case_title') or '').strip()
+    if not case_title:
+        return 'Нужен case_title.'
+
+    task_id = args.get('task_id') or ''
+    task_title = (args.get('task_title') or '').strip()
+
+    # Резолвим task_id
+    if not task_id:
+        if not task_title:
+            return 'Нужен task_id ИЛИ task_title.'
+        # Ищем существующую
+        existing = _http('GET', '/api/tasks')
+        if not existing.get('_error'):
+            for t in existing.get('tasks') or []:
+                if (t.get('title') or '').strip().lower() == task_title.lower():
+                    task_id = t.get('id')
+                    break
+        if not task_id:
+            # Создаём
+            r = _http('POST', '/api/tasks', json_body={
+                'title': task_title,
+                'description': '',
+                'priority': 'medium',
+                'make_active': False,
+            })
+            if r.get('_error'):
+                return f'Не удалось создать задачу: {r["_error"]}'
+            task_id = (r.get('task') or {}).get('id')
+            if not task_id:
+                return 'Не удалось получить id новой задачи.'
+
+    body = {
+        'title': case_title,
+        'description': args.get('description') or '',
+        'priority': args.get('priority') or 'medium',
+        'attached_files': args.get('attached_files') or [],
+    }
+    r = _http('POST', f'/api/tasks/{task_id}/cases', json_body=body)
+    if r.get('_error'):
+        return f'Ошибка: {r["_error"]}'
+
+    case_id = ''
+    cases = (r.get('task') or {}).get('cases') or []
+    if cases:
+        case_id = cases[-1].get('id', '')
+
+    # Дозаписываем AI-поля если переданы
+    extras = {}
+    if args.get('ai_analysis'):
+        extras['ai_analysis'] = args['ai_analysis']
+    if args.get('ai_proposal'):
+        extras['ai_proposal'] = args['ai_proposal']
+    if extras and case_id:
+        _http('PATCH', f'/api/tasks/{task_id}/cases/{case_id}', json_body=extras)
+
+    return f'Добавлен кейс в задачу id={task_id}, case_id={case_id}.'
+
+
 def tool_db_write(args: dict) -> str:
     sql = args.get('sql') or ''
     db = args.get('database') or ''
@@ -528,6 +629,57 @@ TOOLS = {
                 'query_name': {'type': 'string', 'description': 'Название блока/функции или диапазон строк'},
             },
             'required': ['file_name', 'query_name'],
+        },
+    },
+    'task_list_brief': {
+        'fn': tool_task_list_brief,
+        'description': ('Короткий обзор существующих задач: title, status, '
+                        'id, сколько кейсов. Используй перед добавлением '
+                        'нового кейса, чтобы не плодить дубликаты.'),
+        'input': {'type': 'object', 'properties': {}, 'required': []},
+    },
+    'task_create': {
+        'fn': tool_task_create,
+        'description': ('Создать новую задачу верхнего уровня. Возвращает id. '
+                        'Перед созданием убедись через task_list_brief, что '
+                        'похожей задачи нет.'),
+        'input': {
+            'type': 'object',
+            'properties': {
+                'title': {'type': 'string'},
+                'description': {'type': 'string'},
+                'priority': {'type': 'string', 'enum': ['low', 'medium', 'high']},
+            },
+            'required': ['title'],
+        },
+    },
+    'task_add_case': {
+        'fn': tool_task_add_case,
+        'description': ('Добавить КЕЙС (подзадачу) к задаче. Можно указать '
+                        'task_id или task_title — если task_title совпадает '
+                        'с существующей задачей, кейс добавится туда; иначе '
+                        'будет создана новая задача с этим title.\n\n'
+                        'ai_analysis и ai_proposal — твой анализ и предложение '
+                        'как фиксить. Они отобразятся отдельными блоками в '
+                        'карточке кейса. Не пиши код в proposal — для кода '
+                        'есть отдельный шаг (Edit/Write в workspace позже).'),
+        'input': {
+            'type': 'object',
+            'properties': {
+                'task_id': {'type': 'string', 'description': 'id существующей задачи (опционально)'},
+                'task_title': {'type': 'string', 'description': 'или заголовок: если задача с таким title есть — кейс уйдёт туда, иначе создастся новая задача'},
+                'case_title': {'type': 'string'},
+                'description': {'type': 'string'},
+                'priority': {'type': 'string', 'enum': ['low', 'medium', 'high']},
+                'attached_files': {
+                    'type': 'array',
+                    'items': {'type': 'string'},
+                    'description': 'file_id Pawn-файлов, к которым относится кейс',
+                },
+                'ai_analysis': {'type': 'string', 'description': 'твой краткий анализ'},
+                'ai_proposal': {'type': 'string', 'description': 'твоё предложение по решению (markdown, без кода)'},
+            },
+            'required': ['case_title'],
         },
     },
 }
