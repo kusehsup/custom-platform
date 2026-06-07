@@ -378,21 +378,35 @@ def tool_request_code_access(args: dict) -> str:
 
 
 def tool_task_list_brief(_args: dict) -> str:
-    """Краткий список существующих задач — заголовок + статус + кейсы."""
+    """
+    Список существующих задач С ИХ КЕЙСАМИ — нужен AI чтобы не плодить
+    дубликаты. Каждый кейс выводим коротким title (≤100 символов).
+    """
     r = _http('GET', '/api/tasks')
     if r.get('_error'):
         return f'Ошибка: {r["_error"]}'
     tasks = r.get('tasks') or []
     if not tasks:
-        return '(задач пока нет)'
-    lines = ['# Существующие задачи']
+        return ('(задач пока нет)\n\n'
+                'Можешь смело создавать новые через task_add_case '
+                '(он создаст задачу по task_title автоматически).')
+    lines = ['# Существующие задачи и их кейсы']
+    lines.append('')
+    lines.append('⚠️ ВНИМАТЕЛЬНО просмотри ниже перед добавлением — '
+                  'если похожий кейс УЖЕ ЕСТЬ, НЕ добавляй повторно.')
+    lines.append('')
     for t in tasks[:50]:
         cases = t.get('cases') or []
         lines.append(
-            f'- [{t.get("status")}] {t.get("title")} '
+            f'## [{t.get("status")}] {t.get("title")} '
             f'(id={t.get("id")}, кейсов: {len(cases)})'
         )
-    return '\n'.join(lines)
+        if cases:
+            for c in cases[:50]:
+                title = (c.get('title') or '').strip()[:120]
+                lines.append(f'  - [{c.get("status")}] {title}')
+        lines.append('')
+    return '\n'.join(lines).rstrip()
 
 
 def tool_task_create(args: dict) -> str:
@@ -451,6 +465,15 @@ def tool_task_add_case(args: dict) -> str:
             if not task_id:
                 return 'Не удалось получить id новой задачи.'
 
+    # Сначала получим текущий список кейсов чтобы понять создался ли новый
+    before = _http('GET', f'/api/tasks')
+    before_ids = set()
+    if not before.get('_error'):
+        for t in before.get('tasks') or []:
+            if t.get('id') == task_id:
+                before_ids = {c.get('id') for c in (t.get('cases') or [])}
+                break
+
     body = {
         'title': case_title,
         'description': args.get('description') or '',
@@ -461,10 +484,14 @@ def tool_task_add_case(args: dict) -> str:
     if r.get('_error'):
         return f'Ошибка: {r["_error"]}'
 
-    case_id = ''
-    cases = (r.get('task') or {}).get('cases') or []
-    if cases:
-        case_id = cases[-1].get('id', '')
+    cases_after = (r.get('task') or {}).get('cases') or []
+    new_cases = [c for c in cases_after if c.get('id') not in before_ids]
+    if not new_cases:
+        return (f'⚠️ Кейс "{case_title}" УЖЕ СУЩЕСТВУЕТ в задаче id={task_id}. '
+                f'Пропустил создание дубликата. Перед следующим добавлением '
+                f'свежий список существующих кейсов: вызови task_list_brief заново.')
+
+    case_id = new_cases[0].get('id', '')
 
     # Дозаписываем AI-поля если переданы
     extras = {}
@@ -475,7 +502,7 @@ def tool_task_add_case(args: dict) -> str:
     if extras and case_id:
         _http('PATCH', f'/api/tasks/{task_id}/cases/{case_id}', json_body=extras)
 
-    return f'Добавлен кейс в задачу id={task_id}, case_id={case_id}.'
+    return f'Добавлен кейс "{case_title}" в задачу id={task_id} (case_id={case_id}).'
 
 
 def tool_db_write(args: dict) -> str:

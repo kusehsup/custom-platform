@@ -376,6 +376,12 @@ const AiChat = {
             // сохранён последний ответ с edits/actions. Это безопасно сейчас:
             // streaming уже false.
             this.loadThreadMessages();
+            // AI мог менять задачи/кейсы через task_* инструменты —
+            // перезагружаем стор задач, чтобы страница и виджеты увидели
+            // изменения сразу, без F5.
+            if (typeof TasksStore !== 'undefined') {
+                TasksStore.load(true).catch(() => {});
+            }
         }
     },
 
@@ -404,6 +410,16 @@ const AiChat = {
             m.tools = m.tools || [];
             m.tools.push({ tool: data.tool, path: data.path });
             this._emitAll();
+            // Реактивно подтягиваем стор задач если AI трогает задачи —
+            // чтобы страница "Задачи" обновлялась в ран-тайме.
+            const tname = (data.tool || '').toLowerCase();
+            if (tname.includes('task_') && typeof TasksStore !== 'undefined') {
+                // debounce — много вызовов task_add_case подряд
+                if (this._tasksReloadTimer) clearTimeout(this._tasksReloadTimer);
+                this._tasksReloadTimer = setTimeout(() => {
+                    TasksStore.load(true).catch(() => {});
+                }, 400);
+            }
         } else if (event === 'edits') {
             m.edits = (data.edits || []).map(e => ({ ...e, status: 'pending' }));
             this._save();

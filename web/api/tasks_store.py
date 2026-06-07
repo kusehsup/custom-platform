@@ -277,16 +277,36 @@ def _make_case(title: str, description: str = '', priority: str = 'medium',
     }
 
 
+def _normalize_title(s: str) -> str:
+    return ''.join((s or '').lower().split())
+
+
+def find_case_by_title(task: dict, title: str) -> Optional[dict]:
+    """Ищем кейс по нормализованному title в указанной задаче."""
+    if not task or not title:
+        return None
+    needle = _normalize_title(title)
+    for c in task.get('cases') or []:
+        if _normalize_title(c.get('title') or '') == needle:
+            return c
+    return None
+
+
 def add_case(login: str, task_id: str, title: str, description: str = '',
               priority: str = 'medium',
               attached_files: Optional[list] = None) -> dict:
-    """Создаёт новый кейс внутри задачи. Возвращает обновлённую задачу."""
+    """Создаёт новый кейс внутри задачи. Если кейс с таким title уже
+    есть — возвращает задачу без изменений (защита от дубликатов)."""
     with _LOCK:
         data = _read()
         bucket = _user_bucket(data, login)
         task = bucket['tasks'].get(task_id)
         if not task:
             raise KeyError('Задача не найдена')
+        # Дубликат по нормализованному title
+        existing = find_case_by_title(task, title)
+        if existing:
+            return task
         case = _make_case(title, description, priority, attached_files)
         task.setdefault('cases', []).append(case)
         task['updated_at'] = _now()
