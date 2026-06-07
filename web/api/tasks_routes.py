@@ -67,6 +67,28 @@ class NoteRequest(BaseModel):
     text: str
 
 
+class CreateCaseRequest(BaseModel):
+    title: str
+    description: str = ''
+    priority: str = 'medium'
+    attached_files: list[str] = []
+
+
+class UpdateCaseRequest(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    status: Optional[str] = None
+    priority: Optional[str] = None
+    attached_files: Optional[list[str]] = None
+    ai_analysis: Optional[str] = None
+    ai_proposal: Optional[str] = None
+
+
+class UpdateCaseEditStatusRequest(BaseModel):
+    edit_index: int
+    status: str  # applied | rejected | pending
+
+
 # ── Endpoints ───────────────────────────────────────────────────────────
 
 @router.get('/api/tasks')
@@ -146,6 +168,60 @@ async def add_note(task_id: str, body: NoteRequest,
         task = tasks_store.add_note(login, task_id, text)
     except KeyError:
         raise HTTPException(status_code=404, detail='Задача не найдена')
+    return {'task': task}
+
+
+# ── Кейсы внутри задачи ──────────────────────────────────────────
+
+@router.post('/api/tasks/{task_id}/cases')
+async def create_case(task_id: str, body: CreateCaseRequest,
+                       login: str = Depends(get_current_user)):
+    title = (body.title or '').strip()
+    if not title:
+        raise HTTPException(status_code=400, detail='Заголовок обязателен')
+    try:
+        task = tasks_store.add_case(
+            login, task_id,
+            title=title,
+            description=body.description or '',
+            priority=body.priority,
+            attached_files=body.attached_files,
+        )
+    except KeyError:
+        raise HTTPException(status_code=404, detail='Задача не найдена')
+    return {'task': task}
+
+
+@router.patch('/api/tasks/{task_id}/cases/{case_id}')
+async def update_case(task_id: str, case_id: str, body: UpdateCaseRequest,
+                       login: str = Depends(get_current_user)):
+    payload = {k: v for k, v in body.dict().items() if v is not None}
+    try:
+        task = tasks_store.update_case(login, task_id, case_id, **payload)
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return {'task': task}
+
+
+@router.delete('/api/tasks/{task_id}/cases/{case_id}')
+async def delete_case(task_id: str, case_id: str,
+                       login: str = Depends(get_current_user)):
+    try:
+        task = tasks_store.delete_case(login, task_id, case_id)
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return {'task': task}
+
+
+@router.post('/api/tasks/{task_id}/cases/{case_id}/edit_status')
+async def set_case_edit_status(task_id: str, case_id: str,
+                                body: UpdateCaseEditStatusRequest,
+                                login: str = Depends(get_current_user)):
+    task = tasks_store.update_case_edit_status(
+        login, task_id, case_id, body.edit_index, body.status,
+    )
+    if not task:
+        raise HTTPException(status_code=404, detail='Кейс или edit не найден')
     return {'task': task}
 
 

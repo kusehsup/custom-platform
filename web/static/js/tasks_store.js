@@ -143,4 +143,39 @@ const TasksStore = {
         await API.delete(`/api/tasks/${taskId}/attachments/${attachmentId}`);
         await this.load(true);
     },
+
+    // ── Кейсы ──────────────────────────────────────────────────────
+
+    async addCase(taskId, data) {
+        const res = await API.post(`/api/tasks/${taskId}/cases`, data);
+        if (res.task) this._replaceTask(res.task);
+        return res.task;
+    },
+
+    async updateCase(taskId, caseId, fields) {
+        const res = await API._fetch('PATCH', `/api/tasks/${taskId}/cases/${caseId}`, fields);
+        if (res.task) this._replaceTask(res.task);
+        return res.task;
+    },
+
+    async deleteCase(taskId, caseId) {
+        const res = await API.delete(`/api/tasks/${taskId}/cases/${caseId}`);
+        if (res.task) this._replaceTask(res.task);
+    },
+
+    async setCaseEditStatus(taskId, caseId, editIndex, status) {
+        const res = await API.post(`/api/tasks/${taskId}/cases/${caseId}/edit_status`, {
+            edit_index: editIndex,
+            status,
+        });
+        if (res.task) this._replaceTask(res.task);
+        return res.task;
+    },
+
+    _replaceTask(task) {
+        const idx = this._tasks.findIndex(t => t.id === task.id);
+        if (idx !== -1) this._tasks[idx] = task;
+        else this._tasks.unshift(task);
+        this._emit();
+    },
 };

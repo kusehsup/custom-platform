@@ -1617,6 +1617,33 @@ mark.palette-hl { background: rgba(234,179,8,0.15); color: var(--yellow); border
 .task-ai-log-summary { color: var(--text-2); flex: 1; }
 .task-ai-log-files { width: 100%; display: flex; gap: 4px; margin-top: 2px; flex-wrap: wrap; }
 
+/* Кейсы внутри задачи */
+.task-cases { display: flex; flex-direction: column; gap: 6px; }
+.task-cases-empty { padding: 14px; color: var(--text-3); font-size: 12px; background: var(--surface2); border: 1px dashed var(--border); border-radius: var(--radius); text-align: center; }
+.task-case { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.task-case-header { display: flex; align-items: center; gap: 8px; padding: 9px 12px; cursor: pointer; transition: background .12s; user-select: none; }
+.task-case-header:hover { background: var(--surface3); }
+.task-case-title { flex: 1; color: var(--text); font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.task-case-status { flex-shrink: 0; }
+.task-case-arrow { color: var(--text-3); font-size: 10px; flex-shrink: 0; transition: transform .12s; }
+.task-case-edits-badge { background: var(--surface3); color: var(--text-2); border: 1px solid var(--border-2); padding: 1px 7px; border-radius: 99px; font-size: 10px; font-weight: 500; flex-shrink: 0; }
+.task-case-ai-badge { background: var(--green-dim); color: var(--green); border: 1px solid rgba(34,197,94,0.25); padding: 1px 7px; border-radius: 99px; font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; flex-shrink: 0; }
+
+.task-case-body { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; border-top: 1px solid var(--border); background: var(--bg); }
+.task-case-body.hidden { display: none; }
+.task-case-row { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+.task-case-section { display: flex; flex-direction: column; gap: 4px; }
+.task-case-section-title { font-size: 10px; color: var(--text-3); text-transform: uppercase; letter-spacing: .04em; font-weight: 600; }
+.task-case-section textarea { width: 100%; background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); padding: 7px 10px; color: var(--text); font-size: 12.5px; font-family: inherit; outline: none; resize: vertical; box-sizing: border-box; }
+.task-case-section textarea:focus { border-color: var(--border-2); }
+.task-case-actions-inline { display: flex; gap: 6px; }
+.task-case-ai-text { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); padding: 9px 12px; color: var(--text); font-size: 12.5px; line-height: 1.55; }
+.task-case-ai-text pre { margin: 6px 0; }
+.task-case-edits { display: flex; flex-direction: column; gap: 4px; }
+.task-case-edit { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 6px 10px; background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); }
+.task-case-edit-info { display: flex; gap: 8px; align-items: center; min-width: 0; flex: 1; }
+.task-case-edit-actions { display: flex; gap: 4px; flex-shrink: 0; }
+
 /* Create task modal */
 .task-create-window { width: 100%; max-width: 540px; background: var(--surface); border: 1px solid var(--border-2); border-radius: var(--radius-lg); display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 16px 48px rgba(0,0,0,0.7); }
 .task-create-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--border); font-size: 13px; font-weight: 600; color: var(--text); }

@@ -171,6 +171,8 @@ const TasksPage = {
                 <div class="task-note-text">${this._esc(n.text).replace(/\n/g, '<br>')}</div>
             </div>`).join('');
 
+        const casesHtml = this._casesHtml(t);
+
         const aiLogHtml = (t.ai_log || []).slice().reverse().slice(0, 20).map(l => {
             const files = (l.files || []).map(f => `<code class="ai-inline-code">${this._esc(f)}</code>`).join(' ');
             return `<div class="task-ai-log-item">
@@ -228,6 +230,17 @@ const TasksPage = {
         </div>
 
         <div class="task-section">
+            <div class="task-section-title">
+                Кейсы (${(t.cases || []).length})
+                <span class="task-section-hint">— отдельные пункты внутри задачи</span>
+            </div>
+            <div class="task-cases">${casesHtml}</div>
+            <div class="task-section-actions" style="margin-top:8px">
+                <button class="btn btn-ghost btn-sm" id="task-case-add">+ Добавить кейс</button>
+            </div>
+        </div>
+
+        <div class="task-section">
             <div class="task-section-title">Pawn-файлы задачи <span class="task-section-hint">через @</span></div>
             <div class="ai-chips" style="background:transparent;border:none;padding:0;${filesHtml ? '' : 'display:none'}">${filesHtml}</div>
             <div class="task-section-actions">
@@ -262,6 +275,236 @@ const TasksPage = {
         `;
 
         this._bindDetail(t);
+        this._bindCases(t);
+    },
+
+    _casesHtml(t) {
+        const cases = t.cases || [];
+        if (!cases.length) {
+            return `<div class="task-cases-empty">Кейсов пока нет. Добавь вручную или скажи AI «разложи список на кейсы».</div>`;
+        }
+        return cases.map((c, idx) => this._caseRowHtml(t, c, idx)).join('');
+    },
+
+    _caseRowHtml(t, c, idx) {
+        const dot = `task-dot task-dot-${c.status}`;
+        const editsCount = (c.proposed_edits || []).length;
+        const hasAi = c.ai_analysis || c.ai_proposal || editsCount > 0;
+        const editsBadge = editsCount
+            ? `<span class="task-case-edits-badge">${editsCount} правок</span>`
+            : '';
+        const aiBadge = hasAi
+            ? `<span class="task-case-ai-badge">✦ AI</span>`
+            : '';
+        return `
+        <div class="task-case" data-cid="${c.id}">
+            <div class="task-case-header" data-action="toggle">
+                <span class="${dot}"></span>
+                <span class="task-case-title">${this._esc(c.title)}</span>
+                ${editsBadge}
+                ${aiBadge}
+                <span class="task-case-status task-status task-status-${c.status}">${this._statusLabel(c.status)}</span>
+                <span class="task-case-arrow">▾</span>
+            </div>
+            <div class="task-case-body hidden">
+                <div class="task-case-row">
+                    <label class="ai-field" style="min-width:120px">
+                        <span>Статус</span>
+                        <select class="ai-select" data-action="status">
+                            <option value="open"        ${c.status==='open'?'selected':''}>Открыт</option>
+                            <option value="in_progress" ${c.status==='in_progress'?'selected':''}>В работе</option>
+                            <option value="blocked"     ${c.status==='blocked'?'selected':''}>Заблокирован</option>
+                            <option value="done"        ${c.status==='done'?'selected':''}>Завершён</option>
+                        </select>
+                    </label>
+                    <label class="ai-field" style="min-width:120px">
+                        <span>Приоритет</span>
+                        <select class="ai-select" data-action="priority">
+                            <option value="low"    ${c.priority==='low'?'selected':''}>Низкий</option>
+                            <option value="medium" ${c.priority==='medium'?'selected':''}>Средний</option>
+                            <option value="high"   ${c.priority==='high'?'selected':''}>Высокий</option>
+                        </select>
+                    </label>
+                    <div style="flex:1"></div>
+                    <button class="btn btn-danger btn-sm" data-action="delete">Удалить кейс</button>
+                </div>
+
+                <div class="task-case-section">
+                    <div class="task-case-section-title">Описание</div>
+                    <textarea data-action="desc" rows="3" placeholder="Что нужно сделать">${this._esc(c.description || '')}</textarea>
+                    <div class="task-case-actions-inline">
+                        <button class="btn btn-ghost btn-sm" data-action="save-desc">Сохранить</button>
+                    </div>
+                </div>
+
+                ${c.ai_analysis ? `
+                <div class="task-case-section">
+                    <div class="task-case-section-title">✦ Анализ AI</div>
+                    <div class="task-case-ai-text">${this._renderMd(c.ai_analysis)}</div>
+                </div>` : ''}
+
+                ${c.ai_proposal ? `
+                <div class="task-case-section">
+                    <div class="task-case-section-title">✦ Предложение AI</div>
+                    <div class="task-case-ai-text">${this._renderMd(c.ai_proposal)}</div>
+                </div>` : ''}
+
+                ${editsCount ? `
+                <div class="task-case-section">
+                    <div class="task-case-section-title">Предлагаемые правки (${editsCount})</div>
+                    <div class="task-case-edits">
+                        ${(c.proposed_edits || []).map((e, ei) => this._caseEditRowHtml(t, c, e, ei)).join('')}
+                    </div>
+                </div>` : ''}
+
+                ${(c.attached_files || []).length ? `
+                <div class="task-case-section">
+                    <div class="task-case-section-title">Файлы кейса</div>
+                    <div class="ai-chips" style="background:transparent;border:none;padding:0">
+                        ${(c.attached_files || []).map(fid => {
+                            const meta = this._files[fid] || {};
+                            return `<span class="ai-chip">
+                                <span class="ai-chip-name">${this._esc(meta.name || meta.fullPath || fid)}</span>
+                            </span>`;
+                        }).join('')}
+                    </div>
+                </div>` : ''}
+            </div>
+        </div>`;
+    },
+
+    _caseEditRowHtml(t, c, e, ei) {
+        const status = e.status || 'pending';
+        let actions;
+        if (status === 'applied') {
+            actions = `<span class="ai-edit-badge ai-edit-badge-ok">применено</span>`;
+        } else if (status === 'rejected') {
+            actions = `<span class="ai-edit-badge ai-edit-badge-muted">отброшено</span>`;
+        } else if (status === 'failed') {
+            actions = `<span class="ai-edit-badge ai-edit-badge-err">ошибка</span>`;
+        } else {
+            actions = `
+                <button class="btn btn-ghost btn-sm" data-action="edit-diff" data-ei="${ei}">Diff</button>
+                <button class="btn btn-primary btn-sm" data-action="edit-apply" data-ei="${ei}">Применить</button>
+                <button class="btn btn-ghost btn-sm" data-action="edit-reject" data-ei="${ei}">Отбросить</button>`;
+        }
+        const stats = this._diffStats(e.old_content || '', e.new_content || '');
+        return `
+        <div class="task-case-edit">
+            <div class="task-case-edit-info">
+                <code class="ai-edit-path">${this._esc(e.path || '')}</code>
+                <span class="ai-edit-stats">
+                    <span class="ai-edit-plus">+${stats.added}</span>
+                    <span class="ai-edit-minus">-${stats.removed}</span>
+                </span>
+            </div>
+            <div class="task-case-edit-actions">${actions}</div>
+        </div>`;
+    },
+
+    _diffStats(a, b) {
+        const al = a.split('\n');
+        const bl = b.split('\n');
+        const aSet = new Set(al);
+        const bSet = new Set(bl);
+        let added = 0, removed = 0;
+        for (const l of bl) if (!aSet.has(l)) added++;
+        for (const l of al) if (!bSet.has(l)) removed++;
+        return { added, removed };
+    },
+
+    _renderMd(text) {
+        // Простой markdown — переиспользуем AiChat если он есть
+        if (typeof AiChat !== 'undefined' && AiChat.renderMarkdown) {
+            return AiChat.renderMarkdown(text || '');
+        }
+        return this._esc(text || '').replace(/\n/g, '<br>');
+    },
+
+    _bindCases(t) {
+        const root = document.querySelector('.task-cases');
+        if (!root) return;
+        // Раскрытие/сворачивание
+        root.querySelectorAll('.task-case-header').forEach(h => {
+            h.addEventListener('click', (e) => {
+                if (e.target.closest('button, select, textarea, input')) return;
+                const body = h.parentElement.querySelector('.task-case-body');
+                if (body) body.classList.toggle('hidden');
+                const arrow = h.querySelector('.task-case-arrow');
+                if (arrow) arrow.textContent = body?.classList.contains('hidden') ? '▾' : '▴';
+            });
+        });
+
+        root.querySelectorAll('.task-case').forEach(caseEl => {
+            const cid = caseEl.dataset.cid;
+            const c = (t.cases || []).find(x => x.id === cid);
+            if (!c) return;
+
+            caseEl.querySelector('[data-action="status"]')?.addEventListener('change', async (e) => {
+                try { await TasksStore.updateCase(t.id, cid, { status: e.target.value }); }
+                catch (err) { app.toast(err.message, 'error'); }
+            });
+            caseEl.querySelector('[data-action="priority"]')?.addEventListener('change', async (e) => {
+                try { await TasksStore.updateCase(t.id, cid, { priority: e.target.value }); }
+                catch (err) { app.toast(err.message, 'error'); }
+            });
+            caseEl.querySelector('[data-action="save-desc"]')?.addEventListener('click', async () => {
+                const ta = caseEl.querySelector('[data-action="desc"]');
+                try {
+                    await TasksStore.updateCase(t.id, cid, { description: ta.value });
+                    app.toast('Сохранено', 'info');
+                } catch (err) { app.toast(err.message, 'error'); }
+            });
+            caseEl.querySelector('[data-action="delete"]')?.addEventListener('click', async () => {
+                if (!confirm(`Удалить кейс "${c.title}"?`)) return;
+                try { await TasksStore.deleteCase(t.id, cid); }
+                catch (err) { app.toast(err.message, 'error'); }
+            });
+
+            // Edits
+            caseEl.querySelectorAll('[data-action="edit-diff"]').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const ei = parseInt(btn.dataset.ei, 10);
+                    const edit = (c.proposed_edits || [])[ei];
+                    if (edit && typeof AiDiffModal !== 'undefined') {
+                        AiDiffModal.show(edit);
+                    }
+                });
+            });
+            caseEl.querySelectorAll('[data-action="edit-apply"]').forEach(btn => {
+                btn.addEventListener('click', async () => {
+                    const ei = parseInt(btn.dataset.ei, 10);
+                    const edit = (c.proposed_edits || [])[ei];
+                    if (!edit) return;
+                    try {
+                        // Применяем через тот же endpoint что и AI-правки
+                        const res = await API.post('/api/claude/apply_edits', {
+                            edits: [{ file_id: edit.file_id, new_content: edit.new_content }],
+                        });
+                        if (res.applied?.length) {
+                            await TasksStore.setCaseEditStatus(t.id, cid, ei, 'applied');
+                            app.toast('Применено', 'success');
+                        } else if (res.errors?.length) {
+                            await TasksStore.setCaseEditStatus(t.id, cid, ei, 'failed');
+                            app.toast(res.errors[0].error, 'error');
+                        }
+                    } catch (err) { app.toast(err.message, 'error'); }
+                });
+            });
+            caseEl.querySelectorAll('[data-action="edit-reject"]').forEach(btn => {
+                btn.addEventListener('click', async () => {
+                    const ei = parseInt(btn.dataset.ei, 10);
+                    try { await TasksStore.setCaseEditStatus(t.id, cid, ei, 'rejected'); }
+                    catch (err) { app.toast(err.message, 'error'); }
+                });
+            });
+        });
+
+        document.getElementById('task-case-add')?.addEventListener('click', () => {
+            const title = prompt('Заголовок кейса:');
+            if (!title || !title.trim()) return;
+            TasksStore.addCase(t.id, { title: title.trim() }).catch(e => app.toast(e.message, 'error'));
+        });
     },
 
     _bindDetail(t) {

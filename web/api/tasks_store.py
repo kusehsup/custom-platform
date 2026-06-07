@@ -43,6 +43,7 @@ _LOCK = Lock()
 
 VALID_STATUS = {'open', 'in_progress', 'done', 'blocked'}
 VALID_PRIORITY = {'low', 'medium', 'high'}
+VALID_CASE_STATUS = {'open', 'in_progress', 'done', 'blocked'}
 
 
 def _now() -> str:
@@ -253,3 +254,131 @@ def append_ai_log(login: str, task_id: str, kind: str, summary: str,
             task['ai_log'] = task['ai_log'][-100:]
         task['updated_at'] = _now()
         _write(data)
+
+
+# ── Кейсы внутри задачи ───────────────────────────────────────────
+
+def _make_case(title: str, description: str = '', priority: str = 'medium',
+                attached_files: Optional[list] = None) -> dict:
+    now = _now()
+    return {
+        'id': uuid.uuid4().hex[:12],
+        'title': (title or '').strip()[:200] or 'Без названия',
+        'description': description or '',
+        'status': 'open',
+        'priority': priority if priority in VALID_PRIORITY else 'medium',
+        'attached_files': list(attached_files or []),
+        # AI-поля заполняются когда AI обрабатывает кейс
+        'ai_analysis': '',
+        'ai_proposal': '',
+        'proposed_edits': [],   # [{file_id, path, old_content, new_content, status}]
+        'created_at': now,
+        'updated_at': now,
+    }
+
+
+def add_case(login: str, task_id: str, title: str, description: str = '',
+              priority: str = 'medium',
+              attached_files: Optional[list] = None) -> dict:
+    """Создаёт новый кейс внутри задачи. Возвращает обновлённую задачу."""
+    with _LOCK:
+        data = _read()
+        bucket = _user_bucket(data, login)
+        task = bucket['tasks'].get(task_id)
+        if not task:
+            raise KeyError('Задача не найдена')
+        case = _make_case(title, description, priority, attached_files)
+        task.setdefault('cases', []).append(case)
+        task['updated_at'] = _now()
+        _write(data)
+        return task
+
+
+def update_case(login: str, task_id: str, case_id: str, **fields) -> dict:
+    with _LOCK:
+        data = _read()
+        bucket = _user_bucket(data, login)
+        task = bucket['tasks'].get(task_id)
+        if not task:
+            raise KeyError('Задача не найдена')
+        cases = task.get('cases') or []
+        for c in cases:
+            if c.get('id') != case_id:
+                continue
+            for k, v in fields.items():
+                if k == 'status':
+                    if v in VALID_CASE_STATUS:
+                        c['status'] = v
+                elif k == 'priority':
+                    if v in VALID_PRIORITY:
+                        c['priority'] = v
+                elif k == 'title':
+                    if isinstance(v, str) and v.strip():
+                        c['title'] = v.strip()[:200]
+                elif k in ('description', 'ai_analysis', 'ai_proposal'):
+                    if isinstance(v, str):
+                        c[k] = v
+                elif k == 'attached_files':
+                    if isinstance(v, list):
+                        c['attached_files'] = [str(x) for x in v]
+                elif k == 'proposed_edits':
+                    if isinstance(v, list):
+                        c['proposed_edits'] = v
+            c['updated_at'] = _now()
+            task['updated_at'] = _now()
+            _write(data)
+            return task
+        raise KeyError('Кейс не найден')
+
+
+def delete_case(login: str, task_id: str, case_id: str) -> dict:
+    with _LOCK:
+        data = _read()
+        bucket = _user_bucket(data, login)
+        task = bucket['tasks'].get(task_id)
+        if not task:
+            raise KeyError('Задача не найдена')
+        cases = task.get('cases') or []
+        new = [c for c in cases if c.get('id') != case_id]
+        if len(new) == len(cases):
+            raise KeyError('Кейс не найден')
+        task['cases'] = new
+        task['updated_at'] = _now()
+        _write(data)
+        return task
+
+
+def update_case_edit_status(login: str, task_id: str, case_id: str,
+                             edit_index: int, status: str) -> Optional[dict]:
+    """Меняет статус одного proposed_edit (applied/rejected)."""
+    with _LOCK:
+        data = _read()
+        bucket = _user_bucket(data, login)
+        task = bucket['tasks'].get(task_id)
+        if not task:
+            return None
+        for c in (task.get('cases') or []):
+            if c.get('id') != case_id:
+                continue
+            edits = c.get('proposed_edits') or []
+            if edit_index < 0 or edit_index >= len(edits):
+                return None
+            edits[edit_index]['status'] = status
+            c['updated_at'] = _now()
+            task['updated_at'] = _now()
+            _write(data)
+            return task
+        return None
+
+
+def find_task_by_title(login: str, title: str) -> Optional[dict]:
+    """Ищет задачу по точному совпадению заголовка (case-insensitive)."""
+    title_low = (title or '').strip().lower()
+    if not title_low:
+        return None
+    data = _read()
+    bucket = _user_bucket(data, login)
+    for t in bucket['tasks'].values():
+        if (t.get('title') or '').strip().lower() == title_low:
+            return t
+    return None
