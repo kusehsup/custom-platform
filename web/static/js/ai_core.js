@@ -62,7 +62,21 @@ const AiChat = {
     /** Вызывается виджетом/страницей при открытии — гарантированно подтягивает треды. */
     async ensureThreadsLoaded() {
         await this.loadThreads();
-        await this.loadThreadMessages();
+        // Если идёт стрим — НЕ перезагружаем messages (затрём активный ответ).
+        // Также не перезагружаем если состояние уже инициализировано — UI
+        // должен использовать AiChat.state.messages как single source of truth.
+        if (this.state.streaming) {
+            this._emitAll();
+            return;
+        }
+        // Первая загрузка — подтягиваем серверную копию
+        if (!this._messagesLoaded) {
+            await this.loadThreadMessages();
+            this._messagesLoaded = true;
+        } else {
+            // Уже загружали — просто отрисовываем актуальный state
+            this._emitAll();
+        }
     },
 
     registerView(view) {
@@ -95,6 +109,9 @@ const AiChat = {
     },
 
     async loadThreadMessages(threadId = null) {
+        // Защита: если стрим активен — не трогаем messages, иначе теряется
+        // активный ответ ассистента (он живёт только локально до result).
+        if (this.state.streaming) return;
         const tid = threadId || this.state.currentThread || 'main';
         try {
             const res = await API.get(`/api/claude/threads/${encodeURIComponent(tid)}`);
@@ -108,6 +125,7 @@ const AiChat = {
                 }
             }
             this.state.messages = msgs;
+            this._messagesLoaded = true;
             this._emitAll();
         } catch {}
     },
@@ -354,6 +372,10 @@ const AiChat = {
             this._emitAll();
             // Подтягиваем список тредов чтобы обновить message_count/updated_at
             this.loadThreads();
+            // Подтягиваем серверную копию messages — там уже правильно
+            // сохранён последний ответ с edits/actions. Это безопасно сейчас:
+            // streaming уже false.
+            this.loadThreadMessages();
         }
     },
 
