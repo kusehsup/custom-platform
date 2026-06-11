@@ -2139,6 +2139,21 @@ mark.palette-hl { background: rgba(234,179,8,0.15); color: var(--yellow); border
 }
 .extcmd-rec-sql.hidden { display: none; }
 
+/* Шаблон в сайдбаре */
+.extcmd-item-tpl {
+    border-left: 2px solid var(--accent, var(--yellow));
+}
+.extcmd-tpl-del {
+    background: none;
+    border: none;
+    color: var(--text-3);
+    cursor: pointer;
+    font-size: 11px;
+    padding: 0 4px;
+    margin-left: auto;
+}
+.extcmd-tpl-del:hover { color: var(--red); }
+
 /* mobile */
 @media (max-width: 980px) {
     .extcmd-layout { grid-template-columns: 1fr; grid-template-rows: 220px 1fr; }
