@@ -2123,6 +2123,21 @@ mark.palette-hl { background: rgba(234,179,8,0.15); color: var(--yellow); border
     line-height: 1.4;
     word-break: break-word;
 }
+.extcmd-rec-sql {
+    margin: 6px 0 0 0;
+    padding: 6px 8px;
+    font-size: 11px;
+    color: var(--text-2);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-family: var(--mono);
+    line-height: 1.45;
+    white-space: pre-wrap;
+    word-break: break-all;
+    user-select: all;
+}
+.extcmd-rec-sql.hidden { display: none; }
 
 /* mobile */
 @media (max-width: 980px) {

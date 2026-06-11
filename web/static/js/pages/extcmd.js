@@ -443,6 +443,7 @@ const ExtCmdPage = {
             const responseHtml = it.response
                 ? `<div class="extcmd-rec-response">${this._esc(it.response)}</div>`
                 : '';
+            const sql = this._buildInsertSql(it);
             return `
             <div class="extcmd-rec" data-id="${it.id}">
                 <div class="extcmd-rec-row">
@@ -450,9 +451,12 @@ const ExtCmdPage = {
                     <span class="extcmd-rec-name">${this._esc(name)}</span>
                     <span class="extcmd-rec-type">${isWait ? 'WAIT' : 'EXEC'}</span>
                     <span class="extcmd-rec-state ${stateCls}">${this._esc(it.state_name || String(it.state))}</span>
+                    <button class="btn btn-ghost btn-sm extcmd-rec-sql-toggle" data-id="${it.id}" title="Показать SQL">SQL</button>
+                    <button class="btn btn-ghost btn-sm extcmd-rec-sql-copy" data-id="${it.id}" title="Скопировать INSERT">⧉</button>
                     <button class="btn btn-ghost btn-sm extcmd-rec-del" data-id="${it.id}" title="Удалить запись">✕</button>
                 </div>
                 ${responseHtml}
+                <pre class="extcmd-rec-sql hidden" data-sql-for="${it.id}">${this._esc(sql)}</pre>
             </div>`;
         }).join('');
 
@@ -468,6 +472,58 @@ const ExtCmdPage = {
                 }
             }),
         );
+
+        wrap.querySelectorAll('.extcmd-rec-sql-toggle').forEach((b) =>
+            b.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const id = b.dataset.id;
+                const pre = wrap.querySelector(`pre[data-sql-for="${id}"]`);
+                if (pre) pre.classList.toggle('hidden');
+            }),
+        );
+
+        wrap.querySelectorAll('.extcmd-rec-sql-copy').forEach((b) =>
+            b.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                const id = b.dataset.id;
+                const pre = wrap.querySelector(`pre[data-sql-for="${id}"]`);
+                if (!pre) return;
+                try {
+                    await navigator.clipboard.writeText(pre.textContent);
+                    app.toast('SQL скопирован', 'success');
+                } catch {
+                    app.toast('Не удалось скопировать', 'error');
+                }
+            }),
+        );
+    },
+
+    // Построить INSERT для записи журнала — чтобы можно было скопировать
+    // и выполнить на проде через любой MySQL-клиент.
+    _buildInsertSql(it) {
+        const cmdType = it.command_type === 2 ? 'WAIT_RESPONSE' : (it.command_type === 1 ? 'EXECUTE' : (it.command_type === 3 ? 'PROCESS' : 'EXECUTE'));
+        const cols = ['command', 'command_type'];
+        const vals = [String(it.command), this._sqlStr(cmdType)];
+        // initial state для WAIT_RESPONSE — иначе сервер не подхватит
+        if (it.command_type === 2) {
+            cols.push('state');
+            vals.push(this._sqlStr('WAIT_RESPONSE'));
+        }
+        for (const k of ['data_1', 'data_2', 'data_3', 'data_4']) {
+            if (it[k] != null) {
+                cols.push(k);
+                vals.push(String(it[k]));
+            }
+        }
+        if (it.data_string_1) {
+            cols.push('data_string_1');
+            vals.push(this._sqlStr(it.data_string_1));
+        }
+        return `INSERT INTO \`external_commands\` (\`${cols.join('`, `')}\`)\nVALUES (${vals.join(', ')});`;
+    },
+
+    _sqlStr(s) {
+        return `'${String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
     },
 
     _stateClass(state) {
