@@ -1,6 +1,5 @@
 import asyncio
 import socket
-import threading
 from typing import Any
 
 import pymysql
@@ -9,11 +8,6 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from .auth import get_current_user
-
-# Глобальный лок для подмены socket.create_connection — иначе при параллельных
-# запросах из разных потоков подмена перезатирается, и pymysql получает
-# чужой сокет (→ "Packet sequence wrong" / "UNEXPECTED_EOF").
-_CONNECT_LOCK = threading.Lock()
 
 router = APIRouter(prefix='/api/db', tags=['db'])
 
@@ -59,31 +53,34 @@ def _socks5_connect_sync(proxy_host: str, proxy_port: int, target_host: str, tar
 
 
 def _db_connect_sync() -> pymysql.Connection:
-    # Подмена socket.create_connection — глобальная, поэтому держим её под
-    # локом и реконнект SOCKS5 делаем тут же. Между потоками шаги
-    # "открыть SOCKS5 → подменить create_connection → pymysql.connect →
-    # вернуть подмену" должны быть атомарны.
-    with _CONNECT_LOCK:
-        raw_sock = _socks5_connect_sync(PROXY_HOST, PROXY_PORT, DB_HOST, DB_PORT)
-        original_create_connection = socket.create_connection
+    # Открываем SOCKS5-туннель сами и передаём готовый сокет в pymysql
+    # через Connection.connect(sock=...). Это thread-safe — никаких
+    # глобальных подмен socket.create_connection.
+    raw_sock = _socks5_connect_sync(PROXY_HOST, PROXY_PORT, DB_HOST, DB_PORT)
+    raw_sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+    raw_sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+    raw_sock.settimeout(None)
 
-        def _patched_create_connection(*args, **kwargs):
-            return raw_sock
-
-        socket.create_connection = _patched_create_connection
+    conn = pymysql.Connection(
+        host=DB_HOST,
+        port=DB_PORT,
+        user=DB_USER,
+        password=DB_PASS,
+        database=DB_NAME,
+        charset='utf8mb4',
+        autocommit=True,
+        connect_timeout=10,
+        defer_connect=True,
+    )
+    try:
+        conn.connect(sock=raw_sock)
+    except Exception:
         try:
-            return pymysql.connect(
-                host=DB_HOST,
-                port=DB_PORT,
-                user=DB_USER,
-                password=DB_PASS,
-                database=DB_NAME,
-                charset='utf8mb4',
-                autocommit=True,
-                connect_timeout=10,
-            )
-        finally:
-            socket.create_connection = original_create_connection
+            raw_sock.close()
+        except Exception:
+            pass
+        raise
+    return conn
 
 
 
