@@ -71,13 +71,13 @@ class CommandStatus(BaseModel):
 # ── Helpers ───────────────────────────────────────────────────────────
 
 def _row_to_status(row: dict) -> CommandStatus:
-    state = int(row.get('state') or 0)
+    state_code, state_name = catalog.parse_state(row.get('state'))
     return CommandStatus(
         id=int(row['id']),
         command=int(row.get('command') or 0),
-        command_type=int(row.get('command_type') or 0),
-        state=state,
-        state_name=catalog.STATE_NAMES.get(state, str(state)),
+        command_type=catalog.parse_command_type(row.get('command_type')),
+        state=state_code,
+        state_name=state_name,
         response=row.get('response') or None,
         data_1=row.get('data_1'),
         data_2=row.get('data_2'),
@@ -149,9 +149,11 @@ async def send_command(body: SendCommandRequest,
                     raise HTTPException(status_code=400, detail=f'Не заполнено: {field["label"]}')
 
     # Стартовое состояние:
-    #   WAIT_RESPONSE → state = 1 (WAIT) чтобы сервер увидел в SELECT
-    #   EXECUTE       → state = 0 (сервер не смотрит на state у EXECUTE)
-    initial_state = 1 if body.command_type == COMMAND_TYPE_WAIT_RESPONSE else 0
+    #   WAIT_RESPONSE → 'WAIT_RESPONSE' чтобы сервер увидел в SELECT
+    #   EXECUTE       → '' (сервер не смотрит на state у EXECUTE)
+    command_type_name = catalog.COMMAND_TYPE_NAMES.get(int(body.command_type), 'EXECUTE')
+    initial_state_name = 'WAIT_RESPONSE' if body.command_type == COMMAND_TYPE_WAIT_RESPONSE else ''
+    initial_state_code = 1 if body.command_type == COMMAND_TYPE_WAIT_RESPONSE else 0
 
     def _run() -> int:
         conn = _db_connect_sync()
@@ -167,8 +169,8 @@ async def send_command(body: SendCommandRequest,
                     """,
                     (
                         int(body.command),
-                        int(body.command_type),
-                        initial_state,
+                        command_type_name,
+                        initial_state_name,
                         data_1, data_2, data_3, data_4,
                         data_string_1 or '',
                     ),
@@ -187,8 +189,8 @@ async def send_command(body: SendCommandRequest,
         id=new_id,
         command=int(body.command),
         command_type=int(body.command_type),
-        state=initial_state,
-        state_name=catalog.STATE_NAMES.get(initial_state, str(initial_state)),
+        state=initial_state_code,
+        state_name=initial_state_name or 'EXECUTE',
     )
 
 
@@ -203,7 +205,7 @@ async def get_recent(limit: int = 50, login: str = Depends(get_current_user)):
             with conn.cursor(pymysql.cursors.DictCursor) as cur:
                 cur.execute(
                     """
-                    SELECT `id`, `command`, `command_type` + 0 AS `command_type`,
+                    SELECT `id`, `command`, `command_type`,
                            `state`, `response`,
                            `data_1`, `data_2`, `data_3`, `data_4`, `data_string_1`
                       FROM `external_commands`
@@ -234,7 +236,7 @@ async def get_status(cmd_id: int, login: str = Depends(get_current_user)):
             with conn.cursor(pymysql.cursors.DictCursor) as cur:
                 cur.execute(
                     """
-                    SELECT `id`, `command`, `command_type` + 0 AS `command_type`,
+                    SELECT `id`, `command`, `command_type`,
                            `state`, `response`,
                            `data_1`, `data_2`, `data_3`, `data_4`, `data_string_1`
                       FROM `external_commands`

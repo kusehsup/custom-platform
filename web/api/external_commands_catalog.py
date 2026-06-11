@@ -919,3 +919,40 @@ STATE_NAMES = {
     5: 'NOT_FOUND',
     6: 'SERVER_ERROR',
 }
+
+# Колонки `state` и `command_type` в БД — MySQL ENUM со строковыми значениями.
+# Сервер на Pawn пишет туда строки, MySQL принимает и числа, но при чтении
+# DictCursor возвращает уже строку.
+STATE_CODE_BY_NAME = {name: code for code, name in STATE_NAMES.items()}
+
+COMMAND_TYPE_NAMES = {
+    1: 'EXECUTE',
+    2: 'WAIT_RESPONSE',
+    3: 'PROCESS',
+}
+COMMAND_TYPE_CODE_BY_NAME = {name: code for code, name in COMMAND_TYPE_NAMES.items()}
+
+
+def parse_state(value) -> tuple[int, str]:
+    """Возвращает (code, name) из произвольного значения колонки state."""
+    if value is None or value == '':
+        return 0, ''
+    if isinstance(value, int):
+        return value, STATE_NAMES.get(value, str(value))
+    s = str(value)
+    if s.isdigit():
+        code = int(s)
+        return code, STATE_NAMES.get(code, s)
+    return STATE_CODE_BY_NAME.get(s, 0), s
+
+
+def parse_command_type(value) -> int:
+    """Нормализует command_type к int."""
+    if value is None or value == '':
+        return 0
+    if isinstance(value, int):
+        return value
+    s = str(value)
+    if s.isdigit():
+        return int(s)
+    return COMMAND_TYPE_CODE_BY_NAME.get(s, 0)
