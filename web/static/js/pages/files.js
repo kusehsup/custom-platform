@@ -112,6 +112,22 @@ app.register('files', {
         });
         document.getElementById('btn-del-access').addEventListener('click', () => this._deleteAccess());
         document.getElementById('btn-del-block').addEventListener('click',  () => this._deleteCurrentBlock());
+
+        // Alt+←/→ — прокрутка вкладок частей файла
+        if (!this._partTabsKeyboardBound) {
+            document.addEventListener('keydown', (e) => {
+                if (!this._partTabsBar || !document.body.contains(this._partTabsBar)) return;
+                if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+                if (e.key === 'ArrowLeft') {
+                    e.preventDefault();
+                    this._partTabsBar.scrollBy({ left: -200, behavior: 'smooth' });
+                } else if (e.key === 'ArrowRight') {
+                    e.preventDefault();
+                    this._partTabsBar.scrollBy({ left: 200, behavior: 'smooth' });
+                }
+            });
+            this._partTabsKeyboardBound = true;
+        }
     },
 
     _switchTab(tab) {
@@ -284,8 +300,25 @@ app.register('files', {
     },
 
     _renderPartTabs() {
-        document.getElementById('part-tabs')?.remove();
+        document.getElementById('part-tabs-wrap')?.remove();
         if (this._parts.length <= 1) return;
+
+        // Обёртка: стрелка влево + скроллер с вкладками + стрелка вправо
+        const wrap = document.createElement('div');
+        wrap.id = 'part-tabs-wrap';
+        wrap.className = 'part-tabs-wrap';
+
+        const arrowL = document.createElement('button');
+        arrowL.type = 'button';
+        arrowL.className = 'part-tabs-arrow part-tabs-arrow-left';
+        arrowL.title = 'Прокрутить влево (Alt+←)';
+        arrowL.innerHTML = '‹';
+
+        const arrowR = document.createElement('button');
+        arrowR.type = 'button';
+        arrowR.className = 'part-tabs-arrow part-tabs-arrow-right';
+        arrowR.title = 'Прокрутить вправо (Alt+→)';
+        arrowR.innerHTML = '›';
 
         const tabBar = document.createElement('div');
         tabBar.id = 'part-tabs';
@@ -295,6 +328,7 @@ app.register('files', {
             const btn = document.createElement('div');
             btn.className = 'ptab' + (i === this._activePartIdx ? ' active' : '');
             btn.title = `Строка ${part.line}: ${part.content?.split('\n')[0]?.trim() || ''}`;
+            btn.dataset.idx = String(i);
 
             const lineNum = document.createElement('span');
             lineNum.className = 'ptab-line';
@@ -318,13 +352,94 @@ app.register('files', {
             tabBar.appendChild(btn);
         });
 
+        wrap.appendChild(arrowL);
+        wrap.appendChild(tabBar);
+        wrap.appendChild(arrowR);
+
+        // Колесо мыши крутит горизонтально по полосе вкладок
+        tabBar.addEventListener('wheel', (e) => {
+            // Если уже идёт горизонтальный скролл (трекпад / shift+wheel) — не мешаем
+            if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+                e.preventDefault();
+                tabBar.scrollBy({ left: e.deltaY, behavior: 'auto' });
+            }
+        }, { passive: false });
+
+        // Шаг прокрутки — около ширины 2 вкладок
+        const scrollStep = () => Math.max(160, Math.floor(tabBar.clientWidth * 0.6));
+
+        const updateArrows = () => {
+            const maxScroll = tabBar.scrollWidth - tabBar.clientWidth;
+            const overflows = maxScroll > 1;
+            wrap.classList.toggle('part-tabs-overflow', overflows);
+            if (!overflows) {
+                arrowL.classList.add('hidden');
+                arrowR.classList.add('hidden');
+                wrap.classList.remove('part-tabs-fade-left', 'part-tabs-fade-right');
+                return;
+            }
+            arrowL.classList.remove('hidden');
+            arrowR.classList.remove('hidden');
+            const sl = tabBar.scrollLeft;
+            arrowL.disabled = sl <= 0;
+            arrowR.disabled = sl >= maxScroll - 1;
+            wrap.classList.toggle('part-tabs-fade-left', sl > 0);
+            wrap.classList.toggle('part-tabs-fade-right', sl < maxScroll - 1);
+        };
+
+        // Click — обычное нажатие, hold — непрерывная прокрутка
+        const attachScrollHold = (btn, dir) => {
+            let timer = null;
+            const stop = () => {
+                if (timer) { clearInterval(timer); timer = null; }
+            };
+            btn.addEventListener('click', () => {
+                tabBar.scrollBy({ left: dir * scrollStep(), behavior: 'smooth' });
+            });
+            btn.addEventListener('mousedown', () => {
+                stop();
+                timer = setInterval(() => {
+                    tabBar.scrollBy({ left: dir * 40, behavior: 'auto' });
+                }, 40);
+            });
+            ['mouseup', 'mouseleave', 'blur'].forEach((ev) => btn.addEventListener(ev, stop));
+        };
+        attachScrollHold(arrowL, -1);
+        attachScrollHold(arrowR, +1);
+
+        tabBar.addEventListener('scroll', updateArrows, { passive: true });
+
         // Вставляем между topbar/statusbar и editor-area как горизонтальную полосу сверху
-        const area   = document.querySelector('.editor-area');
-        const sb     = document.getElementById('editor-statusbar');
+        const area = document.querySelector('.editor-area');
         if (area) {
             area.style.display = 'flex';
             area.style.flexDirection = 'column';
-            area.insertBefore(tabBar, area.firstChild);
+            area.insertBefore(wrap, area.firstChild);
+        }
+
+        // После вставки: подсчитать оверфлоу и при необходимости подскроллить к активной вкладке
+        requestAnimationFrame(() => {
+            updateArrows();
+            const activeBtn = tabBar.querySelector(`.ptab[data-idx="${this._activePartIdx}"]`);
+            if (activeBtn) {
+                const r = activeBtn.getBoundingClientRect();
+                const br = tabBar.getBoundingClientRect();
+                if (r.left < br.left || r.right > br.right) {
+                    activeBtn.scrollIntoView({ behavior: 'auto', inline: 'center', block: 'nearest' });
+                    updateArrows();
+                }
+            }
+        });
+
+        // Запоминаем ссылки чтобы реагировать на resize
+        this._partTabsWrap = wrap;
+        this._partTabsBar = tabBar;
+        this._partTabsUpdateArrows = updateArrows;
+        if (!this._partTabsResizeBound) {
+            window.addEventListener('resize', () => {
+                if (this._partTabsUpdateArrows) this._partTabsUpdateArrows();
+            });
+            this._partTabsResizeBound = true;
         }
     },
 
