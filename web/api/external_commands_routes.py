@@ -112,6 +112,7 @@ async def get_catalog(login: str = Depends(get_current_user)):
             {'value': COMMAND_TYPE_EXECUTE,        'label': 'EXECUTE (без ответа)'},
             {'value': COMMAND_TYPE_WAIT_RESPONSE,  'label': 'WAIT_RESPONSE (с ответом)'},
         ],
+        'reward_types': catalog.REWARD_TYPES,
     }
 
 

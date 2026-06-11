@@ -4,12 +4,13 @@
 // external_commands Pawn-сервера и просмотр их статусов.
 
 const ExtCmdPage = {
-    _catalog: null,             // {commands, state_names, command_types}
+    _catalog: null,             // {commands, state_names, command_types, reward_types}
     _filter: '',
     _selectedId: null,          // id команды из каталога
     _selected: null,            // объект команды из каталога
     _pendingIds: new Set(),     // id записей, для которых идёт WAIT-опрос
     _pollTimers: new Map(),     // recordId -> timeoutId
+    _rewards: [],               // состояние reward_builder для текущей команды
 
     abort() {
         this._pollTimers.forEach((tid) => clearTimeout(tid));
@@ -118,6 +119,7 @@ const ExtCmdPage = {
     _selectCommand(id) {
         this._selectedId = id;
         this._selected = this._catalog.commands.find((c) => c.id === id) || null;
+        this._rewards = [];
         this._renderList();
         this._renderForm();
     },
@@ -170,6 +172,13 @@ const ExtCmdPage = {
         </div>`;
 
         document.getElementById('extcmd-send').addEventListener('click', () => this._submit());
+
+        // Монтаж reward_builder (после установки innerHTML)
+        for (const f of fields) {
+            if (f.type !== 'reward_builder') continue;
+            const node = document.getElementById(`extcmd-f-${f.key}`);
+            if (node) this._mountRewardBuilder(node, f.key);
+        }
     },
 
     _renderField(field) {
@@ -201,6 +210,8 @@ const ExtCmdPage = {
         } else if (field.type === 'string') {
             const maxlen = field.maxlen ? ` maxlength="${field.maxlen}"` : '';
             inputHtml = `<input type="text" class="extcmd-input" ${idAttr} ${dataAttr}${maxlen} />`;
+        } else if (field.type === 'reward_builder') {
+            inputHtml = `<div class="extcmd-rewards" ${idAttr} ${dataAttr}></div>`;
         } else {
             // int
             const min = field.min != null ? ` min="${field.min}"` : '';
@@ -212,6 +223,104 @@ const ExtCmdPage = {
         return `<div class="extcmd-field-row">${labelHtml}${inputHtml}${hintHtml}</div>`;
     },
 
+    // ── reward_builder ───────────────────────────────────────────
+    // Динамический список наград. Каждая запись: {type, index, amount, extra, extra_str, extra_two}.
+    // Поля кроме `type` рендерятся по спеке reward_types[type].
+
+    _rewardSpec(typeValue) {
+        return (this._catalog?.reward_types || []).find((t) => t.value === typeValue) || null;
+    },
+
+    _mountRewardBuilder(container, fieldKey) {
+        const types = this._catalog?.reward_types || [];
+        if (!types.length) {
+            container.innerHTML = '<div class="extcmd-error">reward_types отсутствуют в каталоге</div>';
+            return;
+        }
+        if (this._rewards.length === 0) {
+            this._rewards.push({type: types[0].value});
+        }
+        const render = () => {
+            const rows = this._rewards.map((rw, i) => {
+                const spec = this._rewardSpec(rw.type) || types[0];
+                const typeOpts = types
+                    .map((t) => `<option value="${t.value}"${t.value === rw.type ? ' selected' : ''}>${this._esc(t.label)}</option>`)
+                    .join('');
+                const subFields = [
+                    {k: 'index',     s: spec.index},
+                    {k: 'amount',    s: spec.amount},
+                    {k: 'extra',     s: spec.extra},
+                    {k: 'extra_str', s: spec.extra_str},
+                    {k: 'extra_two', s: spec.extra_two},
+                ];
+                const subHtml = subFields
+                    .filter((f) => f.s)
+                    .map((f) => `
+                        <div class="extcmd-reward-sub">
+                            <label>${this._esc(f.s.label)}</label>
+                            <input type="number" class="extcmd-input" data-rw-idx="${i}" data-rw-key="${f.k}"
+                                   value="${rw[f.k] != null ? rw[f.k] : ''}"
+                                   placeholder="${this._esc(f.s.hint || '')}" />
+                        </div>`)
+                    .join('');
+                return `
+                <div class="extcmd-reward" data-rw-row="${i}">
+                    <div class="extcmd-reward-head">
+                        <span class="extcmd-reward-num">#${i + 1}</span>
+                        <select class="extcmd-input extcmd-reward-type" data-rw-idx="${i}">${typeOpts}</select>
+                        <button class="btn btn-ghost btn-sm extcmd-reward-del" data-rw-idx="${i}" title="Убрать">✕</button>
+                    </div>
+                    ${subHtml ? `<div class="extcmd-reward-subs">${subHtml}</div>` : '<div class="extcmd-reward-subs extcmd-reward-empty">Нет дополнительных полей.</div>'}
+                </div>`;
+            }).join('');
+            container.innerHTML = `
+                ${rows}
+                <button class="btn btn-ghost btn-sm extcmd-reward-add">+ добавить награду</button>
+            `;
+            container.querySelectorAll('.extcmd-reward-type').forEach((sel) =>
+                sel.addEventListener('change', (e) => {
+                    const i = parseInt(e.target.dataset.rwIdx, 10);
+                    this._rewards[i] = {type: parseInt(e.target.value, 10)};
+                    render();
+                }),
+            );
+            container.querySelectorAll('.extcmd-reward-del').forEach((btn) =>
+                btn.addEventListener('click', () => {
+                    const i = parseInt(btn.dataset.rwIdx, 10);
+                    this._rewards.splice(i, 1);
+                    if (this._rewards.length === 0) this._rewards.push({type: types[0].value});
+                    render();
+                }),
+            );
+            container.querySelectorAll('input[data-rw-idx]').forEach((inp) =>
+                inp.addEventListener('input', (e) => {
+                    const i = parseInt(e.target.dataset.rwIdx, 10);
+                    const k = e.target.dataset.rwKey;
+                    const v = e.target.value.trim();
+                    this._rewards[i][k] = v === '' ? undefined : Number(v);
+                }),
+            );
+            container.querySelector('.extcmd-reward-add')?.addEventListener('click', () => {
+                this._rewards.push({type: types[0].value});
+                render();
+            });
+        };
+        render();
+    },
+
+    _buildRewardString(accountId) {
+        // Формат, который понимает Rewards:OnExternalGiveReward:
+        //   "<account_id>[type,index,amount,extra,extra_str,extra_two]..."
+        // Пустые числа в начале можно опустить — но pawn делает strval(""),
+        // что = 0, поэтому пишем 0 для пропущенных.
+        const parts = (this._rewards || []).map((rw) => {
+            const get = (k) => (rw[k] != null && Number.isFinite(rw[k]) ? rw[k] : 0);
+            const arr = [get('type'), get('index'), get('amount'), get('extra'), get('extra_str'), get('extra_two')];
+            return `[${arr.join(',')}]`;
+        });
+        return `"${accountId}"${parts.join('')}`;
+    },
+
     _collectPayload() {
         const cmd = this._selected;
         if (!cmd) return null;
@@ -220,7 +329,13 @@ const ExtCmdPage = {
             command_type: parseInt(document.getElementById('extcmd-type').value, 10),
         };
         const fields = cmd.fields || [];
+        // Первый проход: собрать обычные поля
+        const reservedRewardKeys = [];
         for (const f of fields) {
+            if (f.type === 'reward_builder') {
+                reservedRewardKeys.push(f);
+                continue;
+            }
             const node = document.getElementById(`extcmd-f-${f.key}`);
             if (!node) continue;
             let value;
@@ -245,6 +360,17 @@ const ExtCmdPage = {
                 }
             }
             out[f.key] = value;
+        }
+        // Второй проход: reward_builder. Требует data_1 (account_id).
+        for (const f of reservedRewardKeys) {
+            const accountId = out['data_1'];
+            if (accountId == null || !Number.isFinite(accountId)) {
+                throw new Error('Нужно заполнить SQL ID аккаунта');
+            }
+            if (!this._rewards || this._rewards.length === 0) {
+                throw new Error('Добавьте хотя бы одну награду');
+            }
+            out[f.key] = this._buildRewardString(accountId);
         }
         return out;
     },

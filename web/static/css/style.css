@@ -1990,6 +1990,63 @@ mark.palette-hl { background: rgba(234,179,8,0.15); color: var(--yellow); border
 .extcmd-form-status.ok { color: var(--green); }
 .extcmd-form-status.err { color: var(--red); }
 
+/* ── reward_builder ───────────────────────────────────────────── */
+.extcmd-rewards {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 4px;
+}
+.extcmd-reward {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 8px 10px;
+}
+.extcmd-reward-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.extcmd-reward-num {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-3);
+    min-width: 24px;
+}
+.extcmd-reward-type {
+    flex: 1;
+    min-width: 0;
+}
+.extcmd-reward-del {
+    color: var(--red);
+}
+.extcmd-reward-subs {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 6px;
+    margin-top: 8px;
+}
+.extcmd-reward-sub {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+.extcmd-reward-sub label {
+    font-size: 10.5px;
+    color: var(--text-3);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+.extcmd-reward-empty {
+    font-size: 11px;
+    color: var(--text-3);
+    padding: 4px 0 0 0;
+}
+.extcmd-reward-add {
+    align-self: flex-start;
+}
+
 .extcmd-recent-wrap {
     background: var(--surface);
     border: 1px solid var(--border);

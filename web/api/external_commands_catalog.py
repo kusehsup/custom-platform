@@ -68,6 +68,110 @@ def _enum(key: str, label: str, options: list[dict[str, Any]], *,
     }
 
 
+# ── REWARD_ITEM_TYPE_* (rewards.inc) ─────────────────────────────────
+# Для COMMAND_GIVE_PLAYER_REWARD. Каждый тип описывает:
+#   - value: значение enum'а на стороне Pawn
+#   - label: короткое имя для UI
+#   - index: смысл поля item_type (BONUS_CORE_RESPONSE_ITEM_TYPE)
+#   - amount: смысл поля item_amount (или None если не используется)
+#   - extra: смысл поля item_extra (или None)
+#   - extra_str: смысл tempory_time (часы; None если не используется)
+#   - extra_two: смысл extra_int_two (None если не используется)
+# UI рендерит только те поля, у которых описан label.
+
+REWARD_TYPES: list[dict[str, Any]] = [
+    {'value': 0,  'label': 'STAR (звезда)',
+     'index': None, 'amount': None, 'extra': None},
+    {'value': 1,  'label': 'WEAPONS (оружие)',
+     'index': {'label': 'weapon_id', 'hint': 'ID оружия'},
+     'amount': {'label': 'ammo', 'hint': 'Кол-во патронов'},
+     'extra': None},
+    {'value': 2,  'label': 'EXP (опыт)',
+     'index': {'label': 'exp', 'hint': 'Кол-во опыта'},
+     'amount': None, 'extra': None},
+    {'value': 3,  'label': 'CAR (машина)',
+     'index': {'label': 'model_id', 'hint': 'Модель транспорта'},
+     'amount': None, 'extra': None},
+    {'value': 4,  'label': 'CLOTHES (одежда)',
+     'index': {'label': 'skin_id', 'hint': 'ID скина'},
+     'amount': None, 'extra': None},
+    {'value': 5,  'label': 'MONEY (деньги)',
+     'index': {'label': 'money_amount', 'hint': 'Сумма'},
+     'amount': None, 'extra': None},
+    {'value': 6,  'label': 'ACCESORIES (аксессуары)',
+     'index': {'label': 'model_id', 'hint': 'Модель аксессуара'},
+     'amount': None, 'extra': None},
+    {'value': 7,  'label': 'VIP',
+     'index': {'label': 'vip_level', 'hint': 'Уровень VIP'},
+     'amount': {'label': 'days', 'hint': 'Дней'},
+     'extra': None},
+    {'value': 8,  'label': 'INV_ITEM (предмет инвентаря)',
+     'index': {'label': 'item_type', 'hint': 'Тип предмета'},
+     'amount': {'label': 'item_amount', 'hint': 'Кол-во'},
+     'extra': None},
+    {'value': 9,  'label': 'SKILL (навык)',
+     'index': {'label': 'skill_id', 'hint': 'ID навыка'},
+     'amount': {'label': 'level', 'hint': 'Уровень'},
+     'extra': None},
+    {'value': 10, 'label': 'DONATE (донат)',
+     'index': None,
+     'amount': {'label': 'money', 'hint': 'Сумма доната'},
+     'extra': None},
+    {'value': 11, 'label': 'BONUS_X2 (бонус-множитель)',
+     'index': {'label': 'multiplier', 'hint': 'Множитель'},
+     'amount': None,
+     'extra': {'label': 'extra_id', 'hint': 'Доп. ID'},
+     'extra_str': {'label': 'time_hours', 'hint': 'Часы'}},
+    {'value': 12, 'label': 'CASES (кейсы)',
+     'index': None, 'amount': None, 'extra': None},
+    {'value': 13, 'label': 'CASES_KEY (ключ от кейса)',
+     'index': None, 'amount': None, 'extra': None},
+    {'value': 14, 'label': 'ANIM (анимация)',
+     'index': {'label': 'anim_index', 'hint': 'Индекс анимации'},
+     'amount': None, 'extra': None},
+    {'value': 15, 'label': 'LIC_ALL (все лицензии)',
+     'index': None, 'amount': None, 'extra': None},
+    {'value': 16, 'label': 'LIC (одна лицензия)',
+     'index': {'label': 'lic_index', 'hint': 'Индекс лицензии'},
+     'amount': None, 'extra': None},
+    {'value': 17, 'label': 'MILITARY (военный)',
+     'index': None, 'amount': None, 'extra': None},
+    {'value': 18, 'label': 'TATTOO (тату)',
+     'index': None, 'amount': None, 'extra': None},
+    {'value': 19, 'label': 'LOTTERY (лотерея)',
+     'index': {'label': 'sql_id', 'hint': 'SQL ID лотереи'},
+     'amount': None, 'extra': None},
+    {'value': 20, 'label': 'BATTLE_PASS',
+     'index': None, 'amount': None, 'extra': None},
+    {'value': 22, 'label': 'JAIL_TICKET',
+     'index': {'label': 'jail_type', 'hint': '1 = demorgan, 2 = kpz/fsin'},
+     'amount': None, 'extra': None},
+    {'value': 24, 'label': 'MED_CARD (медкарта)',
+     'index': None, 'amount': None, 'extra': None},
+]
+
+
+# ── case_shop settings (case_settings.pwn) ──────────────────────────
+# Глобальные настройки магазина кейсов (data_1 = setting_id).
+CASE_SHOP_SETTINGS: list[dict[str, Any]] = [
+    {'value': 1, 'label': '1 — интервал генерации (мин)'},
+    {'value': 2, 'label': '2 — online_coef (float)'},
+    {'value': 3, 'label': '3 — gen_min'},
+    {'value': 4, 'label': '4 — gen_max'},
+    {'value': 5, 'label': '5 — лимит билетов у игрока'},
+    {'value': 6, 'label': '6 — порог активности (тикеты)'},
+    {'value': 7, 'label': '7 — тикеты за сгорание кейса'},
+    {'value': 8, 'label': '8 — минимальный уровень покупки'},
+]
+
+# Поля per-type настройки кейса (data_2 = field).
+CASE_SHOP_TYPE_FIELDS: list[dict[str, Any]] = [
+    {'value': 0, 'label': '0 — вес генерации (gen_weight)'},
+    {'value': 1, 'label': '1 — цена деньгами (money_price)'},
+    {'value': 2, 'label': '2 — цена билетами (tickets_price)'},
+]
+
+
 # ── Каталог команд ──────────────────────────────────────────────────
 # Порядок здесь — порядок отображения в UI внутри группы.
 # Если команда здесь не описана, её всё равно можно отправить через
@@ -137,11 +241,18 @@ CATALOG: list[dict[str, Any]] = [
     },
     {
         'id': 62, 'name': 'COMMAND_GIVE_PLAYER_REWARD', 'group': 'Игроки',
-        'description': 'Выдать награду игроку. data_string_1 — JSON с описанием награды (формат на стороне сервера).',
+        'description': 'Выдать одну или несколько наград игроку. Можно добавить любое количество — UI соберёт их в строку формата "<sql_id>[type,index,amount]...',
         'supports_wait_response': True,
         'fields': [
             _int('data_1', 'SQL ID аккаунта'),
-            _str('data_string_1', 'JSON награды', maxlen=512),
+            {
+                'key': 'data_string_1',
+                'label': 'Награды',
+                'type': 'reward_builder',
+                'required': True,
+                'hint': 'Добавьте одну или несколько наград. Поле "номер" зависит от типа (оружие/скин/машина/...).',
+                'maxlen': 1024,
+            },
         ],
     },
     {
@@ -597,6 +708,32 @@ CATALOG: list[dict[str, Any]] = [
         'description': 'ConfigShopSettings:Reload().',
         'supports_wait_response': True,
         'fields': [],
+    },
+    {
+        'id': 100, 'name': 'COMMAND_CASE_SHOP_SET_SETTING', 'group': 'Кейсы',
+        'description': 'Изменить глобальную настройку магазина кейсов '
+                       '(пишется в case_shop_settings, переживает рестарт).',
+        'supports_wait_response': True,
+        'fields': [
+            _enum('data_1', 'setting_id',
+                  [{'value': s['value'], 'label': s['label']} for s in CASE_SHOP_SETTINGS],
+                  hint='Какая настройка'),
+            _str('data_string_1', 'Значение',
+                 hint='Число (или float для online_coef)', maxlen=64),
+        ],
+    },
+    {
+        'id': 101, 'name': 'COMMAND_CASE_SHOP_SET_TYPE', 'group': 'Кейсы',
+        'description': 'Настройка конкретного типа кейса '
+                       '(вес/цена), пишется в case_shop_types.',
+        'supports_wait_response': True,
+        'fields': [
+            _int('data_1', 'case_type', hint='Индекс типа кейса (0..CASES_TYPE_MAX-1)'),
+            _enum('data_2', 'field',
+                  [{'value': f['value'], 'label': f['label']} for f in CASE_SHOP_TYPE_FIELDS],
+                  hint='Какое поле меняем'),
+            _int('data_3', 'value', minimum=0, hint='Новое значение (целое)'),
+        ],
     },
 
     # ── Команды / склады ───────────────────────────────────────────
