@@ -11,6 +11,7 @@ const ExtCmdPage = {
     _pendingIds: new Set(),     // id записей, для которых идёт WAIT-опрос
     _pollTimers: new Map(),     // recordId -> timeoutId
     _rewards: [],               // состояние reward_builder для текущей команды
+    _rewardAdvanced: new Set(), // индексы наград, у которых раскрыты extra-поля
     _expandedSql: new Set(),    // id записей, у которых SQL раскрыт
     _templates: null,           // массив шаблонов из localStorage
     _prefill: null,             // {fields: {key: value}, rewards: [...]} — заполнить форму при следующем _renderForm
@@ -241,6 +242,7 @@ const ExtCmdPage = {
         } else {
             this._rewards = JSON.parse(JSON.stringify(this._prefill.rewards));
         }
+        this._rewardAdvanced = new Set();
         this._renderList();
         this._renderForm();
     },
@@ -490,47 +492,72 @@ const ExtCmdPage = {
                 const typeOpts = types
                     .map((t) => `<option value="${t.value}"${t.value === rw.type ? ' selected' : ''}>${this._esc(t.label)}</option>`)
                     .join('');
+                // Generic-фолбэк: pawn читает все 6 значений из массива
+                // (BONUS_CORE_RESPONSE_*) для каждого типа награды — поэтому
+                // даём возможность заполнить любое подполе, даже если в
+                // спецификации reward_type оно не помечено. Поля без спеки
+                // прячем под "advanced toggle".
+                const FALLBACK = {
+                    index:     {label: 'item_type',     hint: 'BONUS_CORE_RESPONSE_ITEM_TYPE'},
+                    amount:    {label: 'item_amount',   hint: 'BONUS_CORE_RESPONSE_ITEM_AMOUNT'},
+                    extra:     {label: 'item_extra',   hint: 'BONUS_CORE_RESPONSE_EXTRA (int)'},
+                    extra_str: {label: 'tempory_time', hint: 'BONUS_CORE_RESPONSE_EXTRA_STR (часы)'},
+                    extra_two: {label: 'extra_int_two', hint: 'BONUS_CORE_RESPONSE_EXTRA_TWO'},
+                };
                 const subFields = [
-                    {k: 'index',     s: spec.index},
-                    {k: 'amount',    s: spec.amount},
-                    {k: 'extra',     s: spec.extra},
-                    {k: 'extra_str', s: spec.extra_str},
-                    {k: 'extra_two', s: spec.extra_two},
+                    {k: 'index',     s: spec.index,     fb: FALLBACK.index},
+                    {k: 'amount',    s: spec.amount,    fb: FALLBACK.amount},
+                    {k: 'extra',     s: spec.extra,     fb: FALLBACK.extra},
+                    {k: 'extra_str', s: spec.extra_str, fb: FALLBACK.extra_str},
+                    {k: 'extra_two', s: spec.extra_two, fb: FALLBACK.extra_two},
                 ];
-                const subHtml = subFields
-                    .filter((f) => f.s)
-                    .map((f) => {
-                        const lookup = this._lookupOptions(f.s.lookup);
-                        let inputHtml;
-                        if (lookup) {
-                            const curVal = rw[f.k] != null ? rw[f.k] : '';
-                            const known = lookup.find((o) => o.value === rw[f.k]);
-                            const display = known ? known.label : (curVal === '' ? '' : String(curVal));
-                            inputHtml = `
-                                <div class="extcmd-combo" data-rw-idx="${i}" data-rw-key="${f.k}"
-                                     data-rw-lookup-name="${this._esc(f.s.lookup)}">
-                                    <input type="text" class="extcmd-input extcmd-combo-input"
-                                           value="${this._esc(display)}"
-                                           placeholder="${this._esc(f.s.hint || 'id или название')}"
-                                           autocomplete="off" />
-                                    <button type="button" class="extcmd-combo-arrow" tabindex="-1">▾</button>
-                                    <div class="extcmd-combo-list hidden"></div>
-                                </div>
-                            `;
-                        } else {
-                            inputHtml = `
-                                <input type="number" class="extcmd-input" data-rw-idx="${i}" data-rw-key="${f.k}"
-                                       value="${rw[f.k] != null ? rw[f.k] : ''}"
-                                       placeholder="${this._esc(f.s.hint || '')}" />
-                            `;
-                        }
-                        return `
-                        <div class="extcmd-reward-sub">
-                            <label>${this._esc(f.s.label)}</label>
-                            ${inputHtml}
-                        </div>`;
-                    })
-                    .join('');
+                const showAdvanced = this._rewardAdvanced.has(i);
+
+                const renderSub = (f, isAdvanced) => {
+                    const meta = f.s || f.fb;
+                    const lookup = this._lookupOptions(meta.lookup);
+                    let inputHtml;
+                    if (lookup) {
+                        const curVal = rw[f.k] != null ? rw[f.k] : '';
+                        const known = lookup.find((o) => o.value === rw[f.k]);
+                        const display = known ? known.label : (curVal === '' ? '' : String(curVal));
+                        inputHtml = `
+                            <div class="extcmd-combo" data-rw-idx="${i}" data-rw-key="${f.k}"
+                                 data-rw-lookup-name="${this._esc(meta.lookup)}">
+                                <input type="text" class="extcmd-input extcmd-combo-input"
+                                       value="${this._esc(display)}"
+                                       placeholder="${this._esc(meta.hint || 'id или название')}"
+                                       autocomplete="off" />
+                                <button type="button" class="extcmd-combo-arrow" tabindex="-1">▾</button>
+                                <div class="extcmd-combo-list hidden"></div>
+                            </div>
+                        `;
+                    } else {
+                        inputHtml = `
+                            <input type="number" class="extcmd-input" data-rw-idx="${i}" data-rw-key="${f.k}"
+                                   value="${rw[f.k] != null ? rw[f.k] : ''}"
+                                   placeholder="${this._esc(meta.hint || '')}" />
+                        `;
+                    }
+                    return `
+                    <div class="extcmd-reward-sub${isAdvanced ? ' extcmd-reward-sub-adv' : ''}">
+                        <label>${this._esc(meta.label)}${isAdvanced ? ' <span class="extcmd-sub-adv-tag">advanced</span>' : ''}</label>
+                        ${inputHtml}
+                    </div>`;
+                };
+
+                const primarySubs = subFields.filter((f) => f.s);
+                const advancedSubs = subFields.filter((f) => !f.s);
+                const primaryHtml = primarySubs.map((f) => renderSub(f, false)).join('');
+                const advancedHtml = advancedSubs.length
+                    ? `
+                    <div class="extcmd-reward-adv-toggle" data-rw-idx="${i}">
+                        ${showAdvanced ? '▾' : '▸'} ${showAdvanced ? 'скрыть' : 'показать'} extra-поля (${advancedSubs.length})
+                    </div>
+                    ${showAdvanced ? advancedSubs.map((f) => renderSub(f, true)).join('') : ''}
+                    `
+                    : '';
+                const subHtml = primaryHtml + advancedHtml;
                 return `
                 <div class="extcmd-reward" data-rw-row="${i}">
                     <div class="extcmd-reward-head">
@@ -557,6 +584,15 @@ const ExtCmdPage = {
                     const i = parseInt(btn.dataset.rwIdx, 10);
                     this._rewards.splice(i, 1);
                     if (this._rewards.length === 0) this._rewards.push({type: types[0].value});
+                    this._rewardAdvanced = new Set();
+                    render();
+                }),
+            );
+            container.querySelectorAll('.extcmd-reward-adv-toggle').forEach((tog) =>
+                tog.addEventListener('click', () => {
+                    const i = parseInt(tog.dataset.rwIdx, 10);
+                    if (this._rewardAdvanced.has(i)) this._rewardAdvanced.delete(i);
+                    else this._rewardAdvanced.add(i);
                     render();
                 }),
             );

@@ -2046,6 +2046,30 @@ mark.palette-hl { background: rgba(234,179,8,0.15); color: var(--yellow); border
 .extcmd-reward-add {
     align-self: flex-start;
 }
+/* Advanced extra-поля внутри награды */
+.extcmd-reward-adv-toggle {
+    grid-column: 1 / -1;
+    margin-top: 6px;
+    font-size: 11px;
+    color: var(--text-3);
+    cursor: pointer;
+    user-select: none;
+    padding: 2px 0;
+}
+.extcmd-reward-adv-toggle:hover { color: var(--text-2); }
+.extcmd-reward-sub-adv label { color: var(--text-3); }
+.extcmd-sub-adv-tag {
+    display: inline-block;
+    margin-left: 6px;
+    font-size: 9px;
+    padding: 0 4px;
+    border-radius: 3px;
+    background: var(--surface);
+    color: var(--text-3);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
 /* Кастомный комбобокс для lookup-полей */
 .extcmd-combo {
     position: relative;
