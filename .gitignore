@@ -44,3 +44,6 @@ web/ai_settings.json
 
 # Память AI per-user (.md заметки)
 web/ai_memory/
+
+# Заметки пользователей (текст + публичные share-токены)
+web/notes.json

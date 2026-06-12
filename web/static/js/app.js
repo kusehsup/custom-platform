@@ -502,6 +502,7 @@ const app = {
             play:     `<svg viewBox="0 0 16 16"><polygon points="4,2 14,8 4,14"/></svg>`,
             ws:       `<svg viewBox="0 0 16 16"><path d="M2 8c0-3.3 2.7-6 6-6M14 8c0 3.3-2.7 6-6 6M5 8c0-1.7 1.3-3 3-3M11 8c0 1.7-1.3 3-3 3"/><circle cx="8" cy="8" r="1" fill="currentColor" stroke="none"/></svg>`,
             extcmd:   `<svg viewBox="0 0 16 16"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><path d="M4 6l2.2 2L4 10M8 10h4"/></svg>`,
+            notes:    `<svg viewBox="0 0 16 16"><path d="M3 2h7l3 3v9a1 1 0 01-1 1H3a1 1 0 01-1-1V3a1 1 0 011-1z"/><path d="M10 2v3h3"/><path d="M5 8h6M5 11h4"/></svg>`,
         };
 
         document.body.innerHTML = `
@@ -539,6 +540,7 @@ const app = {
                 <a data-page="todo">${ico.todo}<span class="label">TODO</span><span id="todo-badge" class="sidebar-badge hidden"></span></a>
                 <a data-page="db">${ico.db}<span class="label">База данных</span></a>
                 <a data-page="extcmd">${ico.extcmd}<span class="label">Внешние команды</span></a>
+                <a data-page="notes">${ico.notes}<span class="label">Заметки</span></a>
                 <div class="sidebar-spacer"></div>
                 <div class="sidebar-footer">
                     <a data-page="settings">${ico.settings}<span class="label">Настройки</span></a>
@@ -633,6 +635,7 @@ const app = {
         P.register({ id: 'todo',          title: 'TODO: Показать список',      icon: '✅', group: 'Прочее', run: () => this._pages['todo']?.open?.() || this.navigate('todo') });
         P.register({ id: 'db',            title: 'База данных',                icon: '🗄', group: 'Прочее', run: () => this.navigate('db') });
         P.register({ id: 'extcmd',        title: 'Внешние команды',            icon: '▸', group: 'Сервер', run: () => this.navigate('extcmd') });
+        P.register({ id: 'notes',         title: 'Заметки (markdown)',         icon: '📝', group: 'Навигация', run: () => this.navigate('notes') });
     },
 
     _applyTheme(theme) {

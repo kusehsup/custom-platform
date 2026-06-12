@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Заметка</title>
+    <meta name="theme-color" content="#0A0A0A" />
+    <meta name="color-scheme" content="dark" />
+    <link rel="icon" type="image/svg+xml" href="/static/icons/favicon.svg" />
+    <style>
+        :root {
+            --bg: #0a0a0a;
+            --surface: #141414;
+            --surface2: #1c1c1c;
+            --border: #2a2a2a;
+            --text: #e8e8e8;
+            --text-2: #b8b8b8;
+            --text-3: #707070;
+            --accent: #3b82f6;
+            --green: #22c55e;
+            --red: #ef4444;
+            --mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, monospace;
+            --font: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
+        }
+        html, body {
+            margin: 0;
+            padding: 0;
+            background: var(--bg);
+            color: var(--text);
+            font-family: var(--font);
+            line-height: 1.6;
+            -webkit-font-smoothing: antialiased;
+        }
+        .pn-wrap {
+            max-width: 760px;
+            margin: 0 auto;
+            padding: 48px 24px 96px;
+        }
+        .pn-meta {
+            color: var(--text-3);
+            font-size: 12px;
+            font-family: var(--mono);
+            margin-bottom: 6px;
+        }
+        .pn-title {
+            font-size: 32px;
+            font-weight: 700;
+            margin: 0 0 24px 0;
+            color: var(--text);
+        }
+        .pn-body { font-size: 15px; }
+        .pn-body h1, .pn-body h2, .pn-body h3, .pn-body h4 {
+            margin-top: 28px;
+            margin-bottom: 12px;
+            color: var(--text);
+        }
+        .pn-body h1 { font-size: 24px; }
+        .pn-body h2 { font-size: 20px; }
+        .pn-body h3 { font-size: 17px; }
+        .pn-body p { margin: 12px 0; color: var(--text-2); }
+        .pn-body ul, .pn-body ol { color: var(--text-2); margin: 12px 0; padding-left: 24px; }
+        .pn-body li { margin: 4px 0; }
+        .pn-body a { color: var(--accent); text-decoration: none; }
+        .pn-body a:hover { text-decoration: underline; }
+        .pn-body code {
+            background: var(--surface2);
+            color: var(--text);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: var(--mono);
+            font-size: 13px;
+        }
+        .pn-body pre {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 12px 16px;
+            overflow-x: auto;
+            margin: 16px 0;
+        }
+        .pn-body pre code {
+            background: none;
+            padding: 0;
+            font-size: 13px;
+            color: var(--text);
+        }
+        .pn-body blockquote {
+            border-left: 3px solid var(--border);
+            padding: 4px 16px;
+            color: var(--text-3);
+            margin: 16px 0;
+            font-style: italic;
+        }
+        .pn-body hr {
+            border: none;
+            border-top: 1px solid var(--border);
+            margin: 24px 0;
+        }
+        .pn-body table {
+            border-collapse: collapse;
+            margin: 16px 0;
+            width: 100%;
+            font-size: 13px;
+        }
+        .pn-body th, .pn-body td {
+            border: 1px solid var(--border);
+            padding: 6px 10px;
+            text-align: left;
+        }
+        .pn-body th { background: var(--surface); color: var(--text); }
+        .pn-body img { max-width: 100%; border-radius: 6px; }
+        .pn-body input[type="checkbox"] {
+            margin-right: 6px;
+            accent-color: var(--accent);
+        }
+
+        .pn-loading,
+        .pn-error {
+            text-align: center;
+            padding: 80px 24px;
+            color: var(--text-3);
+        }
+        .pn-error { color: var(--red); }
+        .pn-error h1 { color: var(--text); margin-bottom: 8px; }
+        .pn-footer {
+            margin-top: 48px;
+            padding-top: 16px;
+            border-top: 1px solid var(--border);
+            color: var(--text-3);
+            font-size: 11px;
+            font-family: var(--mono);
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div id="pn-root">
+        <div class="pn-loading">Загрузка…</div>
+    </div>
+
+    <script>
+    (function() {
+        const root = document.getElementById('pn-root');
+        const token = location.pathname.replace(/^\/n\//, '').replace(/\/$/, '');
+        if (!token) {
+            root.innerHTML = '<div class="pn-error"><h1>Нет токена</h1></div>';
+            return;
+        }
+
+        // ── Минимальный markdown → HTML ─────────────────────────
+        // Не используем внешние библиотеки чтобы публичная страница
+        // оставалась лёгкой. Поддерживаем самое нужное: заголовки,
+        // списки, чек-листы, ссылки, инлайн-код, кодоблоки, цитаты,
+        // hr, жирный/курсив, картинки, таблицы (1 уровень).
+        function escapeHtml(s) {
+            return String(s)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;');
+        }
+        function renderInline(s) {
+            // защищаем код от форматирования
+            const codes = [];
+            s = s.replace(/`([^`]+)`/g, (_, c) => {
+                codes.push(c);
+                return `\x00${codes.length - 1}\x00`;
+            });
+            s = escapeHtml(s);
+            // картинки
+            s = s.replace(/!\[([^\]]*)\]\(([^)]+)\)/g,
+                (_, alt, url) => `<img src="${url}" alt="${alt}" />`);
+            // ссылки
+            s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g,
+                (_, t, u) => `<a href="${u}" target="_blank" rel="noopener nofollow">${t}</a>`);
+            // bold
+            s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+            s = s.replace(/__([^_]+)__/g, '<strong>$1</strong>');
+            // italic
+            s = s.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
+            s = s.replace(/(^|[^_])_([^_\n]+)_/g, '$1<em>$2</em>');
+            // вернуть код
+            s = s.replace(/\x00(\d+)\x00/g, (_, i) =>
+                `<code>${escapeHtml(codes[+i])}</code>`);
+            return s;
+        }
+
+        function render(md) {
+            const lines = String(md || '').split('\n');
+            const out = [];
+            let i = 0;
+            const closeList = (type) => out.push(type === 'ol' ? '</ol>' : '</ul>');
+            let listType = null;
+
+            const flushList = () => {
+                if (listType) { closeList(listType); listType = null; }
+            };
+
+            while (i < lines.length) {
+                let line = lines[i];
+
+                // Код-блок ```
+                if (/^```/.test(line)) {
+                    flushList();
+                    const lang = line.replace(/^```/, '').trim();
+                    const buf = [];
+                    i++;
+                    while (i < lines.length && !/^```/.test(lines[i])) {
+                        buf.push(lines[i]);
+                        i++;
+                    }
+                    i++; // skip closing ```
+                    out.push(`<pre><code class="lang-${escapeHtml(lang)}">${escapeHtml(buf.join('\n'))}</code></pre>`);
+                    continue;
+                }
+
+                // hr
+                if (/^(---+|\*\*\*+|___+)\s*$/.test(line)) {
+                    flushList();
+                    out.push('<hr />');
+                    i++;
+                    continue;
+                }
+
+                // Заголовки
+                const h = line.match(/^(#{1,6})\s+(.*)$/);
+                if (h) {
+                    flushList();
+                    const level = h[1].length;
+                    out.push(`<h${level}>${renderInline(h[2])}</h${level}>`);
+                    i++;
+                    continue;
+                }
+
+                // Цитаты
+                if (/^>\s?/.test(line)) {
+                    flushList();
+                    const buf = [];
+                    while (i < lines.length && /^>\s?/.test(lines[i])) {
+                        buf.push(lines[i].replace(/^>\s?/, ''));
+                        i++;
+                    }
+                    out.push(`<blockquote>${renderInline(buf.join(' '))}</blockquote>`);
+                    continue;
+                }
+
+                // Списки: - / * / + или 1.
+                const ul = line.match(/^[-*+]\s+(.*)$/);
+                const ol = line.match(/^(\d+)\.\s+(.*)$/);
+                if (ul || ol) {
+                    const t = ol ? 'ol' : 'ul';
+                    if (listType !== t) {
+                        flushList();
+                        out.push(t === 'ol' ? '<ol>' : '<ul>');
+                        listType = t;
+                    }
+                    let text = ul ? ul[1] : ol[2];
+                    // чек-листы
+                    const cb = text.match(/^\[( |x|X)\]\s+(.*)$/);
+                    if (cb) {
+                        const checked = /x/i.test(cb[1]) ? ' checked' : '';
+                        text = `<input type="checkbox"${checked} disabled /> ${cb[2]}`;
+                    } else {
+                        text = renderInline(text);
+                    }
+                    out.push(`<li>${text}</li>`);
+                    i++;
+                    continue;
+                }
+
+                // Таблицы (минимум): строки начинающиеся с |
+                if (/^\|/.test(line) && i + 1 < lines.length && /^\|[\s:|-]+\|?$/.test(lines[i + 1])) {
+                    flushList();
+                    const head = line.split('|').slice(1, -1).map(c => c.trim());
+                    i += 2;
+                    const rows = [];
+                    while (i < lines.length && /^\|/.test(lines[i])) {
+                        rows.push(lines[i].split('|').slice(1, -1).map(c => c.trim()));
+                        i++;
+                    }
+                    let html = '<table><thead><tr>' +
+                        head.map(c => `<th>${renderInline(c)}</th>`).join('') +
+                        '</tr></thead><tbody>';
+                    for (const r of rows) {
+                        html += '<tr>' + r.map(c => `<td>${renderInline(c)}</td>`).join('') + '</tr>';
+                    }
+                    html += '</tbody></table>';
+                    out.push(html);
+                    continue;
+                }
+
+                // Пустая строка
+                if (line.trim() === '') {
+                    flushList();
+                    i++;
+                    continue;
+                }
+
+                // Параграф (накапливаем подряд идущие непустые строки)
+                flushList();
+                const buf = [line];
+                i++;
+                while (i < lines.length && lines[i].trim() !== ''
+                       && !/^(#{1,6}\s|>\s|[-*+]\s|\d+\.\s|```|---|\*\*\*|___|\|)/.test(lines[i])) {
+                    buf.push(lines[i]);
+                    i++;
+                }
+                out.push(`<p>${renderInline(buf.join(' '))}</p>`);
+            }
+            flushList();
+            return out.join('\n');
+        }
+
+        function formatDate(iso) {
+            if (!iso) return '';
+            try {
+                const d = new Date(iso);
+                return d.toLocaleString('ru-RU', {
+                    year: 'numeric', month: 'short', day: 'numeric',
+                    hour: '2-digit', minute: '2-digit',
+                });
+            } catch { return iso; }
+        }
+
+        fetch('/api/public/notes/' + encodeURIComponent(token), {
+            headers: {'Cache-Control': 'no-cache'},
+        }).then(async (r) => {
+            if (!r.ok) {
+                let detail = 'Ошибка';
+                try { detail = (await r.json()).detail || detail; } catch {}
+                root.innerHTML = `<div class="pn-error">
+                    <h1>Заметка недоступна</h1>
+                    <div>${detail}</div>
+                </div>`;
+                return;
+            }
+            const data = await r.json();
+            document.title = data.title || 'Заметка';
+            root.innerHTML = `
+                <div class="pn-wrap">
+                    <div class="pn-meta">Обновлено: ${formatDate(data.updated_at)}</div>
+                    <h1 class="pn-title">${escapeHtml(data.title || 'Без названия')}</h1>
+                    <div class="pn-body">${render(data.body)}</div>
+                    <div class="pn-footer">CustomPlatform · публичная заметка</div>
+                </div>`;
+        }).catch((e) => {
+            root.innerHTML = `<div class="pn-error">
+                <h1>Сетевая ошибка</h1>
+                <div>${escapeHtml(e.message || '')}</div>
+            </div>`;
+        });
+    })();
+    </script>
+</body>
+</html>
