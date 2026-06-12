@@ -44,6 +44,7 @@ const API = {
 
     get(url)        { return this._fetch('GET', url); },
     post(url, body) { return this._fetch('POST', url, body); },
+    put(url, body)  { return this._fetch('PUT', url, body); },
     delete(url)     { return this._fetch('DELETE', url); },
 
     setToken(token) {

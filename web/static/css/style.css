@@ -2438,7 +2438,8 @@ mark.palette-hl { background: rgba(234,179,8,0.15); color: var(--yellow); border
 .notes {
     display: grid;
     grid-template-columns: 260px 1fr;
-    height: 100%;
+    height: calc(100vh - var(--topbar-h));
+    margin: -32px -40px;
     background: var(--surface);
     overflow: hidden;
 }
