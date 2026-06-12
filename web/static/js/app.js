@@ -520,6 +520,7 @@ const app = {
                 <div class="topbar-right">
                     <button class="topbar-btn hidden" id="btn-install" title="Установить как приложение">⬇ Установить</button>
                     <button class="topbar-btn" id="btn-ai" title="AI ассистент">${ico.ai} AI</button>
+                    <button class="topbar-btn" id="btn-db" title="БД (быстрый запрос)">${ico.db} БД</button>
                     <button class="topbar-btn" id="btn-console" title="Консоль">${ico.console} Консоль</button>
                     <button class="topbar-btn" id="btn-debug" title="WS лог">${ico.ws} WS</button>
                     <button class="topbar-btn" id="btn-theme" title="Тема">${ico.theme}</button>
@@ -554,6 +555,7 @@ const app = {
         document.getElementById('btn-debug').addEventListener('click', () => this.toggleDebug());
         document.getElementById('btn-console').addEventListener('click', () => this.toggleConsole());
         document.getElementById('btn-ai').addEventListener('click', () => AiWidget.toggle());
+        document.getElementById('btn-db').addEventListener('click', () => DbWidget.toggle());
         document.getElementById('btn-theme').addEventListener('click', () => this.toggleTheme());
 
         // PWA install
@@ -614,6 +616,7 @@ const app = {
         P.register({ id: 'view.console', title: 'Виджет: Консоль',     icon: '📋', group: 'Виджеты', run: () => this.toggleConsole() });
         P.register({ id: 'view.wslog',   title: 'Виджет: WS Log',      icon: '📡', group: 'Виджеты', run: () => this.toggleDebug() });
         P.register({ id: 'view.ai',      title: 'Виджет: AI ассистент', icon: '✦', group: 'Виджеты', run: () => AiWidget.toggle() });
+        P.register({ id: 'view.db',      title: 'Виджет: БД (быстрый запрос)', icon: '🗄', group: 'Виджеты', run: () => DbWidget.toggle() });
         P.register({ id: 'tasks.open',   title: 'Перейти к задачам',   icon: '⎘', group: 'Навигация', run: () => this.navigate('tasks') });
         P.register({ id: 'ai.thread',    title: 'AI: выбрать тред...', icon: '✦', hint: 'Ctrl+/', group: 'AI', run: () => { if (typeof AiChat !== 'undefined') { AiChat.init(); AiChat.ensureThreadsLoaded().then(() => AiChat.showThreadPicker()); } } });
         P.register({ id: 'sidebar.toggle', title: 'Свернуть/Развернуть сайдбар', icon: '◧', group: 'Интерфейс', run: () => document.getElementById('sidebar-toggle')?.click() });
