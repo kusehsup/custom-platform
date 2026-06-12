@@ -373,34 +373,106 @@ const ExtCmdPage = {
     },
 
     // Возвращает массив [{value, label}] для имени справочника или null.
-    // Также собирает label из "value — name" формата для удобного UX.
     _lookupOptions(lookupName) {
         if (!lookupName) return null;
         const src = this._catalog && this._catalog[lookupName];
         if (!Array.isArray(src) || src.length === 0) return null;
-        return src.map((o) => ({value: o.value, label: `${o.value} — ${o.label}`}));
+        return src.map((o) => ({value: o.value, label: o.label, id: o.value}));
     },
 
-    // Преобразует ввод пользователя для lookup-поля в число.
-    // Поддерживает: "12", "Glock 19", "12 — Glock 19".
-    _resolveLookup(raw, lookupName) {
-        const s = String(raw || '').trim();
-        if (s === '') return undefined;
-        // "12 — Glock 19" → "12"
-        const headNum = s.match(/^(-?\d+)\b/);
-        if (headNum) return Number(headNum[1]);
-        // Чистое число
-        if (/^-?\d+$/.test(s)) return Number(s);
-        // Поиск по имени (case-insensitive)
-        const opts = this._catalog && this._catalog[lookupName];
-        if (Array.isArray(opts)) {
-            const low = s.toLowerCase();
-            const exact = opts.find((o) => o.label.toLowerCase() === low);
-            if (exact) return exact.value;
-            const starts = opts.find((o) => o.label.toLowerCase().startsWith(low));
-            if (starts) return starts.value;
-        }
-        return NaN;
+    // ── Кастомный комбобокс (input + dropdown с фильтром) ────────
+    _mountCombo(comboEl) {
+        const lookupName = comboEl.dataset.rwLookupName;
+        const i = parseInt(comboEl.dataset.rwIdx, 10);
+        const k = comboEl.dataset.rwKey;
+        const options = this._lookupOptions(lookupName) || [];
+        const input = comboEl.querySelector('.extcmd-combo-input');
+        const list = comboEl.querySelector('.extcmd-combo-list');
+        const arrow = comboEl.querySelector('.extcmd-combo-arrow');
+
+        const renderOptions = (filter) => {
+            const low = (filter || '').trim().toLowerCase();
+            const filtered = !low ? options : options.filter((o) =>
+                String(o.id).startsWith(low) ||
+                o.label.toLowerCase().includes(low),
+            );
+            const shown = filtered.slice(0, 200);
+            if (!shown.length) {
+                list.innerHTML = `<div class="extcmd-combo-empty">Ничего не найдено</div>`;
+                return;
+            }
+            list.innerHTML = shown.map((o) =>
+                `<div class="extcmd-combo-opt" data-val="${o.id}">
+                    <span class="extcmd-combo-id">${o.id}</span>
+                    <span class="extcmd-combo-label">${this._esc(o.label)}</span>
+                </div>`,
+            ).join('') + (filtered.length > shown.length
+                ? `<div class="extcmd-combo-more">+ ещё ${filtered.length - shown.length}</div>`
+                : '');
+            list.querySelectorAll('.extcmd-combo-opt').forEach((row) =>
+                row.addEventListener('mousedown', (ev) => {
+                    ev.preventDefault();
+                    const v = parseInt(row.dataset.val, 10);
+                    this._rewards[i][k] = v;
+                    const found = options.find((o) => o.id === v);
+                    input.value = found ? found.label : String(v);
+                    close();
+                }),
+            );
+        };
+
+        const open = () => {
+            list.classList.remove('hidden');
+            renderOptions(input.value);
+        };
+        const close = () => list.classList.add('hidden');
+
+        input.addEventListener('focus', open);
+        input.addEventListener('input', () => {
+            open();
+            renderOptions(input.value);
+            // Попытка немедленно распознать чистый id
+            const trimmed = input.value.trim();
+            if (/^-?\d+$/.test(trimmed)) {
+                this._rewards[i][k] = Number(trimmed);
+            }
+        });
+        input.addEventListener('blur', () => {
+            // С задержкой, чтобы успел сработать mousedown по опции
+            setTimeout(() => {
+                close();
+                // Если в input просто число — оставляем его как value
+                // Если совпало с label — value уже выставлен
+                // Если осталось произвольное — пытаемся разрешить
+                const trimmed = input.value.trim();
+                if (trimmed === '') {
+                    this._rewards[i][k] = undefined;
+                    return;
+                }
+                const num = /^-?\d+$/.test(trimmed) ? Number(trimmed) : NaN;
+                if (Number.isFinite(num)) {
+                    this._rewards[i][k] = num;
+                    const found = options.find((o) => o.id === num);
+                    if (found) input.value = found.label;
+                    return;
+                }
+                const low = trimmed.toLowerCase();
+                const exact = options.find((o) => o.label.toLowerCase() === low);
+                if (exact) {
+                    this._rewards[i][k] = exact.id;
+                    input.value = exact.label;
+                }
+            }, 150);
+        });
+        arrow.addEventListener('mousedown', (ev) => {
+            ev.preventDefault();
+            if (list.classList.contains('hidden')) {
+                input.focus();
+                open();
+            } else {
+                close();
+            }
+        });
     },
 
     _mountRewardBuilder(container, fieldKey) {
@@ -431,23 +503,19 @@ const ExtCmdPage = {
                         const lookup = this._lookupOptions(f.s.lookup);
                         let inputHtml;
                         if (lookup) {
-                            const listId = `extcmd-lookup-${i}-${f.k}`;
                             const curVal = rw[f.k] != null ? rw[f.k] : '';
-                            // Подпись выбранного значения (если совпадает с известным id)
                             const known = lookup.find((o) => o.value === rw[f.k]);
-                            const knownLabelHtml = known
-                                ? `<div class="extcmd-reward-known">${this._esc(known.label)}</div>`
-                                : '';
-                            const opts = lookup
-                                .map((o) => `<option value="${o.value}">${this._esc(o.label)}</option>`)
-                                .join('');
+                            const display = known ? known.label : (curVal === '' ? '' : String(curVal));
                             inputHtml = `
-                                <input type="text" class="extcmd-input" list="${listId}"
-                                       data-rw-idx="${i}" data-rw-key="${f.k}" data-rw-lookup="1"
-                                       value="${curVal}"
-                                       placeholder="${this._esc(f.s.hint || 'id или название')}" />
-                                <datalist id="${listId}">${opts}</datalist>
-                                ${knownLabelHtml}
+                                <div class="extcmd-combo" data-rw-idx="${i}" data-rw-key="${f.k}"
+                                     data-rw-lookup-name="${this._esc(f.s.lookup)}">
+                                    <input type="text" class="extcmd-input extcmd-combo-input"
+                                           value="${this._esc(display)}"
+                                           placeholder="${this._esc(f.s.hint || 'id или название')}"
+                                           autocomplete="off" />
+                                    <button type="button" class="extcmd-combo-arrow" tabindex="-1">▾</button>
+                                    <div class="extcmd-combo-list hidden"></div>
+                                </div>
                             `;
                         } else {
                             inputHtml = `
@@ -493,27 +561,14 @@ const ExtCmdPage = {
                 }),
             );
             container.querySelectorAll('input[data-rw-idx]').forEach((inp) => {
-                const isLookup = inp.dataset.rwLookup === '1';
-                const handler = (e) => {
+                inp.addEventListener('input', (e) => {
                     const i = parseInt(e.target.dataset.rwIdx, 10);
                     const k = e.target.dataset.rwKey;
-                    const raw = e.target.value;
-                    if (isLookup) {
-                        // Берём lookup-имя из спецификации
-                        const spec = this._rewardSpec(this._rewards[i].type) || types[0];
-                        const sub = {index: spec.index, amount: spec.amount, extra: spec.extra,
-                                     extra_str: spec.extra_str, extra_two: spec.extra_two}[k];
-                        const lookupName = sub && sub.lookup;
-                        const v = this._resolveLookup(raw, lookupName);
-                        this._rewards[i][k] = (v === undefined || Number.isNaN(v)) ? undefined : v;
-                    } else {
-                        const v = raw.trim();
-                        this._rewards[i][k] = v === '' ? undefined : Number(v);
-                    }
-                };
-                inp.addEventListener('input', handler);
-                if (isLookup) inp.addEventListener('change', (e) => { handler(e); render(); });
+                    const v = e.target.value.trim();
+                    this._rewards[i][k] = v === '' ? undefined : Number(v);
+                });
             });
+            container.querySelectorAll('.extcmd-combo').forEach((combo) => this._mountCombo(combo));
             container.querySelector('.extcmd-reward-add')?.addEventListener('click', () => {
                 this._rewards.push({type: types[0].value});
                 render();
