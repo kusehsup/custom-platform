@@ -2,6 +2,11 @@
 Каталог внешних команд, поддерживаемых Pawn-сервером
 (см. input data/external_commands.pwn).
 
+Кроме самих команд, тут парсятся и отдаются справочники:
+  - REWARD_TYPES (rewards.inc)
+  - CASE_SHOP_SETTINGS / CASE_SHOP_TYPE_FIELDS (case_settings.pwn)
+  - INV_ITEMS (items.txt) — id → название для удобного выбора в UI
+
 Для каждой команды описаны:
   - id (значение enum'а на стороне Pawn)
   - name (символическое имя для UI)
@@ -22,7 +27,36 @@ UI рендерит только те поля, которые описаны.
 Если у команды нет описанных полей — она вызывается «как есть» без данных.
 """
 from __future__ import annotations
+from pathlib import Path
 from typing import Any
+
+
+# ── Справочник предметов инвентаря (items.txt) ───────────────────────
+# Файл — tab-separated dump из админки: "id<TAB>name" с шапкой.
+
+_ITEMS_FILE = Path(__file__).parent / '_static' / 'items.txt'
+
+
+def _load_inv_items() -> list[dict[str, Any]]:
+    if not _ITEMS_FILE.exists():
+        return []
+    items: list[dict[str, Any]] = []
+    try:
+        for raw in _ITEMS_FILE.read_text(encoding='utf-8').splitlines():
+            line = raw.strip()
+            if not line or '\t' not in line:
+                continue
+            head, name = line.split('\t', 1)
+            head = head.strip()
+            if not head.isdigit():
+                continue
+            items.append({'value': int(head), 'label': name.strip()})
+    except Exception:
+        return []
+    return items
+
+
+INV_ITEMS: list[dict[str, Any]] = _load_inv_items()
 
 
 # ── Общие подсказки полей ────────────────────────────────────────────
@@ -106,7 +140,7 @@ REWARD_TYPES: list[dict[str, Any]] = [
      'amount': {'label': 'days', 'hint': 'Дней'},
      'extra': None},
     {'value': 8,  'label': 'INV_ITEM (предмет инвентаря)',
-     'index': {'label': 'item_type', 'hint': 'Тип предмета'},
+     'index': {'label': 'item_type', 'hint': 'Тип предмета', 'lookup': 'inv_items'},
      'amount': {'label': 'item_amount', 'hint': 'Кол-во'},
      'extra': None},
     {'value': 9,  'label': 'SKILL (навык)',

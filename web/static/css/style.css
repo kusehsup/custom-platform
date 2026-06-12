@@ -2046,6 +2046,12 @@ mark.palette-hl { background: rgba(234,179,8,0.15); color: var(--yellow); border
 .extcmd-reward-add {
     align-self: flex-start;
 }
+.extcmd-reward-known {
+    font-size: 10.5px;
+    color: var(--text-3);
+    margin-top: 2px;
+    font-style: italic;
+}
 
 .extcmd-recent-wrap {
     background: var(--surface);

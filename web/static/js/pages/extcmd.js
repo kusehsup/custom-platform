@@ -372,6 +372,37 @@ const ExtCmdPage = {
         return (this._catalog?.reward_types || []).find((t) => t.value === typeValue) || null;
     },
 
+    // Возвращает массив [{value, label}] для имени справочника или null.
+    // Также собирает label из "value — name" формата для удобного UX.
+    _lookupOptions(lookupName) {
+        if (!lookupName) return null;
+        const src = this._catalog && this._catalog[lookupName];
+        if (!Array.isArray(src) || src.length === 0) return null;
+        return src.map((o) => ({value: o.value, label: `${o.value} — ${o.label}`}));
+    },
+
+    // Преобразует ввод пользователя для lookup-поля в число.
+    // Поддерживает: "12", "Glock 19", "12 — Glock 19".
+    _resolveLookup(raw, lookupName) {
+        const s = String(raw || '').trim();
+        if (s === '') return undefined;
+        // "12 — Glock 19" → "12"
+        const headNum = s.match(/^(-?\d+)\b/);
+        if (headNum) return Number(headNum[1]);
+        // Чистое число
+        if (/^-?\d+$/.test(s)) return Number(s);
+        // Поиск по имени (case-insensitive)
+        const opts = this._catalog && this._catalog[lookupName];
+        if (Array.isArray(opts)) {
+            const low = s.toLowerCase();
+            const exact = opts.find((o) => o.label.toLowerCase() === low);
+            if (exact) return exact.value;
+            const starts = opts.find((o) => o.label.toLowerCase().startsWith(low));
+            if (starts) return starts.value;
+        }
+        return NaN;
+    },
+
     _mountRewardBuilder(container, fieldKey) {
         const types = this._catalog?.reward_types || [];
         if (!types.length) {
@@ -396,13 +427,41 @@ const ExtCmdPage = {
                 ];
                 const subHtml = subFields
                     .filter((f) => f.s)
-                    .map((f) => `
+                    .map((f) => {
+                        const lookup = this._lookupOptions(f.s.lookup);
+                        let inputHtml;
+                        if (lookup) {
+                            const listId = `extcmd-lookup-${i}-${f.k}`;
+                            const curVal = rw[f.k] != null ? rw[f.k] : '';
+                            // Подпись выбранного значения (если совпадает с известным id)
+                            const known = lookup.find((o) => o.value === rw[f.k]);
+                            const knownLabelHtml = known
+                                ? `<div class="extcmd-reward-known">${this._esc(known.label)}</div>`
+                                : '';
+                            const opts = lookup
+                                .map((o) => `<option value="${o.value}">${this._esc(o.label)}</option>`)
+                                .join('');
+                            inputHtml = `
+                                <input type="text" class="extcmd-input" list="${listId}"
+                                       data-rw-idx="${i}" data-rw-key="${f.k}" data-rw-lookup="1"
+                                       value="${curVal}"
+                                       placeholder="${this._esc(f.s.hint || 'id или название')}" />
+                                <datalist id="${listId}">${opts}</datalist>
+                                ${knownLabelHtml}
+                            `;
+                        } else {
+                            inputHtml = `
+                                <input type="number" class="extcmd-input" data-rw-idx="${i}" data-rw-key="${f.k}"
+                                       value="${rw[f.k] != null ? rw[f.k] : ''}"
+                                       placeholder="${this._esc(f.s.hint || '')}" />
+                            `;
+                        }
+                        return `
                         <div class="extcmd-reward-sub">
                             <label>${this._esc(f.s.label)}</label>
-                            <input type="number" class="extcmd-input" data-rw-idx="${i}" data-rw-key="${f.k}"
-                                   value="${rw[f.k] != null ? rw[f.k] : ''}"
-                                   placeholder="${this._esc(f.s.hint || '')}" />
-                        </div>`)
+                            ${inputHtml}
+                        </div>`;
+                    })
                     .join('');
                 return `
                 <div class="extcmd-reward" data-rw-row="${i}">
@@ -433,14 +492,28 @@ const ExtCmdPage = {
                     render();
                 }),
             );
-            container.querySelectorAll('input[data-rw-idx]').forEach((inp) =>
-                inp.addEventListener('input', (e) => {
+            container.querySelectorAll('input[data-rw-idx]').forEach((inp) => {
+                const isLookup = inp.dataset.rwLookup === '1';
+                const handler = (e) => {
                     const i = parseInt(e.target.dataset.rwIdx, 10);
                     const k = e.target.dataset.rwKey;
-                    const v = e.target.value.trim();
-                    this._rewards[i][k] = v === '' ? undefined : Number(v);
-                }),
-            );
+                    const raw = e.target.value;
+                    if (isLookup) {
+                        // Берём lookup-имя из спецификации
+                        const spec = this._rewardSpec(this._rewards[i].type) || types[0];
+                        const sub = {index: spec.index, amount: spec.amount, extra: spec.extra,
+                                     extra_str: spec.extra_str, extra_two: spec.extra_two}[k];
+                        const lookupName = sub && sub.lookup;
+                        const v = this._resolveLookup(raw, lookupName);
+                        this._rewards[i][k] = (v === undefined || Number.isNaN(v)) ? undefined : v;
+                    } else {
+                        const v = raw.trim();
+                        this._rewards[i][k] = v === '' ? undefined : Number(v);
+                    }
+                };
+                inp.addEventListener('input', handler);
+                if (isLookup) inp.addEventListener('change', (e) => { handler(e); render(); });
+            });
             container.querySelector('.extcmd-reward-add')?.addEventListener('click', () => {
                 this._rewards.push({type: types[0].value});
                 render();
