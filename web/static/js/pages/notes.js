@@ -238,6 +238,34 @@ const NotesPage = {
         if (!el) return;
         const body = document.getElementById('notes-body')?.value || '';
         el.innerHTML = NotesMd.render(body);
+        // Делаем чекбоксы кликабельными — toggle строки в исходном markdown
+        el.querySelectorAll('input[type="checkbox"][data-task-idx]').forEach((cb) =>
+            cb.addEventListener('change', (e) => this._toggleTask(parseInt(e.target.dataset.taskIdx, 10), e.target.checked)),
+        );
+    },
+
+    _toggleTask(idx, checked) {
+        const ta = document.getElementById('notes-body');
+        if (!ta) return;
+        const lines = ta.value.split('\n');
+        let n = 0;
+        // Тот же regex, что и в renderer'е: [-*+] для ul, либо "1." для ol,
+        // следом "[ ]" / "[x]" / "[X]"
+        const re = /^(\s*(?:[-*+]|\d+\.)\s+)\[( |x|X)\](\s+.*)$/;
+        for (let i = 0; i < lines.length; i++) {
+            const m = lines[i].match(re);
+            if (!m) continue;
+            if (n === idx) {
+                lines[i] = `${m[1]}[${checked ? 'x' : ' '}]${m[3]}`;
+                ta.value = lines.join('\n');
+                this._scheduleSave();
+                // Перерисуем превью, чтобы расставленный/снятый чек сохранился
+                // визуально и индексы остались синхронны.
+                this._renderPreview();
+                return;
+            }
+            n++;
+        }
     },
 
     // ── Share modal ──────────────────────────────────────────────
@@ -377,6 +405,7 @@ const NotesMd = {
         const out = [];
         let i = 0;
         let listType = null;
+        let taskIdx = 0;   // порядковый номер чекбокса в превью — нужен для toggle
         const flushList = () => {
             if (listType) { out.push(listType === 'ol' ? '</ol>' : '</ul>'); listType = null; }
         };
@@ -420,7 +449,8 @@ const NotesMd = {
                 const cb = text.match(/^\[( |x|X)\]\s+(.*)$/);
                 if (cb) {
                     const checked = /x/i.test(cb[1]) ? ' checked' : '';
-                    text = `<input type="checkbox"${checked} disabled /> ${cb[2]}`;
+                    text = `<input type="checkbox"${checked} data-task-idx="${taskIdx}" /> ${this._inline(cb[2])}`;
+                    taskIdx++;
                 } else {
                     text = this._inline(text);
                 }
