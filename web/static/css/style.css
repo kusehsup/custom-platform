@@ -52,6 +52,14 @@ body.light {
 
 html, body { height: 100%; }
 
+html, body {
+    /* На мобильных длинные значения и фиксированные ширины элементов
+       часто провоцируют горизонтальный скролл всего документа. */
+    overflow-x: hidden;
+    overscroll-behavior-x: none;
+    -webkit-text-size-adjust: 100%;
+}
+
 body {
     background: var(--bg);
     color: var(--text);
@@ -199,6 +207,8 @@ body {
     overflow-y: auto;
     overflow-x: hidden;
 }
+/* «Ещё» — только для мобильной bottom-nav */
+.sidebar .nav-more { display: none; }
 
 .sidebar-section {
     font-size: 10px;
@@ -1796,30 +1806,200 @@ mark.palette-hl { background: rgba(234,179,8,0.15); color: var(--yellow); border
 
 /* ─── Mobile ─────────────────────────────────────────────────── */
 @media (max-width: 700px) {
-    :root { --sidebar-w: 100%; }
+    :root {
+        --sidebar-w: 100%;
+        --bottom-nav-h: 56px;
+        --topbar-h: 48px;
+    }
     .layout {
         grid-template-columns: 1fr;
-        grid-template-rows: var(--topbar-h) 44px 1fr;
+        /* topbar / main / bottom-nav. Сайдбар уходит из сетки и становится bottom-nav. */
+        grid-template-rows: var(--topbar-h) 1fr auto;
         height: 100dvh;
     }
-    .topbar-logo { width: auto; border-right: none; }
-    .sidebar {
-        flex-direction: row;
+
+    /* ── Топбар: компактный, прячем виджет-кнопки под ⋯ ─── */
+    .topbar { padding: 0 10px; padding-top: env(safe-area-inset-top, 0); height: auto; min-height: var(--topbar-h); }
+    .topbar-logo {
+        width: auto;
         border-right: none;
-        border-bottom: 1px solid var(--border);
-        padding: 0 6px;
-        overflow-x: auto;
-        overflow-y: hidden;
+        font-size: 14px;
+        padding-right: 6px;
+    }
+    .topbar-logo-icon { width: 22px; height: 22px; font-size: 14px; }
+    /* Виджет-кнопки убираем; вместо них — кнопка overflow. */
+    #btn-ai, #btn-db, #btn-console, #btn-debug, #btn-theme, #btn-install {
+        display: none !important;
+    }
+    .topbar-actions { gap: 6px; }
+    .topbar-actions .btn-sm { padding: 0 8px; font-size: 11px; }
+    /* Overflow-кнопка ⋯ — её сам JS добавляет; если нет, ничего страшного. */
+    .topbar-mobile-menu {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 32px; height: 32px;
+        background: none; border: none;
+        color: var(--text-2); cursor: pointer; font-size: 18px;
+        border-radius: var(--radius);
+    }
+    .topbar-mobile-menu:hover { background: var(--surface2); }
+
+    /* ── Сайдбар → bottom-nav ─── */
+    .sidebar {
+        position: fixed;
+        left: 0; right: 0; bottom: 0;
+        flex-direction: row;
+        justify-content: space-around;
+        align-items: stretch;
+        border-right: none;
+        border-top: 1px solid var(--border);
+        background: var(--bg);
+        padding: 0;
+        padding-bottom: env(safe-area-inset-bottom, 0);
+        z-index: 100;
+        height: calc(var(--bottom-nav-h) + env(safe-area-inset-bottom, 0));
+        overflow: visible;
     }
     .sidebar-section { display: none; }
-    .sidebar a { padding: 0 10px; height: 44px; border-radius: 0; }
-    .sidebar a .label { display: none; }
-    .sidebar-footer { display: none; }
-    .main { padding: 14px; }
+    .sidebar-spacer { display: none; }
+    .sidebar-footer { display: contents; }
+    /* На мобиле в bottom-nav показываем только пометанные nav-primary и кнопку «Ещё». */
+    .sidebar a:not(.nav-primary) { display: none; }
+    .sidebar .nav-more { display: flex; }
+    .sidebar a {
+        flex: 1 1 0;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        gap: 2px;
+        padding: 4px 2px;
+        height: var(--bottom-nav-h);
+        border-radius: 0;
+        position: relative;
+        color: var(--text-2);
+    }
+    .sidebar a.active { color: var(--text); }
+    .sidebar a.active::before {
+        content: '';
+        position: absolute;
+        top: 0; left: 20%; right: 20%;
+        height: 2px;
+        background: var(--accent);
+        border-radius: 0 0 2px 2px;
+    }
+    .sidebar a svg { width: 18px; height: 18px; }
+    .sidebar a .label {
+        display: block;
+        font-size: 9.5px;
+        line-height: 1;
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    /* Бэйджи внутри пунктов сайдбара — поверх иконки. */
+    .sidebar a .sidebar-badge {
+        position: absolute;
+        top: 4px; right: calc(50% - 22px);
+        min-width: 16px; height: 16px;
+        font-size: 9.5px;
+        padding: 0 4px;
+    }
+
+    /* ── Основной контент ─── */
+    .main {
+        padding: 12px;
+        padding-bottom: calc(var(--bottom-nav-h) + env(safe-area-inset-bottom, 0) + 12px);
+    }
+    /* Карточки внутри страниц не должны рваться вправо. */
+    .main * {
+        max-width: 100%;
+    }
+    /* Длинные значения, mono-блоки и пр. — ломаем без жёстких переполнений. */
+    .main pre,
+    .main code,
+    .main .mono,
+    .main input[type="text"],
+    .main input[type="search"],
+    .main input[type="number"],
+    .main textarea {
+        word-break: break-word;
+        overflow-wrap: anywhere;
+    }
+
+    /* ── Страница «Сервер»: pills и значения wrap'ятся ── */
+    .page-header { flex-wrap: wrap; gap: 8px; }
+    .server-card,
+    .file-info,
+    .info-row,
+    .stat-row {
+        flex-wrap: wrap;
+        gap: 6px;
+    }
+    .info-row > *,
+    .stat-row > * {
+        min-width: 0;
+        flex-shrink: 1;
+    }
+    .info-row .info-value,
+    .stat-row .stat-value {
+        word-break: break-all;
+        overflow-wrap: anywhere;
+    }
+
+    /* ── Files / DB layouts на мобиле ─── */
     .files-layout { grid-template-columns: 1fr; grid-template-rows: 180px 1fr; }
     .file-tree { border-right: none; border-bottom: 1px solid var(--border); }
-    .db-layout { grid-template-columns: 1fr; margin: -14px; }
+    .db-layout { grid-template-columns: 1fr; margin: -12px; }
     .db-sidebar { display: none; }
+
+    /* Страницы с full-height layout (notes/db) — обрезают bottom-nav, чиним. */
+    .notes,
+    .db-layout {
+        height: calc(100dvh - var(--topbar-h) - var(--bottom-nav-h) - env(safe-area-inset-bottom, 0)) !important;
+    }
+
+    /* ── Сервер: консоль и тулбар ─── */
+    .console-toolbar {
+        flex-wrap: wrap;
+        padding: 8px;
+        gap: 6px;
+    }
+    .console-toolbar > .card-title { width: 100%; margin-bottom: 4px !important; }
+    .console-toolbar > input {
+        flex: 1 1 100% !important;
+        max-width: none !important;
+        margin: 0 !important;
+    }
+    .console {
+        height: 360px;
+        padding: 10px;
+        font-size: 11px;
+    }
+    .card { padding: 14px; }
+    .card-header { flex-wrap: wrap; gap: 8px; }
+    .btn-row { flex-wrap: wrap; gap: 6px; }
+    .btn-row > .btn { flex: 1 1 auto; min-width: 0; }
+
+    /* ── Виджеты: на мобиле раскрываем во весь экран ─── */
+    .widget {
+        left: 0 !important;
+        right: 0 !important;
+        top: env(safe-area-inset-top, 0) !important;
+        bottom: calc(var(--bottom-nav-h) + env(safe-area-inset-bottom, 0)) !important;
+        width: auto !important;
+        height: auto !important;
+        border-radius: 0;
+        border: none;
+        background: var(--bg);
+        opacity: 1 !important;
+        backdrop-filter: none;
+    }
+    .widget-resize { display: none; }
+    .widget-opacity { display: none; }
+    .widget-header { cursor: default; padding: 10px 12px; }
+    .widget-header { padding-top: max(10px, env(safe-area-inset-top, 0)); }
 }
 
 /* ─── External commands page ──────────────────────────────────── */
@@ -2845,4 +3025,72 @@ mark.palette-hl { background: rgba(234,179,8,0.15); color: var(--yellow); border
     .notes-sidebar { border-right: none; border-bottom: 1px solid var(--border); }
     .notes-panes-split { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
     .notes-body { border-right: none; border-bottom: 1px solid var(--border); }
+}
+
+/* ── Mobile bottom-sheet («Ещё») ──────────────────────────────── */
+.mobile-sheet {
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+}
+.mobile-sheet-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(2px);
+}
+.mobile-sheet-panel {
+    position: relative;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    border-radius: 16px 16px 0 0;
+    padding: 6px 16px calc(24px + env(safe-area-inset-bottom, 0));
+    animation: sheetSlideUp 220ms ease-out;
+    max-height: 80vh;
+    overflow-y: auto;
+}
+@keyframes sheetSlideUp {
+    from { transform: translateY(20%); opacity: 0; }
+    to   { transform: translateY(0);    opacity: 1; }
+}
+.mobile-sheet-grab {
+    width: 40px;
+    height: 4px;
+    margin: 6px auto 12px;
+    background: var(--border-2);
+    border-radius: 2px;
+}
+.mobile-sheet-title {
+    font-size: 10.5px;
+    color: var(--text-3);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin: 8px 4px 8px;
+}
+.mobile-sheet-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+}
+.mobile-sheet-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 14px 6px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    color: var(--text);
+    cursor: pointer;
+    font-size: 12px;
+    text-align: center;
+}
+.mobile-sheet-item:hover { background: var(--surface3); }
+.mobile-sheet-icon {
+    font-size: 20px;
+    line-height: 1;
 }

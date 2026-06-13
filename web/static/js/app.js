@@ -503,6 +503,7 @@ const app = {
             ws:       `<svg viewBox="0 0 16 16"><path d="M2 8c0-3.3 2.7-6 6-6M14 8c0 3.3-2.7 6-6 6M5 8c0-1.7 1.3-3 3-3M11 8c0 1.7-1.3 3-3 3"/><circle cx="8" cy="8" r="1" fill="currentColor" stroke="none"/></svg>`,
             extcmd:   `<svg viewBox="0 0 16 16"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><path d="M4 6l2.2 2L4 10M8 10h4"/></svg>`,
             notes:    `<svg viewBox="0 0 16 16"><path d="M3 2h7l3 3v9a1 1 0 01-1 1H3a1 1 0 01-1-1V3a1 1 0 011-1z"/><path d="M10 2v3h3"/><path d="M5 8h6M5 11h4"/></svg>`,
+            more:     `<svg viewBox="0 0 16 16"><circle cx="3.5" cy="8" r="1.4" fill="currentColor" stroke="none"/><circle cx="8"   cy="8" r="1.4" fill="currentColor" stroke="none"/><circle cx="12.5" cy="8" r="1.4" fill="currentColor" stroke="none"/></svg>`,
         };
 
         document.body.innerHTML = `
@@ -531,27 +532,32 @@ const app = {
             </header>
             <nav class="sidebar">
                 <span class="sidebar-section">Управление</span>
-                <a data-page="server">${ico.server}<span class="label">Сервер</span></a>
+                <a data-page="server" class="nav-primary">${ico.server}<span class="label">Сервер</span></a>
                 <span class="sidebar-section">Код</span>
-                <a data-page="files">${ico.files}<span class="label">Файлы</span></a>
+                <a data-page="files" class="nav-primary">${ico.files}<span class="label">Файлы</span></a>
                 <span class="sidebar-section">Инструменты</span>
                 <a data-page="ai">${ico.ai}<span class="label">AI ассистент</span></a>
                 <a data-page="tasks">${ico.tasks}<span class="label">Задачи</span><span id="tasks-badge" class="sidebar-badge hidden"></span></a>
                 <a data-page="todo">${ico.todo}<span class="label">TODO</span><span id="todo-badge" class="sidebar-badge hidden"></span></a>
-                <a data-page="db">${ico.db}<span class="label">База данных</span></a>
-                <a data-page="extcmd">${ico.extcmd}<span class="label">Внешние команды</span></a>
+                <a data-page="db" class="nav-primary">${ico.db}<span class="label">База данных</span></a>
+                <a data-page="extcmd" class="nav-primary">${ico.extcmd}<span class="label">Внешние команды</span></a>
                 <a data-page="notes">${ico.notes}<span class="label">Заметки</span></a>
                 <div class="sidebar-spacer"></div>
                 <div class="sidebar-footer">
                     <a data-page="settings">${ico.settings}<span class="label">Настройки</span></a>
                 </div>
+                <!-- Только для мобильной bottom-nav: 5-я кнопка «Ещё» -->
+                <a class="nav-more nav-primary" id="nav-more">${ico.more}<span class="label">Ещё</span></a>
             </nav>
             <main class="main" id="main"></main>
         </div>
         <div id="toast-wrap" class="toast-wrap"></div>`;
 
         document.querySelectorAll('.sidebar a').forEach(a =>
-            a.addEventListener('click', () => this.navigate(a.dataset.page))
+            a.addEventListener('click', () => {
+                if (a.id === 'nav-more') { this._showMobileMore(); return; }
+                this.navigate(a.dataset.page);
+            })
         );
 
         document.getElementById('btn-debug').addEventListener('click', () => this.toggleDebug());
@@ -604,6 +610,73 @@ const app = {
         this.navigate('server');
         this._registerCommands();
         this._bgScanTodo();
+    },
+
+    _showMobileMore() {
+        // Bottom-sheet с непервичными пунктами навигации и виджетами.
+        const existing = document.getElementById('mobile-more-sheet');
+        if (existing) { existing.remove(); return; }
+
+        const navItems = [
+            {page: 'ai',       icon: '✦', label: 'AI ассистент'},
+            {page: 'tasks',    icon: '⎘', label: 'Задачи'},
+            {page: 'todo',     icon: '✅', label: 'TODO'},
+            {page: 'notes',    icon: '📝', label: 'Заметки'},
+            {page: 'settings', icon: '⚙', label: 'Настройки'},
+        ];
+        const widgetItems = [
+            {action: 'ai',      icon: '✦', label: 'AI виджет'},
+            {action: 'db',      icon: '🗄', label: 'БД виджет'},
+            {action: 'console', icon: '📋', label: 'Консоль'},
+            {action: 'theme',   icon: '◐', label: 'Тема'},
+            {action: 'logout',  icon: '⎋', label: 'Выйти'},
+        ];
+
+        const sheet = document.createElement('div');
+        sheet.id = 'mobile-more-sheet';
+        sheet.className = 'mobile-sheet';
+        sheet.innerHTML = `
+            <div class="mobile-sheet-backdrop"></div>
+            <div class="mobile-sheet-panel">
+                <div class="mobile-sheet-grab"></div>
+                <div class="mobile-sheet-title">Навигация</div>
+                <div class="mobile-sheet-grid">
+                    ${navItems.map((n) => `
+                        <button class="mobile-sheet-item" data-nav="${n.page}">
+                            <span class="mobile-sheet-icon">${n.icon}</span>
+                            <span>${n.label}</span>
+                        </button>`).join('')}
+                </div>
+                <div class="mobile-sheet-title">Инструменты</div>
+                <div class="mobile-sheet-grid">
+                    ${widgetItems.map((w) => `
+                        <button class="mobile-sheet-item" data-action="${w.action}">
+                            <span class="mobile-sheet-icon">${w.icon}</span>
+                            <span>${w.label}</span>
+                        </button>`).join('')}
+                </div>
+            </div>`;
+        document.body.appendChild(sheet);
+
+        const close = () => sheet.remove();
+        sheet.querySelector('.mobile-sheet-backdrop').addEventListener('click', close);
+        sheet.querySelectorAll('[data-nav]').forEach((b) =>
+            b.addEventListener('click', () => { this.navigate(b.dataset.nav); close(); }),
+        );
+        sheet.querySelectorAll('[data-action]').forEach((b) =>
+            b.addEventListener('click', () => {
+                const a = b.dataset.action;
+                if (a === 'ai')      AiWidget.toggle();
+                else if (a === 'db') DbWidget.toggle();
+                else if (a === 'console') this.toggleConsole();
+                else if (a === 'theme')   this.toggleTheme();
+                else if (a === 'logout')  document.getElementById('btn-logout')?.click();
+                close();
+            }),
+        );
+        // ESC закрытие
+        const onKey = (e) => { if (e.key === 'Escape') { close(); document.removeEventListener('keydown', onKey); } };
+        document.addEventListener('keydown', onKey);
     },
 
     _registerCommands() {
