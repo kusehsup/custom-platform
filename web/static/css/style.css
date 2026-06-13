@@ -58,6 +58,9 @@ html, body {
     overflow-x: hidden;
     overscroll-behavior-x: none;
     -webkit-text-size-adjust: 100%;
+    /* Запрет pinch-zoom через touch-action (Safari частично игнорирует
+       maximum-scale в meta). pan-x/y оставляем чтобы скролл работал. */
+    touch-action: pan-x pan-y;
 }
 
 body {
@@ -1941,11 +1944,16 @@ mark.palette-hl { background: rgba(234,179,8,0.15); color: var(--yellow); border
     .stat-row > * {
         min-width: 0;
         flex-shrink: 1;
+        max-width: 100%;
     }
     .info-row .info-value,
-    .stat-row .stat-value {
+    .stat-row .stat-value,
+    .stat-row > span[id^="srv-"],
+    .stat-row > span:not(.stat-label) {
         word-break: break-all;
         overflow-wrap: anywhere;
+        text-align: right;
+        max-width: 100%;
     }
 
     /* ── Files / DB layouts на мобиле ─── */
@@ -1954,10 +1962,71 @@ mark.palette-hl { background: rgba(234,179,8,0.15); color: var(--yellow); border
     .db-layout { grid-template-columns: 1fr; margin: -12px; }
     .db-sidebar { display: none; }
 
-    /* Страницы с full-height layout (notes/db) — обрезают bottom-nav, чиним. */
+    /* Страницы с full-height layout (notes/db) — на мобиле сбрасываем
+       desktop-margin (-32px/-40px рассчитан под desktop padding) и
+       учитываем bottom-nav. */
     .notes,
     .db-layout {
+        margin: -12px !important;
+        margin-bottom: calc(-12px - var(--bottom-nav-h) - env(safe-area-inset-bottom, 0)) !important;
         height: calc(100dvh - var(--topbar-h) - var(--bottom-nav-h) - env(safe-area-inset-bottom, 0)) !important;
+    }
+
+    /* ── Заметки: список → отдельный экран, при выбранной заметке
+          показываем только редактор. Sidebar всегда видна сверху
+          компактной полоской, переключение по тапу. ── */
+    .notes {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto 1fr;
+    }
+    .notes-sidebar {
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+        max-height: 38vh;
+    }
+    .notes-side-head {
+        padding: 8px;
+        gap: 6px;
+    }
+    .notes-list {
+        max-height: 28vh;
+    }
+    /* Toolbar редактора: переносим контрольки вниз, title на всю ширину */
+    .notes-toolbar {
+        flex-wrap: wrap;
+        gap: 6px;
+        padding: 8px;
+    }
+    .notes-title-input {
+        flex: 1 1 100%;
+        font-size: 15px;
+    }
+    .notes-modes {
+        font-size: 10px;
+    }
+    .notes-mode-btn {
+        padding: 4px 8px;
+        font-size: 10.5px;
+    }
+    /* Split-режим на мобиле слишком тесный — превращаем в две полосы. */
+    .notes-panes-split {
+        grid-template-columns: 1fr;
+        grid-template-rows: 1fr 1fr;
+    }
+    .notes-body {
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+        font-size: 13px;
+        padding: 12px;
+    }
+    .notes-preview {
+        padding: 12px 14px;
+        font-size: 13px;
+    }
+    /* Share modal — на мобиле бери ширину экрана. */
+    .notes-modal {
+        width: 96vw;
+        max-width: 460px;
     }
 
     /* ── Сервер: консоль и тулбар ─── */
@@ -1980,7 +2049,15 @@ mark.palette-hl { background: rgba(234,179,8,0.15); color: var(--yellow); border
     .card { padding: 14px; }
     .card-header { flex-wrap: wrap; gap: 8px; }
     .btn-row { flex-wrap: wrap; gap: 6px; }
-    .btn-row > .btn { flex: 1 1 auto; min-width: 0; }
+    .btn-row > .btn {
+        flex: 1 1 auto;
+        min-width: 0;
+        white-space: normal;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        padding-left: 12px;
+        padding-right: 12px;
+    }
 
     /* ── Виджеты: на мобиле раскрываем во весь экран ─── */
     .widget {
