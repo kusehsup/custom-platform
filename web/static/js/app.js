@@ -150,9 +150,9 @@ const app = {
     // ── Console widget ────────────────────────────────────────────────
     // Храним УЖЕ разбитые на строки данные. Чанки от платформы режутся
     // в pushConsoleLog по '\n'; незавершённый хвост держим в _consoleTail.
+    // Лимит на хранение убран — копится всё до ручной очистки.
     _consoleLines: [],
     _consoleTail: '',
-    _consoleMax: 500,
     _consolePaused: false,
     _consoleFilter: '',
 
@@ -202,8 +202,6 @@ const app = {
         this._consoleTail = parts.pop() || '';
         if (parts.length) {
             this._consoleLines.push(...parts);
-            const overflow = this._consoleLines.length - this._consoleMax;
-            if (overflow > 0) this._consoleLines.splice(0, overflow);
         }
         if (!this._consolePaused) this._scheduleConsoleRender();
     },
@@ -230,7 +228,7 @@ const app = {
         el.scrollTop = el.scrollHeight;
         // Обновляем счётчик в шапке виджета
         const counter = document.getElementById('con-count');
-        if (counter) counter.textContent = `${filtered.length}/${this._consoleMax}`;
+        if (counter) counter.textContent = `${filtered.length.toLocaleString('ru-RU')} строк`;
     },
 
     _colorizeConsoleLine(line) {

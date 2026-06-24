@@ -1,5 +1,8 @@
 const CONSOLE_KEY      = 'console_lines';
-const CONSOLE_LIMIT    = 200;
+// Лимит в памяти убран — храним все строки текущей сессии.
+// В localStorage пишем не больше CONSOLE_PERSIST_MAX, чтобы quota не лопнула
+// при многотысячных логах; в памяти при этом видно всё.
+const CONSOLE_PERSIST_MAX = 2000;
 const COMPILE_KEY      = 'compile_last';
 const COMPILE_HIST_KEY = 'compile_history';
 const COMPILE_HIST_MAX = 5;
@@ -50,14 +53,19 @@ app.register('server', {
         this._loaded = true;
     },
     _saveLines() {
-        this._trim();
         try {
-            localStorage.setItem(CONSOLE_KEY, JSON.stringify({ v: 2, lines: this._lines }));
-        } catch {}
+            // В localStorage пишем хвост последних CONSOLE_PERSIST_MAX строк,
+            // в памяти держим всё.
+            const persisted = this._lines.length > CONSOLE_PERSIST_MAX
+                ? this._lines.slice(-CONSOLE_PERSIST_MAX)
+                : this._lines;
+            localStorage.setItem(CONSOLE_KEY, JSON.stringify({ v: 2, lines: persisted }));
+        } catch {
+            // localStorage переполнен — ничего страшного, в памяти всё на месте
+        }
     },
     _trim() {
-        const overflow = this._lines.length - CONSOLE_LIMIT;
-        if (overflow > 0) this._lines.splice(0, overflow);
+        // Раньше срезали до CONSOLE_LIMIT — теперь не срезаем.
     },
 
     _colorize(line) {
@@ -95,7 +103,7 @@ app.register('server', {
 
     _updateCount(n) {
         const el = document.getElementById('console-count');
-        if (el) el.textContent = `${n ?? this._lines.length} / ${CONSOLE_LIMIT}`;
+        if (el) el.textContent = `${(n ?? this._lines.length).toLocaleString('ru-RU')} строк`;
     },
 
     // ── Компиляция — хранилище ────────────────────────────────────────
