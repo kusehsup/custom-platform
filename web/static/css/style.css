@@ -3104,6 +3104,30 @@ mark.palette-hl { background: rgba(234,179,8,0.15); color: var(--yellow); border
     .notes-body { border-right: none; border-bottom: 1px solid var(--border); }
 }
 
+/* Баннер «файл обновлён / доступ отозван» поверх редактора */
+.file-stale-banner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    margin: 0 0 8px 0;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--yellow);
+    border-radius: var(--radius);
+    font-size: 12.5px;
+}
+.file-stale-banner.lost {
+    border-left-color: var(--red);
+    background: var(--red-dim);
+}
+.file-stale-banner .fs-ico { font-size: 14px; flex-shrink: 0; }
+.file-stale-banner .fs-msg {
+    flex: 1;
+    color: var(--text);
+    line-height: 1.4;
+}
+
 /* ── Mobile bottom-sheet («Ещё») ──────────────────────────────── */
 .mobile-sheet {
     position: fixed;

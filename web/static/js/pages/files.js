@@ -1505,6 +1505,94 @@ app.register('files', {
         }).catch(() => {});
     },
 
+    // Платформа прислала обновлённые доступы / содержимое кода.
+    // diff = {lost: [file_id], changed: [file_id], added: [file_id]}
+    //   - lost:    доступ к этим файлам отозван
+    //   - changed: содержимое или диапазоны parts изменились (тимлид обновил мод и т.п.)
+    //   - added:   обработано через onFilesUpdate, тут игнорируем
+    onCodeUpdated(diff) {
+        const active = this._activeFileId;
+        const lostSet    = new Set((diff.lost    || []).map(String));
+        const changedSet = new Set((diff.changed || []).map(String));
+
+        // Обновим список файлов (отозванные пропадут)
+        this.onFilesUpdate();
+
+        if (!active) return;
+        const activeStr = String(active);
+
+        if (lostSet.has(activeStr)) {
+            this._showStaleBanner('lost');
+            return;
+        }
+        if (changedSet.has(activeStr)) {
+            this._showStaleBanner('changed');
+        }
+    },
+
+    // Показать баннер «файл изменился / отозван» поверх редактора.
+    // Кнопка перезагрузки заново подтягивает parts и применяет к открытому файлу.
+    _showStaleBanner(kind) {
+        const editorContainer = document.getElementById('editor-container')
+            || document.getElementById('editor-wrap')
+            || document.querySelector('.editor-pane')
+            || document.body;
+
+        // Если уже висит баннер для этого файла — не дублируем
+        const existing = document.getElementById('file-stale-banner');
+        if (existing) existing.remove();
+
+        const banner = document.createElement('div');
+        banner.id = 'file-stale-banner';
+        banner.className = `file-stale-banner ${kind}`;
+        if (kind === 'lost') {
+            banner.innerHTML = `
+                <span class="fs-ico">⚠️</span>
+                <span class="fs-msg">Доступ к этому файлу отозван. Сохранение невозможно.</span>
+                <button class="btn btn-ghost btn-sm" id="fs-close">Закрыть файл</button>
+            `;
+        } else {
+            banner.innerHTML = `
+                <span class="fs-ico">🔄</span>
+                <span class="fs-msg">Файл обновлён на сервере (тимлид обновил мод или сдвинулись блоки).</span>
+                <button class="btn btn-primary btn-sm" id="fs-reload">Перезагрузить файл</button>
+                <button class="btn btn-ghost btn-sm" id="fs-dismiss">Позже</button>
+            `;
+        }
+        editorContainer.prepend(banner);
+
+        // Помечаем редактор как stale — Save теперь делает то же 409
+        const saveBtn = document.getElementById('btn-save');
+        if (saveBtn && kind === 'lost') {
+            saveBtn.disabled = true;
+            saveBtn.title = 'Доступ к файлу отозван';
+        }
+
+        banner.querySelector('#fs-close')?.addEventListener('click', () => {
+            banner.remove();
+            // Закрываем файл (просто сбрасываем state и показываем пустой экран)
+            this._activeFileId = null;
+            this._parts = [];
+            const fnEl = document.getElementById('editor-filename');
+            if (fnEl) fnEl.textContent = '';
+            document.getElementById('editor-empty')?.style.removeProperty('display');
+            this._renderFileList(document.getElementById('file-search')?.value?.toLowerCase() || '');
+        });
+        banner.querySelector('#fs-reload')?.addEventListener('click', () => {
+            const fid = this._activeFileId;
+            if (!fid) { banner.remove(); return; }
+            // Принудительно сбрасываем state и перегружаем файл
+            this._modified = false;
+            const reopen = fid;
+            this._activeFileId = null;
+            banner.remove();
+            this._openFile(reopen);
+        });
+        banner.querySelector('#fs-dismiss')?.addEventListener('click', () => {
+            banner.remove();
+        });
+    },
+
     _esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); },
 
     // ── GitHub Archive ────────────────────────────────────────────

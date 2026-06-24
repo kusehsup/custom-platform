@@ -349,6 +349,15 @@ const app = {
             // Уведомление об одобрении запроса
             const s = this._getSettings();
             if (s.notify_code_access !== false) this._checkNewAccess(msg.queries);
+        } else if (msg.type === 'code_updated') {
+            // Платформа прислала обновлённые доступы / содержимое.
+            // Уведомляем страницу файлов чтобы она показала баннер /
+            // пометила вкладки stale / закрыла отозванные.
+            this._pages['files']?.onCodeUpdated?.({
+                lost:    msg.lost    || [],
+                changed: msg.changed || [],
+                added:   msg.added   || [],
+            });
         }
     },
 

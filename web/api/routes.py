@@ -248,12 +248,26 @@ async def save_code(body: SaveCodeRequest, login: str = Depends(get_current_user
     try:
         file_id = int(body.file_id) if body.file_id.isdigit() else body.file_id
 
+        # Pre-flight: проверяем что part_index ещё существует и hash совпадает
+        # с тем, что у нас в кэше. Если расхождение — значит платформа уже
+        # прислала свежую версию (сдвинули блок / отозвали доступ).
+        # Возвращаем 409 чтобы фронт показал понятную ошибку и не ждал 10с
+        # таймаута платформы.
+        cached_parts = client.code.get(body.file_id, [])
+        if not cached_parts or body.part_index >= len(cached_parts):
+            raise HTTPException(
+                status_code=409,
+                detail='Блок недоступен или был отозван. Перезагрузите файл.',
+            )
+        cached_hash = cached_parts[body.part_index].get('hash')
+        if body.hash and cached_hash and body.hash != cached_hash:
+            raise HTTPException(
+                status_code=409,
+                detail='Блок был обновлён на сервере. Перезагрузите файл и повторите сохранение.',
+            )
+
         # Получаем hash: сначала из запроса, потом из кэша
-        save_hash = body.hash
-        if not save_hash:
-            parts = client.code.get(body.file_id, [])
-            if body.part_index < len(parts):
-                save_hash = parts[body.part_index].get('hash')
+        save_hash = body.hash or cached_hash
 
         import logging
         fname = client.files.get(body.file_id, {}).get('fullPath', '?')
@@ -482,6 +496,16 @@ async def websocket_endpoint(ws: WebSocket, token: str = ''):
                 'server': client.server_status,
                 'compile': client.is_compiling,
             })
+            # send_app_data может содержать обновлённый code — шлём дифф,
+            # если он непустой (client.py заполняет last_code_diff).
+            diff = client.last_code_diff or {}
+            if diff.get('lost') or diff.get('changed') or diff.get('added'):
+                await ws.send_json({
+                    'type': 'code_updated',
+                    'lost':    diff.get('lost') or [],
+                    'changed': diff.get('changed') or [],
+                    'added':   diff.get('added') or [],
+                })
         except Exception:
             pass
 
@@ -492,13 +516,25 @@ async def websocket_endpoint(ws: WebSocket, token: str = ''):
             pass
 
     async def on_update_code(*args):
-        # Когда платформа открыла доступ к файлу — шлём статус чтобы фронт обновил список
+        # Когда платформа обновила доступы / содержимое — шлём:
+        #  1) status (как раньше — чтобы перерисовать список файлов);
+        #  2) code_updated с диффом: какие file_id потеряли доступ, какие
+        #     были изменены. Фронт показывает баннер «файл обновлён» или
+        #     блокирует сохранение / закрывает вкладку.
         try:
             await ws.send_json({
                 'type': 'status',
                 'server': client.server_status,
                 'compile': client.is_compiling,
             })
+            diff = client.last_code_diff or {}
+            if diff.get('lost') or diff.get('changed') or diff.get('added'):
+                await ws.send_json({
+                    'type': 'code_updated',
+                    'lost':    diff.get('lost') or [],
+                    'changed': diff.get('changed') or [],
+                    'added':   diff.get('added') or [],
+                })
         except Exception:
             pass
 

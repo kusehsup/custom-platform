@@ -88,6 +88,12 @@ class PlatformClient:
         # секунд продолжает рассылать send_app_data со старым server полем.
         # Сохраняем (desired_status, expires_at).
         self._pending_server: tuple = ('', 0.0)
+        # Последний дифф code-обновления (для уведомления фронта):
+        #   {'lost': [...], 'added': [...], 'changed': [...]}
+        # Заполняется в _handle_event('update_code' / 'send_app_data') до
+        # эмита подписчикам, чтобы они могли его прочитать через
+        # client.last_code_diff.
+        self._last_code_diff: dict = {'lost': [], 'added': [], 'changed': []}
 
     # ------------------------------------------------------------------ #
     #  Публичные свойства                                                  #
@@ -96,6 +102,10 @@ class PlatformClient:
     @property
     def server_status(self) -> str:
         return self._app_data.get('server', 'unknown')
+
+    @property
+    def last_code_diff(self) -> dict:
+        return self._last_code_diff
 
     def get_console_log(self, limit: int = 0) -> list[dict]:
         """Вернуть последние `limit` строк лога (0 = все). Каждая запись: {ts, line}."""
@@ -472,6 +482,23 @@ class PlatformClient:
 
         elif event == 'send_app_data':
             data = args[0] if args else {}
+            # Если в пакете пришёл code — рассчитываем дифф так же, как для update_code
+            if isinstance(data, dict) and 'code' in data:
+                old_code = self._app_data.get('code', {}) or {}
+                new_code = data.get('code') or {}
+                old_keys = set(old_code.keys())
+                new_keys = set(new_code.keys())
+                lost = sorted(old_keys - new_keys)
+                added = sorted(new_keys - old_keys)
+                changed = []
+                for fid in (old_keys & new_keys):
+                    old_parts = old_code.get(fid) or []
+                    new_parts = new_code.get(fid) or []
+                    sig_o = [(p.get('line'), p.get('hash'), len(p.get('content') or '')) for p in old_parts]
+                    sig_n = [(p.get('line'), p.get('hash'), len(p.get('content') or '')) for p in new_parts]
+                    if sig_o != sig_n:
+                        changed.append(fid)
+                self._last_code_diff = {'lost': lost, 'added': added, 'changed': changed}
             # Защита server-статуса от устаревших send_app_data:
             # 1) если идёт реконнект — платформа шлёт пустой/старый статус;
             # 2) если мы только что сделали start/stop — pending удерживает
@@ -500,7 +527,31 @@ class PlatformClient:
         elif event == 'update_code':
             if len(args) >= 2:
                 _, data = args[0], args[1]
-                self._app_data['code'] = data.get('code', self._app_data.get('code', {}))
+                old_code = self._app_data.get('code', {}) or {}
+                new_code = data.get('code', old_code) or {}
+
+                # Вычисляем дифф для уведомления подписчиков (фронт):
+                #   - lost: file_id, к которому больше нет доступа
+                #   - changed: file_id, в котором изменились parts (число / hashes / линии)
+                # Подписчики получают _diff третьим параметром (если есть).
+                old_keys = set(old_code.keys())
+                new_keys = set(new_code.keys())
+                lost = sorted(old_keys - new_keys)
+                added = sorted(new_keys - old_keys)
+                changed = []
+                for fid in (old_keys & new_keys):
+                    old_parts = old_code.get(fid) or []
+                    new_parts = new_code.get(fid) or []
+                    def _sig(parts):
+                        return [(p.get('line'), p.get('hash'), len(p.get('content') or ''))
+                                for p in parts]
+                    if _sig(old_parts) != _sig(new_parts):
+                        changed.append(fid)
+
+                self._app_data['code'] = new_code
+                self._last_code_diff = {
+                    'lost': lost, 'added': added, 'changed': changed,
+                }
 
         elif event == 'compile_result':
             result = args[0] if args else ''
