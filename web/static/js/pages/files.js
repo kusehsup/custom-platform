@@ -3,6 +3,7 @@ const FAV_DIR_KEY    = 'fav_dirs';
 const TREE_MODE_KEY  = 'files_tree_mode';     // '1' = дерево, '' = плоский
 const SHOW_ALL_KEY   = 'files_show_all';      // '1' = показывать недоступные
 const TREE_OPEN_KEY  = 'files_tree_open';     // JSON-массив открытых директорий
+const TREE_WIDTH_KEY = 'files_tree_width';    // px-ширина sidebar'a
 const HIST_PREFIX    = 'file_hist_';
 const HIST_MAX       = 20;
 
@@ -55,6 +56,82 @@ app.register('files', {
         this._saveOpenDirs(set);
     },
 
+    // ── Ширина sidebar'a (drag-resize) ────────────────────────────
+    _loadTreeWidth() {
+        try {
+            const v = parseInt(localStorage.getItem(TREE_WIDTH_KEY) || '', 10);
+            return Number.isFinite(v) && v > 0 ? v : 220;
+        } catch { return 220; }
+    },
+    _saveTreeWidth(px) {
+        try { localStorage.setItem(TREE_WIDTH_KEY, String(px)); } catch {}
+    },
+    _applyTreeWidth() {
+        const layout = document.querySelector('.files-layout');
+        if (!layout) return;
+        const w = this._loadTreeWidth();
+        layout.style.setProperty('--files-tree-w', w + 'px');
+    },
+    _bindTreeResize(root) {
+        const handle = root.querySelector('#files-resize');
+        const layout = root.querySelector('.files-layout');
+        if (!handle || !layout) return;
+
+        const onDown = (ev) => {
+            ev.preventDefault();
+            const startX = ev.clientX ?? ev.touches?.[0]?.clientX ?? 0;
+            const startW = this._loadTreeWidth();
+            const layoutRect = layout.getBoundingClientRect();
+            const minW = 160;
+            // Оставляем минимум 280px редактору, плюс ручка 6px.
+            const maxW = Math.max(minW + 1, layoutRect.width - 280 - 6);
+
+            handle.classList.add('dragging');
+            document.body.classList.add('files-resizing');
+
+            let pending = null;
+            const onMove = (e) => {
+                const x = e.clientX ?? e.touches?.[0]?.clientX ?? 0;
+                const next = Math.max(minW, Math.min(maxW, startW + (x - startX)));
+                if (pending !== null) cancelAnimationFrame(pending);
+                pending = requestAnimationFrame(() => {
+                    layout.style.setProperty('--files-tree-w', next + 'px');
+                    this._lastDragWidth = next;
+                });
+            };
+            const onUp = () => {
+                handle.classList.remove('dragging');
+                document.body.classList.remove('files-resizing');
+                document.removeEventListener('mousemove', onMove);
+                document.removeEventListener('mouseup', onUp);
+                document.removeEventListener('touchmove', onMove);
+                document.removeEventListener('touchend', onUp);
+                if (this._lastDragWidth) {
+                    this._saveTreeWidth(this._lastDragWidth);
+                    this._lastDragWidth = null;
+                }
+                // Пересобираем editor layout (Monaco чувствителен к ресайзу)
+                if (this._editor) {
+                    requestAnimationFrame(() => this._editor.layout());
+                }
+            };
+            document.addEventListener('mousemove', onMove);
+            document.addEventListener('mouseup', onUp);
+            document.addEventListener('touchmove', onMove, { passive: false });
+            document.addEventListener('touchend', onUp);
+        };
+
+        handle.addEventListener('mousedown', onDown);
+        handle.addEventListener('touchstart', onDown, { passive: false });
+
+        // Double-click — сброс на дефолт 220px
+        handle.addEventListener('dblclick', () => {
+            this._saveTreeWidth(220);
+            this._applyTreeWidth();
+            if (this._editor) requestAnimationFrame(() => this._editor.layout());
+        });
+    },
+
     // ── Рендер страницы ───────────────────────────────────────────────
     async render(root) {
         // Сбрасываем состояние при каждом рендере
@@ -78,6 +155,7 @@ app.register('files', {
                 </div>
                 <div id="file-list"></div>
             </div>
+            <div class="files-resize" id="files-resize" title="Перетащите чтобы изменить ширину"></div>
             <div class="file-editor">
                 <div class="editor-tabs">
                     <button class="etab active" data-tab="files">📄 Редактор</button>
@@ -130,6 +208,10 @@ app.register('files', {
         document.getElementById('file-search').addEventListener('input', e =>
             this._renderFileList(e.target.value.toLowerCase())
         );
+        // Восстанавливаем сохранённую ширину sidebar'a и навешиваем drag-resize
+        this._applyTreeWidth();
+        this._bindTreeResize(root);
+
         document.getElementById('btn-toggle-tree').addEventListener('click', () => {
             this._setTreeMode(!this._treeMode());
             this._renderFileList(document.getElementById('file-search')?.value?.toLowerCase() || '');

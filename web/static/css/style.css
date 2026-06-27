@@ -635,11 +635,31 @@ input::placeholder { color: var(--text-3); }
 /* ─── File tree ──────────────────────────────────────────────── */
 .files-layout {
     display: grid;
-    grid-template-columns: 220px 1fr;
+    grid-template-columns: var(--files-tree-w, 220px) 6px 1fr;
     height: 100%;
     overflow: hidden;
     border-top: 1px solid var(--border);
-    transition: grid-template-columns .2s ease;
+}
+/* Drag-handle между sidebar'ом и редактором */
+.files-resize {
+    background: transparent;
+    cursor: col-resize;
+    position: relative;
+    user-select: none;
+    border-left: 1px solid var(--border);
+    border-right: 1px solid var(--border);
+    margin: 0 -1px;
+    transition: background 0.1s;
+}
+.files-resize:hover,
+.files-resize.dragging {
+    background: var(--accent);
+    opacity: 0.4;
+}
+body.files-resizing,
+body.files-resizing * {
+    cursor: col-resize !important;
+    user-select: none !important;
 }
 
 .file-tree {
@@ -2074,6 +2094,7 @@ mark.palette-hl { background: rgba(234,179,8,0.15); color: var(--yellow); border
     /* ── Files / DB layouts на мобиле ─── */
     .files-layout { grid-template-columns: 1fr; grid-template-rows: 180px 1fr; }
     .file-tree { border-right: none; border-bottom: 1px solid var(--border); }
+    .files-resize { display: none; }
     .db-layout { grid-template-columns: 1fr; margin: -12px; }
     .db-sidebar { display: none; }
 
