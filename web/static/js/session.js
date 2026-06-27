@@ -94,42 +94,41 @@ const Session = {
     },
     isSuspended() { return this._suspendRestore; },
 
-    // Высокоуровневый restore. Вызывается из app.boot после showApp.
-    // 1) Переключает вкладку (или server по умолчанию).
-    // 2) Если page === 'files' и есть files-state — открывает файл,
-    //    переключает part, восстанавливает курсор/скролл.
-    // 3) Если page === 'notes' — открывает заметку.
-    restore() {
+    // Восстанавливает содержимое одной страницы. Сам не переключает
+    // вкладку — навигация снаружи. Используется и при первом boot,
+    // и при возврате на ту же вкладку через app.navigate.
+    restorePageContents(page) {
         const st = this.get();
-        const page = st.page || 'server';
         this._suspendRestore = true;
-
         const finishUnsuspend = () => setTimeout(() => { this._suspendRestore = false; }, 1500);
-
-        if (page !== 'server') {
-            try { app.navigate(page); } catch {}
-        }
 
         if (page === 'files' && st.files && st.files.fileId) {
             const files = app._pages['files'];
             if (!files) { finishUnsuspend(); return; }
-            // app.navigate уже отрендерил страницу; openFile асинхронен.
             const targetId = String(st.files.fileId);
             const partIdx  = st.files.partIdx | 0;
             const cursor   = st.files.cursor;
             const scroll   = st.files.scroll;
 
-            const tryOpen = () => {
+            const tryOpen = (attempt = 0) => {
                 if (!files._files || Object.keys(files._files).length === 0) {
-                    setTimeout(tryOpen, 200);
+                    if (attempt > 40) { finishUnsuspend(); return; }
+                    setTimeout(() => tryOpen(attempt + 1), 150);
                     return;
                 }
                 if (!files._files[targetId] && !files._allFiles?.[targetId]) {
-                    // Файл больше недоступен — просто оставляем как есть.
                     finishUnsuspend();
                     return;
                 }
-                Promise.resolve(files._openFile(targetId)).then(() => {
+                // Если уже открыт нужный файл — не открываем заново, только
+                // дотягиваем part/cursor/scroll (типичный случай при возврате
+                // на вкладку без перезагрузки страницы).
+                const alreadyOpen = String(files._activeFileId) === targetId
+                    && files._parts && files._parts.length;
+                const ensureOpen = alreadyOpen
+                    ? Promise.resolve()
+                    : Promise.resolve(files._openFile(targetId));
+                ensureOpen.then(() => {
                     setTimeout(() => {
                         if (partIdx > 0 && partIdx !== files._activePartIdx
                             && files._parts && partIdx < files._parts.length) {
@@ -144,11 +143,19 @@ const Session = {
                                     editor.setPosition({ lineNumber: cursor.line, column: cursor.col || 1 });
                                     editor.revealLineInCenter(cursor.line);
                                 }
-                                if (scroll) editor.setScrollTop(scroll);
+                                if (typeof scroll === 'number' && scroll > 0) {
+                                    // Несколько попыток — Monaco иногда сбрасывает scrollTop при перерисовке
+                                    let tries = 0;
+                                    const applyScroll = () => {
+                                        editor.setScrollTop(scroll);
+                                        if (++tries < 4) setTimeout(applyScroll, 100);
+                                    };
+                                    applyScroll();
+                                }
                             }
                             finishUnsuspend();
-                        }, 350);
-                    }, 400);
+                        }, alreadyOpen ? 0 : 350);
+                    }, alreadyOpen ? 0 : 400);
                 }).catch(() => finishUnsuspend());
             };
             tryOpen();
@@ -158,12 +165,17 @@ const Session = {
         if (page === 'notes' && st.notes && st.notes.noteId) {
             const notes = app._pages['notes'];
             if (!notes) { finishUnsuspend(); return; }
-            const tryOpen = () => {
+            const tryOpen = (attempt = 0) => {
                 if (!notes._items || !notes._items.length) {
-                    setTimeout(tryOpen, 200);
+                    if (attempt > 40) { finishUnsuspend(); return; }
+                    setTimeout(() => tryOpen(attempt + 1), 150);
                     return;
                 }
                 if (!notes._items.some(n => n.id === st.notes.noteId)) {
+                    finishUnsuspend();
+                    return;
+                }
+                if (notes._activeId === st.notes.noteId) {
                     finishUnsuspend();
                     return;
                 }
@@ -174,6 +186,18 @@ const Session = {
         }
 
         finishUnsuspend();
+    },
+
+    // Высокоуровневый restore при старте: переключает вкладку и
+    // вызывает restorePageContents.
+    restore() {
+        const st = this.get();
+        const page = st.page || 'server';
+        if (page !== 'server') {
+            this._suspendRestore = true;
+            try { app.navigate(page); } catch {}
+        }
+        this.restorePageContents(page);
     },
 };
 

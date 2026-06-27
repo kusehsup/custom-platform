@@ -992,6 +992,18 @@ app.register('files', {
                 });
             }
         });
+        // Отдельная подписка на скролл — иначе пролистывание колесом
+        // без движения курсора не запоминается.
+        this._editor.onDidScrollChange(() => {
+            if (typeof Session === 'undefined' || Session.isSuspended()) return;
+            if (!this._activeFileId) return;
+            const scroll = this._editor.getScrollTop?.() || 0;
+            Session.patchFiles({
+                fileId: String(this._activeFileId),
+                partIdx: this._activePartIdx,
+                scroll,
+            });
+        });
 
         // Статусбар — количество строк
         this._editor.onDidChangeModelContent(() => {

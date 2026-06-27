@@ -21,9 +21,14 @@ const app = {
         const page = this._pages[name];
         if (page) page.render(main);
         this._updateTopbarActions();
-        // Auto-workspace: запоминаем текущую вкладку.
-        if (typeof Session !== 'undefined' && !Session.isSuspended()) {
-            Session.setPage(name);
+        // Auto-workspace: запоминаем текущую вкладку и пытаемся
+        // восстановить её прежнее содержимое (открытый файл/часть/курсор,
+        // активную заметку и т.п.).
+        if (typeof Session !== 'undefined') {
+            if (!Session.isSuspended()) Session.setPage(name);
+            // Restore — после микро-таймаута, чтобы page.render успел
+            // навесить начальные DOM-узлы.
+            setTimeout(() => Session.restorePageContents(name), 0);
         }
     },
 
