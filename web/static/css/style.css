@@ -882,6 +882,121 @@ mark.sq-hl { background: rgba(234,179,8,0.15); color: var(--yellow); border-radi
 .file-item:hover .fav-btn { opacity: 0.5; }
 .file-item:hover .fav-btn:hover { opacity: 1; }
 
+/* ─── File tree toolbar ─────────────────────────────────────── */
+.file-tree-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--border);
+    font-size: 11px;
+    color: var(--text-3);
+    flex-wrap: wrap;
+}
+.file-count {
+    margin-right: auto;
+    font-family: var(--mono);
+}
+.file-count-dim {
+    color: var(--text-3);
+    font-style: italic;
+    margin-left: 4px;
+}
+.file-toggle {
+    background: none;
+    border: none;
+    color: var(--text-2);
+    cursor: pointer;
+    font-size: 11px;
+    padding: 2px 4px;
+    border-radius: var(--radius-sm);
+    white-space: nowrap;
+}
+.file-toggle:hover { color: var(--text); background: var(--surface2); }
+
+/* ─── Бадж кол-ва выданных part'ов ──────────────────────────── */
+.file-badge {
+    flex-shrink: 0;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-3);
+    background: var(--surface3);
+    border-radius: 10px;
+    padding: 1px 7px;
+    line-height: 14px;
+}
+.file-item-dim { opacity: 0.42; }
+.file-item-dim .file-icon,
+.file-item-dim .file-name { color: var(--text-3); }
+
+/* ─── Tree view ─────────────────────────────────────────────── */
+.tree-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 12px 3px 6px;
+    cursor: pointer;
+    color: var(--text-2);
+    font-size: 12.5px;
+    line-height: 1.4;
+    user-select: none;
+}
+.tree-row:hover { background: var(--surface2); color: var(--text); }
+.tree-row.active { background: var(--surface2); color: var(--text); }
+.tree-row.dir {
+    color: var(--text);
+    font-weight: 500;
+}
+.tree-row-dim { opacity: 0.42; }
+.tree-row-dim .tree-name,
+.tree-row-dim .tree-icon { color: var(--text-3); }
+.tree-caret {
+    flex-shrink: 0;
+    width: 12px;
+    text-align: center;
+    color: var(--text-3);
+    font-size: 9px;
+}
+.tree-row.file .tree-caret { visibility: hidden; }
+.tree-icon { flex-shrink: 0; font-size: 12px; }
+.tree-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.fav-btn-dir {
+    flex-shrink: 0;
+    opacity: 0;
+    font-size: 11px;
+    color: var(--yellow);
+    transition: opacity 0.1s;
+    padding: 0 2px;
+    cursor: pointer;
+}
+.tree-row:hover .fav-btn-dir { opacity: 0.5; }
+.tree-row:hover .fav-btn-dir:hover { opacity: 1; }
+/* Если папка уже в избранном — звезда жёлтая и всегда видна */
+.fav-btn-dir:where([data-dir]) { /* плейсхолдер если нужно расширить */ }
+.tree-row.dir .fav-btn-dir,
+.file-fav-dir .fav-btn-dir {
+    opacity: 0;
+}
+.tree-row.dir:hover .fav-btn-dir { opacity: 0.5; }
+.tree-row.dir:hover .fav-btn-dir:hover { opacity: 1; }
+/* Если уже в избранном — звёздочку показываем всегда */
+.fav-btn-dir.is-fav { opacity: 1 !important; }
+
+.file-fav-dir {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 12px 3px 6px;
+    color: var(--text-2);
+    font-size: 12.5px;
+}
+.file-fav-dir-name { flex: 1; }
+
 #delete-access-bar:not(.hidden) { display: flex; }
 
 .del-access-bar {

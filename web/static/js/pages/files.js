@@ -1,6 +1,10 @@
-const FAV_KEY      = 'fav_files';
-const HIST_PREFIX  = 'file_hist_';
-const HIST_MAX     = 20;
+const FAV_KEY        = 'fav_files';
+const FAV_DIR_KEY    = 'fav_dirs';
+const TREE_MODE_KEY  = 'files_tree_mode';     // '1' = дерево, '' = плоский
+const SHOW_ALL_KEY   = 'files_show_all';      // '1' = показывать недоступные
+const TREE_OPEN_KEY  = 'files_tree_open';     // JSON-массив открытых директорий
+const HIST_PREFIX    = 'file_hist_';
+const HIST_MAX       = 20;
 
 app.register('files', {
     _files: {},
@@ -15,7 +19,7 @@ app.register('files', {
     _pendingContent: undefined,
     _codeParts: {},  // кэш частей для TODO-сканера
 
-    // ── Избранное ─────────────────────────────────────────────────────
+    // ── Избранное (файлы) ────────────────────────────────────────────
     _loadFavs()       { try { return JSON.parse(localStorage.getItem(FAV_KEY) || '[]'); } catch { return []; } },
     _saveFavs(favs)   { try { localStorage.setItem(FAV_KEY, JSON.stringify(favs)); } catch {} },
     _isFav(id)        { return this._loadFavs().includes(String(id)); },
@@ -25,6 +29,30 @@ app.register('files', {
         favs = favs.includes(sid) ? favs.filter(f => f !== sid) : [...favs, sid];
         this._saveFavs(favs);
         this._renderFileList(document.getElementById('file-search')?.value?.toLowerCase() || '');
+    },
+
+    // ── Избранное (папки) — список путей-директорий вида "include/system" ─
+    _loadFavDirs()    { try { return JSON.parse(localStorage.getItem(FAV_DIR_KEY) || '[]'); } catch { return []; } },
+    _saveFavDirs(dirs){ try { localStorage.setItem(FAV_DIR_KEY, JSON.stringify(dirs)); } catch {} },
+    _isFavDir(path)   { return this._loadFavDirs().includes(path); },
+    _toggleFavDir(path) {
+        let dirs = this._loadFavDirs();
+        dirs = dirs.includes(path) ? dirs.filter(d => d !== path) : [...dirs, path];
+        this._saveFavDirs(dirs);
+        this._renderFileList(document.getElementById('file-search')?.value?.toLowerCase() || '');
+    },
+
+    // ── Persisted: режимы отображения и открытые папки ────────────────
+    _treeMode()      { try { return localStorage.getItem(TREE_MODE_KEY) === '1'; } catch { return false; } },
+    _setTreeMode(v)  { try { localStorage.setItem(TREE_MODE_KEY, v ? '1' : ''); } catch {} },
+    _showAll()       { try { return localStorage.getItem(SHOW_ALL_KEY) === '1'; } catch { return false; } },
+    _setShowAll(v)   { try { localStorage.setItem(SHOW_ALL_KEY, v ? '1' : ''); } catch {} },
+    _loadOpenDirs()  { try { return new Set(JSON.parse(localStorage.getItem(TREE_OPEN_KEY) || '[]')); } catch { return new Set(); } },
+    _saveOpenDirs(s) { try { localStorage.setItem(TREE_OPEN_KEY, JSON.stringify([...s])); } catch {} },
+    _toggleOpenDir(path) {
+        const set = this._loadOpenDirs();
+        if (set.has(path)) set.delete(path); else set.add(path);
+        this._saveOpenDirs(set);
     },
 
     // ── Рендер страницы ───────────────────────────────────────────────
@@ -41,7 +69,12 @@ app.register('files', {
         <div class="files-layout">
             <div class="file-tree">
                 <div class="file-tree-search">
-                    <input type="search" id="file-search" placeholder="Поиск файла..." />
+                    <input type="search" id="file-search" placeholder="Найти файл..." />
+                </div>
+                <div class="file-tree-toolbar">
+                    <span id="file-count" class="file-count"></span>
+                    <button class="file-toggle" id="btn-toggle-tree" title="Плоский / Дерево"></button>
+                    <button class="file-toggle" id="btn-toggle-hidden" title="Скрыть / показать недоступные"></button>
                 </div>
                 <div id="file-list"></div>
             </div>
@@ -97,6 +130,14 @@ app.register('files', {
         document.getElementById('file-search').addEventListener('input', e =>
             this._renderFileList(e.target.value.toLowerCase())
         );
+        document.getElementById('btn-toggle-tree').addEventListener('click', () => {
+            this._setTreeMode(!this._treeMode());
+            this._renderFileList(document.getElementById('file-search')?.value?.toLowerCase() || '');
+        });
+        document.getElementById('btn-toggle-hidden').addEventListener('click', () => {
+            this._setShowAll(!this._showAll());
+            this._renderFileList(document.getElementById('file-search')?.value?.toLowerCase() || '');
+        });
         document.getElementById('btn-save').addEventListener('click',    () => this._save());
         document.getElementById('btn-discard').addEventListener('click', () => this._discard());
         document.getElementById('btn-goto').addEventListener('click',    () => this._showGotoLine());
@@ -159,6 +200,7 @@ app.register('files', {
             this._files        = data.files;
             this._allFiles     = data.all_files || data.files;
             this._projectFiles = data.project_files.map(String);
+            this._partsCounts  = data.parts_counts || {};
             this._renderFileList('');
             // Загружаем части всех доступных файлов для проверки диапазонов в поиске
             this._sqLoadAccessibleRanges();
@@ -168,56 +210,333 @@ app.register('files', {
         }
     },
 
+    // Универсальный entry-point: переключатели тулбара + ветвление flat/tree.
     _renderFileList(query) {
         const list = document.getElementById('file-list');
         if (!list) return;
-        const favs = this._loadFavs();
+        this._updateFileToolbar();
+        if (this._treeMode()) {
+            this._renderTreeView(list, query || '');
+        } else {
+            this._renderFlatView(list, query || '');
+        }
+    },
 
-        const mkItem = (id, inFav) => {
-            const f    = this._files[id];
-            if (!f) return '';
-            const ext  = f.fullPath.split('.').pop();
-            const icon = ext === 'pwn' ? '📝' : ext === 'inc' ? '📎' : '📄';
-            const name = f.fullPath.split('/').pop();
-            const active = id === this._activeFileId ? ' active' : '';
-            const isFav  = favs.includes(String(id));
-            return `<div class="file-item${active}" data-id="${id}" title="${f.fullPath}">
-                <span class="file-icon">${icon}</span>
-                <span class="file-name">${name}</span>
-                <span class="fav-btn" data-id="${id}" title="Избранное">${isFav ? '★' : '☆'}</span>
-            </div>`;
+    // Обновляет иконки переключателей и счётчик файлов.
+    _updateFileToolbar() {
+        const tree = this._treeMode();
+        const all  = this._showAll();
+        const btnT = document.getElementById('btn-toggle-tree');
+        const btnH = document.getElementById('btn-toggle-hidden');
+        if (btnT) btnT.innerHTML = tree ? '☐ Плоский' : '☑ Дерево';
+        if (btnH) btnH.innerHTML = all ? '👁 Скрыть закрытые' : '👁‍🗨 Показать всё';
+
+        const countEl = document.getElementById('file-count');
+        if (countEl) {
+            const accessible = this._projectFiles.length;
+            const total = Object.keys(this._allFiles || {}).length;
+            const hidden = Math.max(0, total - accessible);
+            if (all) {
+                countEl.innerHTML = `${total} файлов <span class="file-count-dim" title="Доступно ${accessible}">+${hidden}</span>`;
+            } else {
+                countEl.innerHTML = `${accessible} с доступом`;
+            }
+        }
+    },
+
+    // Возвращает true если файл доступен (есть выданные part'ы).
+    _isAccessible(id) {
+        return !!this._files[String(id)];
+    },
+
+    // Сколько part'ов выдано (для баджа).
+    _fileParts(id) {
+        const sid = String(id);
+        return (this._partsCounts && this._partsCounts[sid]) || 0;
+    },
+
+    // Список всех id для отрисовки в текущем режиме (с учётом «показать все»).
+    _displayableIds() {
+        const accessible = new Set(this._projectFiles);
+        if (!this._showAll()) {
+            return [...accessible];
+        }
+        // Все файлы платформы. Порядок: доступные сначала, затем остальные.
+        const all = Object.keys(this._allFiles || {});
+        all.sort((a, b) => {
+            const pa = (this._allFiles[a]?.fullPath || '');
+            const pb = (this._allFiles[b]?.fullPath || '');
+            return pa.localeCompare(pb);
+        });
+        return all;
+    },
+
+    // ── Плоский режим ────────────────────────────────────────────
+    _renderFlatView(list, query) {
+        const favs    = new Set(this._loadFavs());
+        const favDirs = new Set(this._loadFavDirs());
+        const ids     = this._displayableIds();
+
+        const matches = (fid) => {
+            const f = (this._files[fid] || this._allFiles[fid]);
+            if (!f) return false;
+            if (!query) return true;
+            return f.fullPath.toLowerCase().includes(query);
         };
+
+        const favMatched = [...favs].filter(matches);
+
+        // Файлы, попавшие через избранные папки (плоский режим раскрывает их сюда).
+        const favDirFiles = [];
+        if (favDirs.size) {
+            for (const fid of ids) {
+                if (favs.has(String(fid))) continue;
+                const f = this._files[fid] || this._allFiles[fid];
+                if (!f) continue;
+                const fp = f.fullPath;
+                const inFavDir = [...favDirs].some(d => fp === d || fp.startsWith(d + '/'));
+                if (!inFavDir) continue;
+                if (query && !fp.toLowerCase().includes(query)) continue;
+                favDirFiles.push(fid);
+            }
+        }
+
+        const rest = ids.filter(fid => {
+            if (favs.has(String(fid))) return false;
+            if (favDirFiles.includes(fid)) return false;
+            return matches(fid);
+        });
+
+        let html = '';
+        if (favMatched.length || favDirFiles.length) {
+            html += `<div class="file-tree-section">★ Избранное</div>`;
+            for (const d of favDirs) {
+                html += `<div class="file-fav-dir" data-dir="${this._esc(d)}" title="Избранная папка">
+                    <span class="file-fav-dir-name">📁 ${this._esc(d)}</span>
+                    <span class="fav-btn-dir is-fav" data-dir="${this._esc(d)}" title="Убрать из избранного">★</span>
+                </div>`;
+            }
+            html += favMatched.map(id => this._renderFlatItem(id)).join('');
+            html += favDirFiles.map(id => this._renderFlatItem(id)).join('');
+            html += `<div class="file-tree-sep"></div>`;
+        }
+        html += rest.map(id => this._renderFlatItem(id)).join('');
+
+        list.innerHTML = html || '<div style="padding:16px;color:var(--text-3);font-size:13px">Ничего не найдено</div>';
+        this._bindFileListEvents(list);
+    },
+
+    _renderFlatItem(id) {
+        const sid = String(id);
+        const f = this._files[sid] || this._allFiles[sid];
+        if (!f) return '';
+        const ext  = (f.fullPath || '').split('.').pop();
+        const icon = ext === 'pwn' ? '📝' : ext === 'inc' ? '📎' : '📄';
+        const name = (f.fullPath || '').split('/').pop();
+        const active = id === this._activeFileId ? ' active' : '';
+        const isFav  = (this._loadFavs() || []).includes(sid);
+        const accessible = this._isAccessible(sid);
+        const dim = accessible ? '' : ' file-item-dim';
+        const parts = this._fileParts(sid);
+        const badge = (accessible && parts > 0)
+            ? `<span class="file-badge" title="Выдано частей">${parts}</span>` : '';
+        return `<div class="file-item${active}${dim}" data-id="${sid}" title="${this._esc(f.fullPath)}">
+            <span class="file-icon">${icon}</span>
+            <span class="file-name">${this._esc(name)}</span>
+            ${badge}
+            <span class="fav-btn" data-id="${sid}" title="Избранное">${isFav ? '★' : '☆'}</span>
+        </div>`;
+    },
+
+    // ── Древовидный режим ─────────────────────────────────────────
+    // Строим словарь dir->{dirs:Set, files:Set}, рендерим рекурсивно.
+    _buildTree(ids) {
+        const root = { dirs: new Map(), files: [] };
+        for (const fid of ids) {
+            const f = this._files[fid] || this._allFiles[fid];
+            if (!f || !f.fullPath) continue;
+            const parts = f.fullPath.split('/');
+            let cursor = root;
+            for (let i = 0; i < parts.length - 1; i++) {
+                const seg = parts[i];
+                if (!cursor.dirs.has(seg)) cursor.dirs.set(seg, { dirs: new Map(), files: [] });
+                cursor = cursor.dirs.get(seg);
+            }
+            cursor.files.push(fid);
+        }
+        return root;
+    },
+
+    // Рекурсивный обход для счётчика part'ов (для бадж на папке).
+    _dirPartsSum(node) {
+        let sum = 0;
+        for (const fid of node.files) sum += this._fileParts(fid);
+        for (const child of node.dirs.values()) sum += this._dirPartsSum(child);
+        return sum;
+    },
+
+    _dirHasAccessible(node) {
+        for (const fid of node.files) if (this._isAccessible(fid)) return true;
+        for (const child of node.dirs.values()) if (this._dirHasAccessible(child)) return true;
+        return false;
+    },
+
+    _renderTreeView(list, query) {
+        const ids = this._displayableIds();
+        // Поиск в дереве: фильтруем id по подстроке fullPath.
+        const filtered = query
+            ? ids.filter(fid => {
+                const f = this._files[fid] || this._allFiles[fid];
+                return f && f.fullPath.toLowerCase().includes(query);
+              })
+            : ids;
+        const root = this._buildTree(filtered);
+        const openDirs = query ? null /* при поиске — раскрываем всё */ : this._loadOpenDirs();
+        const favDirs = new Set(this._loadFavDirs());
 
         let html = '';
 
-        // Секция избранного
-        const favMatched = favs.filter(id => {
-            const f = this._files[id];
+        // Секция избранных папок и файлов (наверху).
+        const favFiles = new Set(this._loadFavs());
+        const favMatched = [...favFiles].filter(fid => {
+            const f = this._files[fid] || this._allFiles[fid];
             return f && (!query || f.fullPath.toLowerCase().includes(query));
         });
-        if (favMatched.length) {
-            html += `<div class="file-tree-section">⭐ Избранное</div>`;
-            html += favMatched.map(id => mkItem(id, true)).join('');
+        if (favDirs.size || favMatched.length) {
+            html += `<div class="file-tree-section">★ Избранное</div>`;
+            for (const d of favDirs) {
+                // Рисуем как самостоятельную раскрываемую ноду
+                const path = d;
+                const isOpen = openDirs ? openDirs.has('fav:' + path) : true;
+                const subRoot = this._buildTree(
+                    filtered.filter(fid => {
+                        const f = this._files[fid] || this._allFiles[fid];
+                        return f && (f.fullPath === path || f.fullPath.startsWith(path + '/'));
+                    })
+                );
+                // Найдём вложенный узел соответствующий path
+                let node = subRoot;
+                for (const seg of path.split('/')) {
+                    if (node.dirs.has(seg)) node = node.dirs.get(seg);
+                    else { node = null; break; }
+                }
+                if (!node) continue;
+                const parts = this._dirPartsSum(node);
+                html += `<div class="tree-row dir" data-dir="fav:${this._esc(path)}" data-real-dir="${this._esc(path)}">
+                    <span class="tree-caret">${isOpen ? '▾' : '▸'}</span>
+                    <span class="tree-icon">📁</span>
+                    <span class="tree-name">${this._esc(path)}</span>
+                    ${parts > 0 ? `<span class="file-badge">${parts}</span>` : ''}
+                    <span class="fav-btn-dir" data-dir="${this._esc(path)}" title="Убрать из избранного">★</span>
+                </div>`;
+                if (isOpen) {
+                    html += this._renderTreeNode(node, 1, openDirs, 'fav:' + path);
+                }
+            }
+            for (const fid of favMatched) {
+                html += this._renderTreeFile(fid, 0);
+            }
             html += `<div class="file-tree-sep"></div>`;
         }
 
-        // Все файлы
-        const all = this._projectFiles.filter(id => {
-            const f = this._files[id];
-            return f && (!query || f.fullPath.toLowerCase().includes(query));
-        });
-        html += all.map(id => mkItem(id, false)).join('');
+        // Основное дерево
+        html += this._renderTreeNode(root, 0, openDirs, '');
 
         list.innerHTML = html || '<div style="padding:16px;color:var(--text-3);font-size:13px">Ничего не найдено</div>';
+        this._bindFileListEvents(list);
+    },
 
-        list.querySelectorAll('.file-item').forEach(el =>
+    // node: {dirs: Map, files: [id]}; depth — уровень вложенности; openDirs — Set или null.
+    // pathPrefix — путь до текущей ноды ('include/system' или '').
+    _renderTreeNode(node, depth, openDirs, pathPrefix) {
+        let html = '';
+        const indent = depth * 14;
+        // Сортируем папки и файлы по имени
+        const dirNames = [...node.dirs.keys()].sort();
+        const fileEntries = node.files
+            .map(fid => ({ fid, name: ((this._files[fid] || this._allFiles[fid])?.fullPath || '').split('/').pop() }))
+            .sort((a, b) => a.name.localeCompare(b.name));
+
+        // Сначала папки
+        for (const seg of dirNames) {
+            const child = node.dirs.get(seg);
+            const childPath = pathPrefix ? `${pathPrefix}/${seg}` : seg;
+            const isOpen = openDirs ? openDirs.has(childPath) : true;
+            const isFav = this._isFavDir(childPath);
+            const parts = this._dirPartsSum(child);
+            const accessible = this._dirHasAccessible(child);
+            const dim = accessible ? '' : ' tree-row-dim';
+            html += `<div class="tree-row dir${dim}" data-dir="${this._esc(childPath)}" style="padding-left:${indent}px">
+                <span class="tree-caret">${isOpen ? '▾' : '▸'}</span>
+                <span class="tree-icon">📁</span>
+                <span class="tree-name">${this._esc(seg)}</span>
+                ${parts > 0 ? `<span class="file-badge">${parts}</span>` : ''}
+                <span class="fav-btn-dir${isFav ? ' is-fav' : ''}" data-dir="${this._esc(childPath)}" title="${isFav ? 'Убрать из избранного' : 'Добавить папку в избранное'}">${isFav ? '★' : '☆'}</span>
+            </div>`;
+            if (isOpen) {
+                html += this._renderTreeNode(child, depth + 1, openDirs, childPath);
+            }
+        }
+
+        // Затем файлы
+        for (const { fid } of fileEntries) {
+            html += this._renderTreeFile(fid, depth);
+        }
+        return html;
+    },
+
+    _renderTreeFile(fid, depth) {
+        const sid = String(fid);
+        const f = this._files[sid] || this._allFiles[sid];
+        if (!f) return '';
+        const indent = depth * 14;
+        const ext  = (f.fullPath || '').split('.').pop();
+        const icon = ext === 'pwn' ? '📝' : ext === 'inc' ? '📎' : '📄';
+        const name = (f.fullPath || '').split('/').pop();
+        const accessible = this._isAccessible(sid);
+        const active = sid === this._activeFileId ? ' active' : '';
+        const dim = accessible ? '' : ' tree-row-dim';
+        const isFav = (this._loadFavs() || []).includes(sid);
+        const parts = this._fileParts(sid);
+        const badge = (accessible && parts > 0)
+            ? `<span class="file-badge" title="Выдано частей">${parts}</span>` : '';
+        return `<div class="tree-row file${active}${dim}" data-id="${sid}" style="padding-left:${indent}px" title="${this._esc(f.fullPath)}">
+            <span class="tree-caret"></span>
+            <span class="tree-icon">${icon}</span>
+            <span class="tree-name">${this._esc(name)}</span>
+            ${badge}
+            <span class="fav-btn" data-id="${sid}" title="Избранное">${isFav ? '★' : '☆'}</span>
+        </div>`;
+    },
+
+    // Привязка обработчиков для обоих режимов.
+    _bindFileListEvents(list) {
+        list.querySelectorAll('.file-item, .tree-row.file').forEach(el =>
             el.addEventListener('click', e => {
                 if (e.target.classList.contains('fav-btn')) return;
+                if (e.target.classList.contains('fav-btn-dir')) return;
                 this._openFile(el.dataset.id);
             })
         );
+        list.querySelectorAll('.tree-row.dir').forEach(el =>
+            el.addEventListener('click', e => {
+                if (e.target.classList.contains('fav-btn-dir')) return;
+                const d = el.dataset.dir;
+                if (d) this._toggleOpenDir(d);
+                this._renderFileList(document.getElementById('file-search')?.value?.toLowerCase() || '');
+            })
+        );
         list.querySelectorAll('.fav-btn').forEach(el =>
-            el.addEventListener('click', e => { e.stopPropagation(); this._toggleFav(el.dataset.id); })
+            el.addEventListener('click', e => {
+                e.stopPropagation();
+                this._toggleFav(el.dataset.id);
+            })
+        );
+        list.querySelectorAll('.fav-btn-dir').forEach(el =>
+            el.addEventListener('click', e => {
+                e.stopPropagation();
+                this._toggleFavDir(el.dataset.dir);
+            })
         );
     },
 

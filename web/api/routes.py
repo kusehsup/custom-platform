@@ -185,10 +185,18 @@ async def get_files(login: str = Depends(get_current_user)):
     accessible = {fid: all_files[fid] for fid in accessible_ids if fid in all_files}
     # Сохраняем порядок из project_files платформы (str-ified)
     ordered = [str(pid) for pid in client.project_files if str(pid) in accessible_ids]
+
+    # Для древовидного режима фронту нужны парты per-файл, чтобы:
+    #   - показать бадж «N» (количество выданных кусков);
+    #   - подсветить недоступные файлы (parts_count == 0).
+    parts_counts = {fid: len(parts or [])
+                    for fid, parts in (client.code or {}).items()}
+
     return {
         'files': accessible,
         'project_files': ordered,
-        'all_files': all_files,   # все файлы для поиска (имена)
+        'all_files': all_files,         # все файлы для поиска (имена + fullPath)
+        'parts_counts': parts_counts,   # file_id -> кол-во выданных частей
     }
 
 
