@@ -108,6 +108,10 @@ const NotesPage = {
             this._dirty = false;
             this._renderList();
             this._renderEditor();
+            // Auto-workspace: запоминаем активную заметку.
+            if (typeof Session !== 'undefined' && !Session.isSuspended()) {
+                Session.setNotes({ noteId: id });
+            }
         } catch (e) { app.toast(e.message, 'error'); }
     },
 

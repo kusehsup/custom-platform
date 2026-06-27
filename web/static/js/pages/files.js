@@ -631,6 +631,11 @@ app.register('files', {
         this._parts         = [];
         this._activePartIdx = 0;
 
+        // Auto-workspace: запоминаем какой файл открыт.
+        if (typeof Session !== 'undefined' && !Session.isSuspended()) {
+            Session.setFiles({ fileId: String(fileId), partIdx: 0 });
+        }
+
         if (this._activeTab !== 'files') this._switchTab('files');
 
         document.querySelectorAll('.file-item').forEach(el =>
@@ -851,6 +856,11 @@ app.register('files', {
         this._activePartIdx = partIdx;
         this._modified      = false;
 
+        // Auto-workspace: запоминаем активный part.
+        if (typeof Session !== 'undefined' && !Session.isSuspended() && this._activeFileId) {
+            Session.patchFiles({ partIdx, fileId: String(this._activeFileId) });
+        }
+
         const lang    = this._getLang(this._files[this._fileId]?.fullPath || '');
         const startLine = part.line || 1;
 
@@ -965,13 +975,22 @@ app.register('files', {
         this._editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => this._save());
         this._editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyG, () => this._showGotoLine());
 
-        // Статусбар — позиция курсора
+        // Статусбар — позиция курсора + auto-workspace
         this._editor.onDidChangeCursorPosition(e => {
             const pos = e.position;
             const part = this._parts?.[this._activePartIdx];
             const realLine = (part?.line || 1) + pos.lineNumber - 1;
             const sb = document.getElementById('sb-pos');
             if (sb) sb.textContent = `Стр ${realLine}, Кол ${pos.column}`;
+            if (typeof Session !== 'undefined' && !Session.isSuspended() && this._activeFileId) {
+                const scroll = this._editor.getScrollTop?.() || 0;
+                Session.patchFiles({
+                    fileId: String(this._activeFileId),
+                    partIdx: this._activePartIdx,
+                    cursor: { line: pos.lineNumber, col: pos.column },
+                    scroll,
+                });
+            }
         });
 
         // Статусбар — количество строк

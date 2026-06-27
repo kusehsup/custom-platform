@@ -21,6 +21,10 @@ const app = {
         const page = this._pages[name];
         if (page) page.render(main);
         this._updateTopbarActions();
+        // Auto-workspace: запоминаем текущую вкладку.
+        if (typeof Session !== 'undefined' && !Session.isSuspended()) {
+            Session.setPage(name);
+        }
     },
 
     _lastCompileResult: null,
@@ -614,7 +618,19 @@ const app = {
 
         this._applyTheme(localStorage.getItem('theme') || 'dark');
         this.connectWS();
-        this.navigate('server');
+        // Восстанавливаем последнюю активную вкладку и место в редакторе.
+        // Session.restore() сам решает что делать — если ничего не сохранено,
+        // открывает 'server' (через navigate в restore).
+        if (typeof Session !== 'undefined') {
+            const last = Session.getPage();
+            if (last && last !== 'server') {
+                Session.restore();
+            } else {
+                this.navigate('server');
+            }
+        } else {
+            this.navigate('server');
+        }
         this._registerCommands();
         this._bgScanTodo();
     },
