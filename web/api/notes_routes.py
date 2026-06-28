@@ -30,15 +30,22 @@ router = APIRouter()
 class CreateNoteRequest(BaseModel):
     title: str = ''
     body: str = ''
+    kind: str = 'markdown'   # 'markdown' | 'html'
 
 
 class UpdateNoteRequest(BaseModel):
     title: Optional[str] = None
     body: Optional[str] = None
+    kind: Optional[str] = None   # 'markdown' | 'html'
 
 
 class ShareRequest(BaseModel):
     enabled: bool
+
+
+# Лимит на размер тела заметки (особенно для HTML-загрузок).
+# 1 MB достаточно для типичных дашборд-страниц и не утяжеляет notes.json.
+MAX_BODY_BYTES = 1 * 1024 * 1024
 
 
 # ── Private endpoints (auth required) ──────────────────────────────
@@ -50,7 +57,9 @@ async def list_notes(login: str = Depends(get_current_user)):
 
 @router.post('/api/notes')
 async def create_note(body: CreateNoteRequest, login: str = Depends(get_current_user)):
-    return notes_store.create_note(login, title=body.title, body=body.body)
+    if len((body.body or '').encode('utf-8')) > MAX_BODY_BYTES:
+        raise HTTPException(status_code=413, detail='Размер заметки превышает 1 МБ')
+    return notes_store.create_note(login, title=body.title, body=body.body, kind=body.kind)
 
 
 @router.get('/api/notes/{nid}')
@@ -64,7 +73,11 @@ async def get_note(nid: str, login: str = Depends(get_current_user)):
 @router.put('/api/notes/{nid}')
 async def update_note(nid: str, body: UpdateNoteRequest,
                       login: str = Depends(get_current_user)):
-    note = notes_store.update_note(login, nid, title=body.title, body=body.body)
+    if body.body is not None and len(body.body.encode('utf-8')) > MAX_BODY_BYTES:
+        raise HTTPException(status_code=413, detail='Размер заметки превышает 1 МБ')
+    note = notes_store.update_note(
+        login, nid, title=body.title, body=body.body, kind=body.kind,
+    )
     if not note:
         raise HTTPException(status_code=404, detail='Заметка не найдена')
     return note
@@ -105,5 +118,6 @@ async def public_note(token: str):
     return {
         'title': note.get('title', ''),
         'body': note.get('body', ''),
+        'kind': note.get('kind', 'markdown'),
         'updated_at': note.get('updated_at'),
     }

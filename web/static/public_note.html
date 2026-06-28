@@ -131,6 +131,20 @@
             font-family: var(--mono);
             text-align: center;
         }
+        /* HTML-режим: автор сам управляет всем, мы просто даём iframe на
+           весь viewport. */
+        body.pn-html-mode { background: white; }
+        body.pn-html-mode #pn-root {
+            position: fixed;
+            inset: 0;
+            display: block;
+        }
+        .pn-iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+            display: block;
+        }
     </style>
 </head>
 <body>
@@ -335,6 +349,20 @@
             }
             const data = await r.json();
             document.title = data.title || 'Заметка';
+            if ((data.kind || 'markdown') === 'html') {
+                // HTML-заметка — рендерим в iframe sandbox. Без allow-same-origin,
+                // так что скрипт внутри не дотянется до cookie / localStorage
+                // этого домена. На весь viewport — пусть автор сам управляет
+                // макетом.
+                root.innerHTML = '';
+                document.body.classList.add('pn-html-mode');
+                const iframe = document.createElement('iframe');
+                iframe.className = 'pn-iframe';
+                iframe.setAttribute('sandbox', 'allow-scripts allow-forms allow-popups');
+                iframe.srcdoc = data.body || '';
+                root.appendChild(iframe);
+                return;
+            }
             root.innerHTML = `
                 <div class="pn-wrap">
                     <div class="pn-meta">Обновлено: ${formatDate(data.updated_at)}</div>

@@ -141,10 +141,11 @@ const NotesPage = {
         this._saveTimer = null;
         const title = document.getElementById('notes-title')?.value ?? this._active.title;
         const body = document.getElementById('notes-body')?.value ?? this._active.body;
+        const kind = this._active.kind || 'markdown';
         try {
             this._updateSaveStatus('Сохранение…');
             const updated = await API.put(`/api/notes/${encodeURIComponent(this._active.id)}`,
-                {title, body});
+                {title, body, kind});
             this._active = updated;
             this._dirty = false;
             this._updateSaveStatus('✓ Сохранено');
@@ -182,17 +183,31 @@ const NotesPage = {
             return;
         }
         const n = this._active;
+        const kind = n.kind || 'markdown';
         const modeBtn = (m, label) =>
             `<button class="notes-mode-btn${this._previewMode === m ? ' active' : ''}" data-mode="${m}">${label}</button>`;
+        const kindBtn = (k, label) =>
+            `<button class="notes-mode-btn${kind === k ? ' active' : ''}" data-kind="${k}">${label}</button>`;
+        const placeholder = kind === 'html'
+            ? '<!doctype html>&#10;<html>&#10;  <body>…</body>&#10;</html>'
+            : '# Заголовок&#10;&#10;Текст заметки в markdown…';
 
         root.innerHTML = `
         <div class="notes-toolbar">
             <input id="notes-title" class="notes-title-input" value="${this._esc(n.title)}" placeholder="Название" />
+            <div class="notes-modes" title="Тип контента">
+                ${kindBtn('markdown', 'MD')}
+                ${kindBtn('html', 'HTML')}
+            </div>
             <div class="notes-modes">
                 ${modeBtn('edit', 'Редактор')}
                 ${modeBtn('split', 'Split')}
                 ${modeBtn('preview', 'Preview')}
             </div>
+            ${kind === 'html'
+                ? `<button class="btn btn-ghost btn-sm" id="notes-upload-btn" title="Загрузить .html файл">📤 .html</button>
+                   <input type="file" id="notes-upload-input" accept=".html,.htm,text/html" style="display:none" />`
+                : ''}
             <button class="btn btn-ghost btn-sm" id="notes-share-btn" title="Поделиться">📤 Поделиться</button>
             <button class="btn btn-ghost btn-sm" id="notes-delete-btn" title="Удалить заметку">🗑</button>
         </div>
@@ -202,8 +217,8 @@ const NotesPage = {
         </div>
         <div class="notes-panes notes-panes-${this._previewMode}">
             <textarea id="notes-body" class="notes-body" spellcheck="false"
-                placeholder="# Заголовок&#10;&#10;Текст заметки в markdown…">${this._esc(n.body)}</textarea>
-            <div id="notes-preview" class="notes-preview"></div>
+                placeholder="${placeholder}">${this._esc(n.body)}</textarea>
+            <div id="notes-preview" class="notes-preview${kind === 'html' ? ' notes-preview-html' : ''}"></div>
         </div>`;
 
         const titleInp = document.getElementById('notes-title');
@@ -230,10 +245,60 @@ const NotesPage = {
         document.getElementById('notes-delete-btn').addEventListener('click', () => this._deleteActive());
         root.querySelectorAll('.notes-mode-btn').forEach((b) =>
             b.addEventListener('click', () => {
-                this._previewMode = b.dataset.mode;
-                this._renderEditor();
+                if (b.dataset.kind) {
+                    if (this._active && this._active.kind !== b.dataset.kind) {
+                        this._active.kind = b.dataset.kind;
+                        this._scheduleSave();
+                        this._renderEditor();
+                    }
+                    return;
+                }
+                if (b.dataset.mode) {
+                    this._previewMode = b.dataset.mode;
+                    this._renderEditor();
+                }
             }),
         );
+
+        // Загрузка .html файла
+        const uploadBtn = document.getElementById('notes-upload-btn');
+        const uploadInp = document.getElementById('notes-upload-input');
+        if (uploadBtn && uploadInp) {
+            uploadBtn.addEventListener('click', () => uploadInp.click());
+            uploadInp.addEventListener('change', async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                if (file.size > 1024 * 1024) {
+                    app.toast(`Файл слишком большой: ${(file.size/1024).toFixed(1)} КБ > 1024 КБ`, 'error');
+                    uploadInp.value = '';
+                    return;
+                }
+                try {
+                    const text = await file.text();
+                    const ta = document.getElementById('notes-body');
+                    if (ta) {
+                        ta.value = text;
+                        this._scheduleSave();
+                        this._renderPreview();
+                    }
+                    // Если у заметки нет нормального названия — подставим имя файла
+                    if (!this._active.title || this._active.title === 'Без названия' || this._active.title === 'Новая заметка') {
+                        const titleInp2 = document.getElementById('notes-title');
+                        const nameOnly = file.name.replace(/\.html?$/i, '');
+                        if (titleInp2) {
+                            titleInp2.value = nameOnly;
+                            this._scheduleSave();
+                        }
+                    }
+                    app.toast(`Загружен: ${file.name}`, 'success');
+                } catch (err) {
+                    app.toast(`Не удалось прочитать файл: ${err.message}`, 'error');
+                } finally {
+                    uploadInp.value = '';
+                }
+            });
+        }
+
         this._renderPreview();
     },
 
@@ -241,6 +306,21 @@ const NotesPage = {
         const el = document.getElementById('notes-preview');
         if (!el) return;
         const body = document.getElementById('notes-body')?.value || '';
+        const kind = this._active?.kind || 'markdown';
+
+        if (kind === 'html') {
+            // Песочница: allow-scripts даёт JS работать (графики, фильтры),
+            // НО без allow-same-origin — никакого доступа к нашему cookie /
+            // localStorage / DOM родительской страницы. Это и есть защита.
+            el.innerHTML = '';
+            const iframe = document.createElement('iframe');
+            iframe.className = 'notes-preview-iframe';
+            iframe.setAttribute('sandbox', 'allow-scripts allow-forms allow-popups');
+            iframe.srcdoc = body;
+            el.appendChild(iframe);
+            return;
+        }
+
         el.innerHTML = NotesMd.render(body);
         // Делаем чекбоксы кликабельными — toggle строки в исходном markdown
         el.querySelectorAll('input[type="checkbox"][data-task-idx]').forEach((cb) =>

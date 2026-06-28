@@ -70,13 +70,19 @@ def get_note(login: str, note_id: str) -> Optional[dict]:
         return _bucket(data, login).get(note_id)
 
 
-def create_note(login: str, title: str = '', body: str = '') -> dict:
+VALID_KINDS = {'markdown', 'html'}
+
+
+def create_note(login: str, title: str = '', body: str = '', kind: str = 'markdown') -> dict:
     nid = uuid.uuid4().hex[:12]
     now = _now()
+    if kind not in VALID_KINDS:
+        kind = 'markdown'
     note = {
         'id': nid,
         'title': title or 'Без названия',
         'body': body or '',
+        'kind': kind,
         'share_token': None,
         'share_enabled': False,
         'created_at': now,
@@ -91,7 +97,8 @@ def create_note(login: str, title: str = '', body: str = '') -> dict:
 
 def update_note(login: str, note_id: str, *,
                 title: Optional[str] = None,
-                body: Optional[str] = None) -> Optional[dict]:
+                body: Optional[str] = None,
+                kind: Optional[str] = None) -> Optional[dict]:
     with _LOCK:
         data = _read()
         b = _bucket(data, login)
@@ -102,6 +109,8 @@ def update_note(login: str, note_id: str, *,
             note['title'] = title or 'Без названия'
         if body is not None:
             note['body'] = body
+        if kind is not None and kind in VALID_KINDS:
+            note['kind'] = kind
         note['updated_at'] = _now()
         _write(data)
         return note
