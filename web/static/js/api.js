@@ -49,7 +49,10 @@ const API = {
 
     setToken(token) {
         this._token = token;
-        localStorage.setItem('token', token);
+        // localStorage может быть полон — освобождаем место от заведомо
+        // расходных ключей и пробуем снова. Токен — критический, без него
+        // не работает ничего.
+        this._safeSetItem('token', token);
     },
 
     clearToken() {
@@ -57,6 +60,51 @@ const API = {
         localStorage.removeItem('token');
         // Останавливаем фоновые процессы
         if (typeof TodoPage !== 'undefined') TodoPage.abort();
+    },
+
+    // ── Защищённая запись в localStorage ─────────────────────────
+    // Quota обычно 5-10MB. При переполнении пробуем освободить место,
+    // выкидывая «дешёвые» (восстановимые) данные в порядке убывания
+    // вероятности что они большие.
+    _safeSetItem(key, value) {
+        try {
+            localStorage.setItem(key, value);
+            return true;
+        } catch (e) {
+            console.warn('[storage] quota hit while writing', key, '— freeing space');
+        }
+        const reclaimOrder = [
+            'console_lines',           // лог консоли
+            'db_query_log',            // лог SQL запросов
+            'db_query_hist',           // история SQL
+            'compile_history',         // история сборок
+            'workspaces',              // именованные workspace'ы (можно пожертвовать)
+            'last_session',            // авто-сессия (восстановимая на сервере)
+        ];
+        for (const k of reclaimOrder) {
+            try { localStorage.removeItem(k); } catch {}
+            try {
+                localStorage.setItem(key, value);
+                console.warn('[storage] recovered after dropping', k);
+                return true;
+            } catch {}
+        }
+        // Тяжёлая артиллерия — стираем всё кроме самого ключа
+        try {
+            const keep = {};
+            for (let i = 0; i < localStorage.length; i++) {
+                const k = localStorage.key(i);
+                if (k === key) continue;
+                keep[k] = null; // пометить на удаление
+            }
+            for (const k of Object.keys(keep)) localStorage.removeItem(k);
+            localStorage.setItem(key, value);
+            console.warn('[storage] localStorage fully purged to write', key);
+            return true;
+        } catch (e) {
+            console.error('[storage] failed to write', key, 'after purge:', e);
+            return false;
+        }
     },
 
     hasToken() { return !!this._token; },

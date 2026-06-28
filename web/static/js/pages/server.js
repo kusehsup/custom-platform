@@ -53,15 +53,25 @@ app.register('server', {
         this._loaded = true;
     },
     _saveLines() {
+        // В localStorage пишем хвост последних CONSOLE_PERSIST_MAX строк,
+        // но не больше CONSOLE_PERSIST_BYTES общим объёмом, чтобы 2000
+        // длинных стек-трейсов не выжрали всю quota.
+        const CONSOLE_PERSIST_BYTES = 512 * 1024;   // 512 KB
+        let persisted = this._lines.length > CONSOLE_PERSIST_MAX
+            ? this._lines.slice(-CONSOLE_PERSIST_MAX)
+            : this._lines.slice();
+
+        // Срезаем хвост по байтам, отбрасывая старые строки.
+        let payload = JSON.stringify({ v: 2, lines: persisted });
+        while (payload.length > CONSOLE_PERSIST_BYTES && persisted.length > 50) {
+            persisted = persisted.slice(Math.ceil(persisted.length / 4));
+            payload = JSON.stringify({ v: 2, lines: persisted });
+        }
         try {
-            // В localStorage пишем хвост последних CONSOLE_PERSIST_MAX строк,
-            // в памяти держим всё.
-            const persisted = this._lines.length > CONSOLE_PERSIST_MAX
-                ? this._lines.slice(-CONSOLE_PERSIST_MAX)
-                : this._lines;
-            localStorage.setItem(CONSOLE_KEY, JSON.stringify({ v: 2, lines: persisted }));
+            localStorage.setItem(CONSOLE_KEY, payload);
         } catch {
             // localStorage переполнен — ничего страшного, в памяти всё на месте
+            try { localStorage.removeItem(CONSOLE_KEY); } catch {}
         }
     },
     _trim() {
