@@ -1,11 +1,12 @@
-const FAV_KEY        = 'fav_files';
-const FAV_DIR_KEY    = 'fav_dirs';
-const TREE_MODE_KEY  = 'files_tree_mode';     // '1' = дерево, '' = плоский
-const SHOW_ALL_KEY   = 'files_show_all';      // '1' = показывать недоступные
-const TREE_OPEN_KEY  = 'files_tree_open';     // JSON-массив открытых директорий
-const TREE_WIDTH_KEY = 'files_tree_width';    // px-ширина sidebar'a
-const HIST_PREFIX    = 'file_hist_';
-const HIST_MAX       = 20;
+const FAV_KEY         = 'fav_files';
+const FAV_DIR_KEY     = 'fav_dirs';
+const TREE_MODE_KEY   = 'files_tree_mode';     // '1' = дерево, '' = плоский
+const SHOW_ALL_KEY    = 'files_show_all';      // '1' = показывать недоступные
+const TREE_OPEN_KEY   = 'files_tree_open';     // JSON-массив открытых директорий
+const TREE_WIDTH_KEY  = 'files_tree_width';    // px-ширина sidebar'a
+const DRAFT_PREFIX    = 'file_drafts_';        // file_drafts_<fileId> → {partIdx: text}
+const HIST_PREFIX     = 'file_hist_';
+const HIST_MAX        = 20;
 
 app.register('files', {
     _files: {},
@@ -54,6 +55,43 @@ app.register('files', {
         const set = this._loadOpenDirs();
         if (set.has(path)) set.delete(path); else set.add(path);
         this._saveOpenDirs(set);
+    },
+
+    // ── Drafts: несохранённые правки переживают F5/reload ───────────
+    // Храним {partIdx: text} в localStorage по ключу file_drafts_<fileId>.
+    // Сохранение throttled; при успешном _save() draft конкретной
+    // части удаляется (см. _save).
+    _loadDrafts(fileId) {
+        try {
+            const v = JSON.parse(localStorage.getItem(DRAFT_PREFIX + fileId) || '{}');
+            return (v && typeof v === 'object') ? v : {};
+        } catch { return {}; }
+    },
+    _saveDrafts(fileId, drafts) {
+        try {
+            const obj = drafts || {};
+            const hasAny = Object.keys(obj).length > 0;
+            if (!hasAny) {
+                localStorage.removeItem(DRAFT_PREFIX + fileId);
+                return;
+            }
+            localStorage.setItem(DRAFT_PREFIX + fileId, JSON.stringify(obj));
+        } catch {
+            // quota — ничего страшного, не блокирует работу
+        }
+    },
+    _scheduleDraftWrite() {
+        if (!this._activeFileId) return;
+        clearTimeout(this._draftWriteTimer);
+        this._draftWriteTimer = setTimeout(() => {
+            const fid = this._activeFileId;
+            if (!fid) return;
+            // Снимаем актуальный текст из редактора если есть несохранённое
+            if (this._editor && this._modified) {
+                this._partDrafts[this._activePartIdx] = this._editor.getValue();
+            }
+            this._saveDrafts(fid, this._partDrafts || {});
+        }, 500);
     },
 
     // ── Ширина sidebar'a (drag-resize) ────────────────────────────
@@ -237,19 +275,77 @@ app.register('files', {
         document.getElementById('btn-del-block').addEventListener('click',  () => this._deleteCurrentBlock());
 
         // Alt+←/→ — прокрутка вкладок частей файла
+        // Ctrl+Tab / Ctrl+Shift+Tab — переключение part'ы (next/prev)
+        // Esc в поиске файлов — очистка
         if (!this._partTabsKeyboardBound) {
             document.addEventListener('keydown', (e) => {
-                if (!this._partTabsBar || !document.body.contains(this._partTabsBar)) return;
-                if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
-                if (e.key === 'ArrowLeft') {
+                // Alt+←/→
+                if (this._partTabsBar && document.body.contains(this._partTabsBar)
+                    && e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+                    if (e.key === 'ArrowLeft') {
+                        e.preventDefault();
+                        this._partTabsBar.scrollBy({ left: -200, behavior: 'smooth' });
+                        return;
+                    } else if (e.key === 'ArrowRight') {
+                        e.preventDefault();
+                        this._partTabsBar.scrollBy({ left: 200, behavior: 'smooth' });
+                        return;
+                    }
+                }
+                // Ctrl+Tab / Ctrl+Shift+Tab — между part'ами активного файла
+                if ((e.ctrlKey || e.metaKey) && e.key === 'Tab' && this._parts?.length > 1) {
                     e.preventDefault();
-                    this._partTabsBar.scrollBy({ left: -200, behavior: 'smooth' });
-                } else if (e.key === 'ArrowRight') {
-                    e.preventDefault();
-                    this._partTabsBar.scrollBy({ left: 200, behavior: 'smooth' });
+                    const dir = e.shiftKey ? -1 : 1;
+                    const next = (this._activePartIdx + dir + this._parts.length) % this._parts.length;
+                    // Сохраняем текущий черновик прежде чем переключаться
+                    if (this._editor && this._modified) {
+                        this._partDrafts[this._activePartIdx] = this._editor.getValue();
+                    }
+                    this._loadPartIntoEditor(next);
+                    return;
                 }
             });
             this._partTabsKeyboardBound = true;
+        }
+
+        // ↑/↓/Enter/Esc в поиске файлов — навигация без мыши.
+        const search = document.getElementById('file-search');
+        if (search && !search._navBound) {
+            search._navBound = true;
+            search.addEventListener('keydown', (e) => {
+                const list = document.getElementById('file-list');
+                if (!list) return;
+                if (e.key === 'Escape') {
+                    if (search.value) {
+                        search.value = '';
+                        this._renderFileList('');
+                        e.preventDefault();
+                    } else {
+                        search.blur();
+                    }
+                    return;
+                }
+                if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp' && e.key !== 'Enter') return;
+                const items = Array.from(list.querySelectorAll('.file-item, .tree-row.file'));
+                if (!items.length) return;
+                let idx = items.findIndex(el => el.classList.contains('kbd-hover'));
+                if (idx < 0) idx = items.findIndex(el => el.classList.contains('active'));
+                if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    idx = Math.min(items.length - 1, (idx < 0 ? 0 : idx + 1));
+                } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    idx = Math.max(0, (idx < 0 ? 0 : idx - 1));
+                } else if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const target = items[idx >= 0 ? idx : 0];
+                    if (target) this._openFile(target.dataset.id);
+                    return;
+                }
+                items.forEach(el => el.classList.remove('kbd-hover'));
+                items[idx]?.classList.add('kbd-hover');
+                items[idx]?.scrollIntoView({ block: 'nearest' });
+            });
         }
     },
 
@@ -685,8 +781,30 @@ app.register('files', {
         // Кэшируем части для TODO-сканера
         if (!this._codeParts) this._codeParts = {};
         this._codeParts[fileId] = parts;
-        // Сохраняем локальные правки в памяти (на случай переключения частей)
-        this._partDrafts    = {};
+        // Восстанавливаем drafts из localStorage — несохранённые правки
+        // переживают F5 и переоткрытие файла. Сохраняем только те, чьи
+        // partIdx ещё валидны для текущего набора parts.
+        const persisted = this._loadDrafts(fileId);
+        const drafts = {};
+        let restoredCount = 0;
+        for (const [k, v] of Object.entries(persisted)) {
+            const i = parseInt(k, 10);
+            if (Number.isFinite(i) && i >= 0 && i < parts.length && typeof v === 'string') {
+                // Не восстанавливаем если draft идентичен серверному содержимому
+                if (v !== parts[i].content) {
+                    drafts[i] = v;
+                    restoredCount++;
+                }
+            }
+        }
+        this._partDrafts    = drafts;
+        if (restoredCount && typeof app !== 'undefined' && app.toast) {
+            app.toast(`📝 Восстановлено ${restoredCount} несохранённых черновик(ов)`, 'info');
+        }
+        // Если в storage остались устаревшие partIdx — перезапишем без них
+        if (Object.keys(persisted).length !== restoredCount) {
+            this._saveDrafts(fileId, drafts);
+        }
         this._activePartIdx = 0;
         this._modified      = false;
         this._fileId        = fileId;
@@ -698,11 +816,70 @@ app.register('files', {
     // Извлекаем значимое название из кода части
     _partLabel(part) {
         if (!part.content) return `[${part.line}]`;
+        // 1) Пытаемся найти Pawn-сигнатуру функции: stock/forward/public/
+        //    native FuncName(...). Берём имя функции если нашли.
+        const fname = this._extractFunctionName(part.content);
+        if (fname) {
+            const lbl = fname.length > 28 ? fname.slice(0, 28) + '…' : fname;
+            return lbl;
+        }
+        // 2) Фоллбэк: первые значимые слова первой непустой строки.
         const firstLine = part.content.split('\n').find(l => l.trim()) || '';
-        // Берём первые значимые слова (убираем отступы, ограничиваем длину)
         const clean = firstLine.trim().replace(/\s+/g, ' ');
         const label = clean.length > 28 ? clean.slice(0, 28) + '…' : clean;
         return label || `[${part.line}]`;
+    },
+
+    // Обновляет sb-context — ищет ближайшую сигнатуру функции ВЫШЕ
+    // текущей строки. Если нашлось — пишет `▸ FuncName`. Если нет —
+    // очищает.
+    _updateContextLabel(lineNumber) {
+        const el = document.getElementById('sb-context');
+        if (!el) return;
+        const model = this._editor?.getModel();
+        if (!model) { el.textContent = ''; return; }
+        const sigRe = /^\s*(?:stock|public|forward|native|static)\s+(?:[A-Za-z_]\w*\s*:\s*)?([A-Za-z_]\w*)\s*\(/;
+        // Идём вверх до начала или до первой совпавшей сигнатуры.
+        const start = Math.max(1, lineNumber);
+        for (let ln = start; ln >= 1; ln--) {
+            const text = model.getLineContent(ln);
+            const m = text.match(sigRe);
+            if (m) {
+                el.textContent = `▸ ${m[1]}`;
+                return;
+            }
+        }
+        el.textContent = '';
+    },
+
+    // Ищет имя функции внутри строки текста. Покрывает Pawn-сигнатуры:
+    //   stock Func(...)      stock Tag: Func(...)
+    //   public Func(...)     forward Tag: Func(...);
+    //   native Func(...) = ... static Func(...)
+    //   просто Func(...)     (top-level callback вроде OnPlayerConnect)
+    // Берёт ближайшую к началу. Возвращает null если ничего внятного.
+    _extractFunctionName(text) {
+        if (!text) return null;
+        // Поиск в первых ~80 строках чтобы не сканить мегабайты.
+        const lines = String(text).split('\n').slice(0, 80);
+        for (const raw of lines) {
+            const line = raw.trim();
+            if (!line || line.startsWith('//') || line.startsWith('/*') || line.startsWith('*')) continue;
+            // Pawn-функция: декларатор + опц. тег + имя + (
+            // Допустимы:  stock FOO(   public BattlePass:Init(   forward Tag: Foo(
+            const m = line.match(/^(?:stock|public|forward|native|static)\s+(?:[A-Za-z_]\w*\s*:\s*)?([A-Za-z_]\w*)\s*\(/);
+            if (m) return m[1];
+            // Top-level callback / просто Func( в начале строки — игнорируем
+            // условия if/for/switch и т.п. через blacklist первого слова.
+            const m2 = line.match(/^([A-Za-z_]\w*)\s*\(/);
+            if (m2) {
+                const head = m2[1];
+                if (!/^(if|for|while|switch|return|case|do|else|sizeof|tagof)$/.test(head)) {
+                    return head;
+                }
+            }
+        }
+        return null;
     },
 
     _renderPartTabs() {
@@ -899,10 +1076,152 @@ app.register('files', {
     },
 
     _getLang(path) {
-        if (path.endsWith('.pwn') || path.endsWith('.inc')) return 'cpp';
+        if (path.endsWith('.pwn') || path.endsWith('.inc')) return 'pawn';
         if (path.endsWith('.js'))   return 'javascript';
         if (path.endsWith('.json')) return 'json';
         return 'plaintext';
+    },
+
+    // Регистрация Pawn в Monaco. Вызывается один раз — повторно — no-op
+    // через флаг на window. tokenizer покрывает: ключевые слова, типы и
+    // tag-types (Float:/bool:), public/forward/native, строки, числа,
+    // комментарии. Этого достаточно для нормальной читаемости.
+    _registerPawnLanguage() {
+        if (window._pawnLangRegistered) return;
+        if (typeof monaco === 'undefined' || !monaco.languages) return;
+        window._pawnLangRegistered = true;
+
+        monaco.languages.register({
+            id: 'pawn',
+            extensions: ['.pwn', '.inc'],
+            aliases: ['Pawn', 'pawn'],
+        });
+
+        monaco.languages.setLanguageConfiguration('pawn', {
+            comments: { lineComment: '//', blockComment: ['/*', '*/'] },
+            brackets: [['{','}'], ['[',']'], ['(',')']],
+            autoClosingPairs: [
+                {open:'{', close:'}'}, {open:'[', close:']'},
+                {open:'(', close:')'}, {open:'"', close:'"', notIn:['string']},
+                {open:"'", close:"'", notIn:['string','comment']},
+            ],
+            surroundingPairs: [
+                {open:'{', close:'}'}, {open:'[', close:']'},
+                {open:'(', close:')'}, {open:'"', close:'"'}, {open:"'", close:"'"},
+            ],
+            indentationRules: {
+                increaseIndentPattern: /^.*\{[^}"']*$/,
+                decreaseIndentPattern: /^\s*\}/,
+            },
+        });
+
+        monaco.languages.setMonarchTokensProvider('pawn', {
+            defaultToken: '',
+            tokenPostfix: '.pawn',
+
+            keywords: [
+                'if','else','for','while','do','switch','case','default',
+                'break','continue','return','goto','sizeof','sleep','exit',
+                'state','tagof','emit','const','static','operator','assert',
+                'enum','funcenum','funcident',
+            ],
+            // Pawn-специфичные хедеры объявлений
+            declKeywords: [
+                'new','stock','static','public','forward','native','const',
+            ],
+            tagTypes: [
+                'Float','bool','Text','Text3D','PlayerText','PlayerText3D',
+                'File','DB','DBResult','Cache','Menu','SQL','MySQL',
+                'Iterator','Bit','BitArray',
+            ],
+            // Часто встречающиеся callback'и и core-функции — для подсветки
+            samp: [
+                'OnGameModeInit','OnGameModeExit','OnFilterScriptInit','OnFilterScriptExit',
+                'OnPlayerConnect','OnPlayerDisconnect','OnPlayerSpawn','OnPlayerDeath',
+                'OnPlayerText','OnPlayerCommandText','OnPlayerEnterVehicle','OnPlayerExitVehicle',
+                'OnPlayerStateChange','OnVehicleSpawn','OnVehicleDeath',
+                'OnDialogResponse','OnPlayerKeyStateChange','OnPlayerUpdate',
+                'SetPlayerPos','GetPlayerPos','SendClientMessage','SendClientMessageToAll',
+                'GivePlayerMoney','GetPlayerMoney','SetPlayerHealth','GetPlayerHealth',
+                'CreateVehicle','DestroyVehicle','PutPlayerInVehicle','GetPlayerVehicleID',
+                'format','printf','strcmp','strlen','strcat','strcpy','strfind','strdel',
+                'strmid','strpack','strunpack','strval','strins','sscanf',
+                'floatstr','floatround','floatsqroot','floatabs','floatadd','floatsub',
+                'mysql_query','mysql_pquery','mysql_tquery','mysql_format','cache_get_value_name_int',
+                'cache_get_value_name','cache_get_value_name_float','cache_num_rows','cache_delete',
+                'CallLocalFunction','CallRemoteFunction','SetTimer','KillTimer','GetTickCount',
+                'random','min','max','clamp',
+            ],
+
+            operators: [
+                '=','>','<','!','~','?',':','==','<=','>=','!=','&&','||','++','--',
+                '+','-','*','/','&','|','^','%','<<','>>','>>>',
+                '+=','-=','*=','/=','&=','|=','^=','%=','<<=','>>=','>>>=',
+            ],
+            symbols:  /[=><!~?:&|+\-*\/\^%]+/,
+
+            tokenizer: {
+                root: [
+                    // Pre-processor
+                    [/^\s*#\w+/, 'keyword.directive'],
+                    // Tag-types: Float: или MyTag:
+                    [/[A-Za-z_]\w*\s*:/, {
+                        cases: {
+                            '@tagTypes(:)': 'type.identifier',
+                            '@default':     'identifier',
+                        },
+                    }],
+                    // tagTypes как отдельный токен (Float:value, bool:flag)
+                    [/[A-Za-z_]\w*/, {
+                        cases: {
+                            '@declKeywords': 'keyword.declaration',
+                            '@keywords':     'keyword',
+                            '@samp':         'support.function',
+                            '@tagTypes':     'type.identifier',
+                            '@default':      'identifier',
+                        },
+                    }],
+                    { include: '@whitespace' },
+                    // Числа hex/bin/dec/float
+                    [/0x[0-9a-fA-F_]+/, 'number.hex'],
+                    [/0b[01_]+/,        'number.binary'],
+                    [/\d*\.\d+([eE][\-+]?\d+)?/, 'number.float'],
+                    [/\d[\d_]*/,        'number'],
+                    // Строки
+                    [/"/, { token: 'string.quote', bracket: '@open', next: '@string_dq' }],
+                    [/'/, { token: 'string.quote', bracket: '@open', next: '@string_sq' }],
+                    // Скобки / операторы
+                    [/[{}()\[\]]/, '@brackets'],
+                    [/@symbols/, {
+                        cases: {
+                            '@operators': 'operator',
+                            '@default':   '',
+                        },
+                    }],
+                    [/[;,.]/, 'delimiter'],
+                ],
+                comment: [
+                    [/[^\/*]+/,   'comment'],
+                    [/\*\//,      'comment', '@pop'],
+                    [/[\/*]/,     'comment'],
+                ],
+                whitespace: [
+                    [/[ \t\r\n]+/, 'white'],
+                    [/\/\*/,       'comment', '@comment'],
+                    [/\/\/.*$/,    'comment'],
+                ],
+                string_dq: [
+                    [/[^\\"]+/,        'string'],
+                    [/\\./,            'string.escape'],
+                    [/"/,              { token: 'string.quote', bracket: '@close', next: '@pop' }],
+                ],
+                string_sq: [
+                    [/[^\\']+/,        'string'],
+                    [/\\./,            'string.escape'],
+                    [/'/,              { token: 'string.quote', bracket: '@close', next: '@pop' }],
+                ],
+            },
+        });
     },
 
     // ── Monaco ────────────────────────────────────────────────────────
@@ -921,6 +1240,11 @@ app.register('files', {
     _initEditor() {
         const container = document.getElementById('monaco-editor');
         if (!container || this._editor) return;
+
+        // Регистрируем Pawn-язык. До этого .pwn/.inc подсвечивались как cpp,
+        // и Float:/forward/public/stock/native — выглядели либо неправильно,
+        // либо никак.
+        this._registerPawnLanguage();
 
         window._monacoThemeDefined = true;
         monaco.editor.defineTheme('custom-dark', {
@@ -950,7 +1274,7 @@ app.register('files', {
         });
 
         this._editor = monaco.editor.create(container, {
-            value: '', language: 'cpp', theme: 'custom-dark',
+            value: '', language: 'pawn', theme: 'custom-dark',
             fontSize: 13, fontFamily: "'Cascadia Code','Consolas',monospace",
             fontLigatures: true, minimap: { enabled: true },
             scrollBeyondLastLine: true, automaticLayout: true,
@@ -970,6 +1294,8 @@ app.register('files', {
                 document.getElementById('btn-save')?.classList.remove('hidden');
                 document.getElementById('btn-discard')?.classList.remove('hidden');
             }
+            // Throttled запись draft в localStorage — переживёт F5.
+            this._scheduleDraftWrite();
         });
 
         this._editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => this._save());
@@ -982,6 +1308,8 @@ app.register('files', {
             const realLine = (part?.line || 1) + pos.lineNumber - 1;
             const sb = document.getElementById('sb-pos');
             if (sb) sb.textContent = `Стр ${realLine}, Кол ${pos.column}`;
+            // Контекст «в какой функции находишься»
+            this._updateContextLabel(pos.lineNumber);
             if (typeof Session !== 'undefined' && !Session.isSuspended() && this._activeFileId) {
                 const scroll = this._editor.getScrollTop?.() || 0;
                 Session.patchFiles({
@@ -1049,6 +1377,8 @@ app.register('files', {
             if (this._activeFileId === savedFileId) {
                 this._parts[savedPartIdx].hash = res.hash;
                 if (this._partDrafts) delete this._partDrafts[savedPartIdx];
+                // Persisted-draft этой части тоже устарел — стираем
+                this._saveDrafts(savedFileId, this._partDrafts || {});
                 // Сбрасываем флаг изменений только если мы всё ещё на той же части
                 if (this._activePartIdx === savedPartIdx) {
                     this._modified = false;
@@ -1271,6 +1601,9 @@ app.register('files', {
     _discard() {
         if (!this._activeFileId) return;
         this._modified = false;
+        // Стираем draft этой части — иначе после reload вернётся.
+        if (this._partDrafts) delete this._partDrafts[this._activePartIdx];
+        this._saveDrafts(this._activeFileId, this._partDrafts || {});
         this._loadPartIntoEditor(this._activePartIdx);
     },
 

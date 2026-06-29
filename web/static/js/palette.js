@@ -160,9 +160,16 @@ const Palette = {
 
 window.Palette = Palette;
 
-// Глобальная горячая клавиша
+// Глобальные горячие клавиши:
+//   Ctrl+Shift+P — палитра команд + файлов
+//   Ctrl+P       — то же самое (привычка по VS Code, quick-open файла)
 document.addEventListener('keydown', e => {
-    if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'p') {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'p' && !e.altKey) {
+        // Если фокус в input/textarea/contenteditable — пропускаем,
+        // не перехватываем системные шорткаты пользователя (печать).
+        const tag = (e.target?.tagName || '').toLowerCase();
+        const editable = tag === 'input' || tag === 'textarea' || e.target?.isContentEditable;
+        if (editable && !e.shiftKey) return;
         e.preventDefault();
         Palette.open();
     }

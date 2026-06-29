@@ -697,8 +697,10 @@ body.files-resizing * {
     overflow: hidden;
     text-overflow: ellipsis;
 }
-.file-item:hover  { background: var(--surface2); color: var(--text); }
-.file-item.active { background: var(--surface2); color: var(--text); }
+.file-item:hover,
+.file-item.kbd-hover    { background: var(--surface2); color: var(--text); }
+.file-item.active       { background: var(--surface2); color: var(--text); }
+.tree-row.file.kbd-hover { background: var(--surface2); color: var(--text); }
 
 .file-item .file-icon { flex-shrink: 0; font-size: 12px; }
 
