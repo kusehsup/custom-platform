@@ -10,6 +10,7 @@ const app = {
 
     navigate(name) {
         if (this._current === name) return;
+        const prev = this._current;
         this._current = name;
         document.querySelectorAll('.sidebar a').forEach(a =>
             a.classList.toggle('active', a.dataset.page === name)
@@ -19,7 +20,22 @@ const app = {
         main.classList.remove('main--fullscreen');
         main.innerHTML = '';
         const page = this._pages[name];
-        if (page) page.render(main);
+
+        // Защита: если render() кинет — main останется пустым. Ловим и
+        // показываем понятную плашку с возможностью вернуться на сервер.
+        if (page) {
+            try {
+                const r = page.render(main);
+                if (r && typeof r.catch === 'function') {
+                    r.catch((e) => this._renderPageError(main, name, e));
+                }
+            } catch (e) {
+                this._renderPageError(main, name, e);
+            }
+        } else {
+            this._renderPageError(main, name, new Error('Страница не зарегистрирована'));
+        }
+
         this._updateTopbarActions();
         // Auto-workspace: запоминаем текущую вкладку и пытаемся
         // восстановить её прежнее содержимое (открытый файл/часть/курсор,
@@ -30,6 +46,25 @@ const app = {
             // навесить начальные DOM-узлы.
             setTimeout(() => Session.restorePageContents(name), 0);
         }
+    },
+
+    _renderPageError(main, name, err) {
+        if (!main) return;
+        const msg = (err && err.message) || String(err || 'Неизвестная ошибка');
+        main.innerHTML = `
+        <div style="max-width:520px;margin:80px auto;padding:24px;text-align:center;color:var(--text)">
+            <div style="font-size:28px;margin-bottom:8px">⚠️</div>
+            <div style="font-size:16px;font-weight:600;margin-bottom:6px">Не удалось открыть вкладку</div>
+            <div style="font-size:13px;color:var(--text-3);margin-bottom:4px;font-family:var(--mono)">${name}</div>
+            <div style="font-size:12px;color:var(--text-2);margin-bottom:20px">${msg}</div>
+            <button class="btn btn-primary btn-sm" id="page-err-server">↩ Открыть «Сервер»</button>
+        </div>`;
+        const btn = document.getElementById('page-err-server');
+        if (btn) btn.addEventListener('click', () => {
+            this._current = null;
+            this.navigate('server');
+        });
+        console.error('[navigate] page render failed:', name, err);
     },
 
     _lastCompileResult: null,

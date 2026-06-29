@@ -195,9 +195,26 @@ const Session = {
         const page = st.page || 'server';
         if (page !== 'server') {
             this._suspendRestore = true;
-            try { app.navigate(page); } catch {}
+            try {
+                app.navigate(page);
+            } catch (e) {
+                // navigate сам по себе не должен кидать (он ловит), но
+                // на всякий случай — фоллбэк на сервер.
+                console.warn('[session] restore navigate failed:', e);
+                try { app.navigate('server'); } catch {}
+                return;
+            }
         }
         this.restorePageContents(page);
+        // Если за разумное время main так и не отрисовался — фоллбэк.
+        setTimeout(() => {
+            const main = document.getElementById('main');
+            if (main && !main.children.length) {
+                console.warn('[session] restore yielded empty main, falling back to server');
+                app._current = null;
+                try { app.navigate('server'); } catch {}
+            }
+        }, 2500);
     },
 };
 
