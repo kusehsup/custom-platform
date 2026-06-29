@@ -1162,16 +1162,12 @@ app.register('files', {
 
             tokenizer: {
                 root: [
+                    // Whitespace и комментарии — первыми, чтобы корректно
+                    // отрабатывал \n и не ломалось состояние.
+                    { include: '@whitespace' },
                     // Pre-processor
                     [/^\s*#\w+/, 'keyword.directive'],
-                    // Tag-types: Float: или MyTag:
-                    [/[A-Za-z_]\w*\s*:/, {
-                        cases: {
-                            '@tagTypes(:)': 'type.identifier',
-                            '@default':     'identifier',
-                        },
-                    }],
-                    // tagTypes как отдельный токен (Float:value, bool:flag)
+                    // Identifier / ключевое слово / SAMP-функция / tag-type
                     [/[A-Za-z_]\w*/, {
                         cases: {
                             '@declKeywords': 'keyword.declaration',
@@ -1181,7 +1177,6 @@ app.register('files', {
                             '@default':      'identifier',
                         },
                     }],
-                    { include: '@whitespace' },
                     // Числа hex/bin/dec/float
                     [/0x[0-9a-fA-F_]+/, 'number.hex'],
                     [/0b[01_]+/,        'number.binary'],
