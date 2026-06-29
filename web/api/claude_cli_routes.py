@@ -237,6 +237,40 @@ def _cleanup_workspace(ws: Path):
 
 # ── System prompt ─────────────────────────────────────────────────────
 
+def _needs_tasks_protocols(client, body: 'ChatRequest', login: str) -> bool:
+    """Решает нужны ли тяжёлые tasks/cases протоколы в system prompt.
+
+    Включаем только когда:
+      - текущий тред привязан к задаче и в ней >0 кейсов, ИЛИ
+      - последнее сообщение пользователя явно про задачи/кейсы/дубли.
+
+    Это снимает с system prompt ~50 строк когда юзер задаёт обычный
+    кодовый вопрос — улучшает cache hit и фокус модели.
+    """
+    # 1) Контекст треда: задача с кейсами
+    try:
+        thread_id = getattr(body, '_resolved_thread_id', None)
+        if thread_id and thread_id != ai_threads_store.MAIN_ID:
+            tid = ai_threads_store.thread_task_id(login, thread_id)
+            if tid:
+                t = tasks_store.get_task(login, tid)
+                if t and (t.get('cases') or []):
+                    return True
+    except Exception:
+        pass
+
+    # 2) Ключевые слова в последнем сообщении
+    try:
+        last_msg = (body.messages[-1].content or '').lower()
+    except Exception:
+        return False
+    triggers = [
+        'кейс', 'задач', 'дубл', 'разложи', 'занеси', 'task_',
+        'почисти', 'слить', 'объедини', 'добав', 'создай задач',
+    ]
+    return any(k in last_msg for k in triggers)
+
+
 def _build_system_prompt(client, body: 'ChatRequest', attached_paths: list[str],
                           login: str) -> str:
     # Структура промпта оптимизирована для prompt caching:
@@ -244,6 +278,7 @@ def _build_system_prompt(client, body: 'ChatRequest', attached_paths: list[str],
     #    prefix cache (90% скидка на input-токены при попадании).
     # 2) DYNAMIC PART — меняется между запросами (задача, теги, логи).
     # Большой стабильный префикс существенно режет расход.
+    include_tasks_proto = _needs_tasks_protocols(client, body, login)
     parts = [
         '# Кто ты',
         'Ты встроенный ассистент в веб-платформу разработки игрового сервера SA-MP на языке Pawn.',
@@ -300,6 +335,26 @@ def _build_system_prompt(client, body: 'ChatRequest', attached_paths: list[str],
         '- Pawn-код в ответе оборачивай в ```pawn ... ```.',
         '- Если делаешь правку — НЕ дублируй её ещё и текстом в ответе, пользователь увидит её в diff. Достаточно короткого пояснения "что и зачем".',
         '',
+        '# Pawn / SA-MP — что нужно знать',
+        '- Типы декларации:',
+        '  - `new name = val;` — обычная переменная (можно с типом-меткой: `new Float: pos = 0.0;`).',
+        '  - `stock Func(...)` — функция, неиспользуемые stock\'и не дают warning. Большинство «утилитных» функций — stock.',
+        '  - `forward Func(...);` — объявление колбека/таймера/публичного хука. Тело пишется через `public Func(...) { ... }`.',
+        '  - `public OnPlayerConnect(playerid)` — SA-MP callback (вызывается движком). Полный список см. в a_samp.inc / a_players.inc.',
+        '  - `native ...` — биндинг к плагину (sa-mp, streamer, mysql и т.п.). Не трогаем.',
+        '- Часто встречающиеся includes в этом проекте: `a_samp`, `streamer`, `sscanf2`, `y_iterate`/`foreach`, `mysql` (BlueG), `pawn-regex`. Если видишь `foreach (new i : Player)` — это y_iter.',
+        '- Принципы стиля Pawn:',
+        '  - Размер массивов фиксированный, сильно влияет на память. `#define MAX_X` обычно в include\'е сверху.',
+        '  - Строки — char-массивы фиксированной длины (`new buf[128];`). Используют `format`, `strcat`, `strcmp`, `strfind`.',
+        '  - `sscanf` парсит входные данные через специальные спеки (`"u"` — userid, `"s[24]"` — строка).',
+        '  - У файлов часто есть префиксы-неймспейсы через `:` (`BattlePass:Init()`, `CasesShop:OnPlayerConnect(...)`). Это макросы `#define`, не классы.',
+        '- Типичные ошибки которых стоит избегать:',
+        '  - Перепутать `==` (сравнение) и `=` (присваивание) — компилятор Pawn НЕ ловит это в `if`.',
+        '  - Передать функции с другим числом аргументов чем у `forward` — runtime crash сервера.',
+        '  - Использовать строку длиннее объявленного буфера — silent truncation.',
+        '  - Забыть `cache_delete` после `mysql_query` — утечка cursor\'ов.',
+        '- При правках строго сохраняй стиль соседнего кода: tabs/spaces, фигурные скобки на новой строке/в той же, capitalization (`SnakeCase` vs `camelCase`).',
+        '',
         '# Доступ к серверу и базе',
         'У тебя есть MCP-инструменты для управления платформой:',
         '',
@@ -329,6 +384,12 @@ def _build_system_prompt(client, body: 'ChatRequest', attached_paths: list[str],
         '- DROP / TRUNCATE / ALTER / GRANT / REVOKE / RENAME — ПОЛНОСТЬЮ ЗАПРЕЩЕНЫ. Не вызывай db_write с ними; попроси пользователя выполнить вручную.',
         '- Не вызывай server_action / compile / db_write без ясного запроса пользователя. Уточни если не уверен.',
         '- После вызова инструмента кратко сообщи результат — не повторяй output дословно.',
+    ]
+
+    # ── Tasks/cases протоколы — включаются только когда тред реально
+    #    связан с задачами или пользователь явно про них пишет.
+    if include_tasks_proto:
+        parts += [
         '',
         '## Раскладка списка задач на кейсы',
         'Если пользователь даёт «сырой» список пунктов («— Метро. ...», «— Электрик. ...» и т.п.) и просит «разложи» / «проанализируй» / «занеси в задачи» — следуй алгоритму:',
@@ -365,7 +426,7 @@ def _build_system_prompt(client, body: 'ChatRequest', attached_paths: list[str],
         '8. Финальный ответ — короткий обзор: «Нашёл N дубликатов: K к удалению, M к слиянию. Подтверди в чате».',
         '',
         'Никогда НЕ удаляй задачу целиком если у неё больше 1 кейса и хотя бы один не дубликат. В таком случае только конкретные кейсы.',
-    ]
+        ]
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     # ▼ Конец СТАТИЧНОЙ части. Anthropic prefix cache хранит ровно то,
@@ -442,6 +503,38 @@ def _build_system_prompt(client, body: 'ChatRequest', attached_paths: list[str],
             cases_str = f', кейсов: {cases_n}' if cases_n else ''
             parts.append(f'- [{t.get("status")}] {t.get("title")} (id={t.get("id")}{cases_str})')
 
+    # Компактный обзор доступных файлов — чтобы Claude не делал лишних Glob.
+    # Только пути, без размеров/количества parts. Сначала attached, потом
+    # остальные. Лимит чтобы не раздувать промпт.
+    try:
+        files_dict = client.files or {}
+        accessible_ids = set((client.code or {}).keys())
+        all_paths = []
+        for fid in accessible_ids:
+            meta = files_dict.get(fid) or files_dict.get(str(fid)) or {}
+            p = meta.get('fullPath')
+            if p:
+                all_paths.append(p.lstrip('/'))
+        all_paths.sort()
+        if all_paths:
+            parts.append('')
+            parts.append('# Доступные тебе файлы (Pawn-проект)')
+            parts.append(
+                f'Всего {len(all_paths)} файлов с доступом. '
+                'Используй эти пути напрямую без предварительного Glob.',
+            )
+            parts.append('```')
+            # Кап до 400 путей — иначе очень длинно. Если у юзера больше,
+            # просим Glob по нужной поддиректории.
+            cap = 400
+            for p in all_paths[:cap]:
+                parts.append(p)
+            if len(all_paths) > cap:
+                parts.append(f'… и ещё {len(all_paths) - cap} (Glob их поддиректории если нужны)')
+            parts.append('```')
+    except Exception:
+        pass
+
     if attached_paths:
         parts.append('')
         parts.append('# Файлы, на которые пользователь явно указал (@)')
@@ -461,12 +554,13 @@ def _build_system_prompt(client, body: 'ChatRequest', attached_paths: list[str],
 
 
 # Сколько последних реплик (user+assistant) включать в prompt.
-# Всё что старше — резюмируем одной строкой. Это режет расход в
-# 3-5 раз на длинных беседах и почти не теряет качество, т.к. AI
-# обычно опирается на последние сообщения.
-RECENT_HISTORY_TURNS = 10
-# Максимум символов одного сообщения в истории — длинные обрезаем
-MAX_HISTORY_MSG_CHARS = 1500
+# Всё что старше — резюмируем одной строкой. С учётом prompt-cache
+# на статике стало дешевле держать больше истории — модель лучше
+# понимает контекст беседы.
+RECENT_HISTORY_TURNS = 20
+# Максимум символов одного сообщения в истории — длинные обрезаем.
+# 4000 хватает чтобы предыдущие ответы с кодом/diff не теряли половину.
+MAX_HISTORY_MSG_CHARS = 4000
 
 
 def _build_user_prompt(messages: list) -> str:
