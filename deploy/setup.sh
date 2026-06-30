@@ -2,13 +2,21 @@
 # Использование:
 #   BOT_TOKEN=xxx PLATFORM_URL=yyy bash setup.sh
 #
-# Дополнительные переменные (с дефолтами):
+# Опциональные переменные (с дефолтами):
 #   DOMAIN=code.kusehsup.ru
 #   EMAIL=vandeproject@gmail.com
 #   GITHUB_REPO=https://github.com/kusehsup/custom-platform.git
 #   APP_DIR=/opt/custom-platform
 #   NGINX_PORT=8001
 #   WEB_PORT=8002
+#
+# Xray (vless) — задаётся ровно одним из способов:
+#   XRAY_VLESS="vless://uuid@host:port?security=reality&pbk=...&sni=...&fp=chrome&flow=xtls-rprx-vision&type=tcp"
+#   (формат строки как в v2RayNG / Streisand / Hiddify — paste-and-go)
+# Если XRAY_VLESS пуст и /etc/xray/config.json не существует — шаг xray
+# полностью пропускается (платформа поднимется, но WS к SA-MP-серверу
+# не будет работать пока ты сам не положишь config.json и не сделаешь
+# systemctl start xray).
 #
 # Скрипт идемпотентный — можно перезапускать без боязни сломать.
 # certbot не валит весь скрипт если упал (например DNS не пропагирован).
@@ -90,6 +98,8 @@ EOF
 chmod 600 "$APP_DIR/.env"
 
 # ── 6. Xray ───────────────────────────────────────────────────────────
+# Ставим бинарь всегда (он маленький, не повредит). Конфиг — только
+# если есть XRAY_VLESS из env, либо уже существующий /etc/xray/config.json.
 log "Устанавливаем xray-core..."
 XRAY_VERSION="v1.8.11"
 wget -q "https://github.com/XTLS/Xray-core/releases/download/${XRAY_VERSION}/Xray-linux-64.zip" -O /tmp/xray.zip
@@ -98,21 +108,104 @@ install -m 755 /tmp/xray_bin/xray /usr/local/bin/xray
 rm -rf /tmp/xray.zip /tmp/xray_bin
 
 mkdir -p /etc/xray
-# Если конфиг уже есть — не перезатираем (юзер мог поправить vless-креды,
-# IP сервера и т.п.). Запишем дефолт только при первом запуске.
-if [ ! -f /etc/xray/config.json ]; then
-    log "Пишем дефолтный xray-конфиг (отредактируйте под свой vless-сервер)"
-    python3 -c "
-import json
-cfg = {
-  'log': {'loglevel': 'warning'},
-  'inbounds': [{'port': 10808, 'protocol': 'socks', 'settings': {'auth': 'noauth', 'udp': True}}],
-  'outbounds': [{'protocol': 'vless', 'settings': {'vnext': [{'address': '185.200.178.3', 'port': 443, 'users': [{'id': 'cba60396-75e4-44e7-b2e1-2b96d2a33b36', 'encryption': 'none', 'flow': 'xtls-rprx-vision'}]}]}, 'streamSettings': {'network': 'tcp', 'security': 'reality', 'realitySettings': {'serverName': 'google.com', 'fingerprint': 'chrome', 'publicKey': 'QX5m1uZOv5QPX8dM3vnj5s9l2AK7FqRV8mFgr40s0WE', 'shortId': '', 'spiderX': '/'}}}]
-}
-open('/etc/xray/config.json','w').write(json.dumps(cfg, indent=2))
-"
-else
+
+# Если конфиг уже есть — не трогаем (юзер мог отредактировать).
+# Если нет — генерируем из XRAY_VLESS если она задана.
+XRAY_READY=0
+if [ -f /etc/xray/config.json ]; then
     warn "xray-конфиг уже существует — оставляем как есть"
+    XRAY_READY=1
+elif [ -n "${XRAY_VLESS:-}" ]; then
+    log "Генерируем /etc/xray/config.json из XRAY_VLESS..."
+    if XRAY_VLESS_INPUT="$XRAY_VLESS" python3 - <<'PY' ; then
+import json
+import os
+import sys
+from urllib.parse import urlparse, parse_qs, unquote
+
+url = os.environ['XRAY_VLESS_INPUT'].strip()
+if not url.startswith('vless://'):
+    print('XRAY_VLESS не начинается с vless://', file=sys.stderr)
+    sys.exit(2)
+
+# urlparse режет fragment по '#' — нам label не нужен
+parsed = urlparse(url)
+uuid = parsed.username or ''
+host = parsed.hostname or ''
+port = parsed.port or 443
+qs = parse_qs(parsed.query)
+
+def q(key, default=''):
+    v = qs.get(key, [default])
+    return v[0] if v else default
+
+security  = q('security', 'reality')
+sni       = q('sni') or q('host') or ''
+pbk       = q('pbk', '')
+sid       = q('sid', '')
+fp        = q('fp', 'chrome')
+flow      = q('flow', '')
+spx       = unquote(q('spx', '/'))
+net       = q('type', 'tcp')
+
+if not uuid or not host:
+    print('vless:// без uuid или host', file=sys.stderr)
+    sys.exit(2)
+
+outbound = {
+    'protocol': 'vless',
+    'settings': {
+        'vnext': [{
+            'address': host,
+            'port':    int(port),
+            'users':   [{
+                'id': uuid,
+                'encryption': 'none',
+                **({'flow': flow} if flow else {}),
+            }],
+        }],
+    },
+    'streamSettings': {
+        'network':  net,
+        'security': security,
+    },
+}
+
+if security == 'reality':
+    outbound['streamSettings']['realitySettings'] = {
+        'serverName':  sni or 'google.com',
+        'fingerprint': fp,
+        'publicKey':   pbk,
+        'shortId':     sid,
+        'spiderX':     spx,
+    }
+elif security == 'tls':
+    outbound['streamSettings']['tlsSettings'] = {
+        'serverName': sni,
+        'fingerprint': fp,
+    }
+
+cfg = {
+    'log': {'loglevel': 'warning'},
+    'inbounds': [{
+        'port': 10808,
+        'protocol': 'socks',
+        'settings': {'auth': 'noauth', 'udp': True},
+    }],
+    'outbounds': [outbound],
+}
+
+with open('/etc/xray/config.json', 'w') as f:
+    f.write(json.dumps(cfg, indent=2))
+print('xray config written')
+PY
+        XRAY_READY=1
+    else
+        warn "Не удалось распарсить XRAY_VLESS — xray не настроен"
+    fi
+else
+    warn "XRAY_VLESS не задан — xray не настроен."
+    warn "Чтобы настроить позже: положи vless-конфиг в /etc/xray/config.json и сделай systemctl restart xray"
 fi
 
 cat > /etc/systemd/system/xray.service <<'EOF'
@@ -215,9 +308,15 @@ fi
 # ── 11. Запуск сервисов ───────────────────────────────────────────────
 log "Запускаем сервисы..."
 systemctl daemon-reload
-systemctl enable xray custom-platform-web custom-platform-bot
-systemctl restart xray
-sleep 3
+systemctl enable custom-platform-web custom-platform-bot
+if [ "$XRAY_READY" = "1" ]; then
+    systemctl enable xray
+    systemctl restart xray
+    sleep 3
+else
+    systemctl stop xray 2>/dev/null || true
+    warn "xray не настроен — не запускаем (см. сообщение выше)"
+fi
 systemctl restart custom-platform-web custom-platform-bot
 
 # ── 12. Итог ──────────────────────────────────────────────────────────
@@ -225,7 +324,11 @@ echo ""
 log "════════════════════════════════════════"
 log "  Деплой завершён!"
 log "════════════════════════════════════════"
-systemctl is-active xray                && echo "  ✅ xray"     || echo "  ❌ xray"
+if [ "$XRAY_READY" = "1" ]; then
+    systemctl is-active xray    && echo "  ✅ xray"     || echo "  ❌ xray"
+else
+    echo "  ⏸  xray (не настроен — см. сообщения выше)"
+fi
 systemctl is-active custom-platform-web && echo "  ✅ web"      || echo "  ❌ web"
 systemctl is-active custom-platform-bot && echo "  ✅ bot"      || echo "  ❌ bot"
 echo ""
