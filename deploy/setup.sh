@@ -1,6 +1,17 @@
 #!/bin/bash
 # Использование:
 #   BOT_TOKEN=xxx PLATFORM_URL=yyy bash setup.sh
+#
+# Дополнительные переменные (с дефолтами):
+#   DOMAIN=code.kusehsup.ru
+#   EMAIL=vandeproject@gmail.com
+#   GITHUB_REPO=https://github.com/kusehsup/custom-platform.git
+#   APP_DIR=/opt/custom-platform
+#   NGINX_PORT=8001
+#   WEB_PORT=8002
+#
+# Скрипт идемпотентный — можно перезапускать без боязни сломать.
+# certbot не валит весь скрипт если упал (например DNS не пропагирован).
 set -e
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
@@ -12,12 +23,12 @@ err()  { echo -e "${RED}[-]${NC} $1"; exit 1; }
 [ -z "$PLATFORM_URL" ] && err "Укажите PLATFORM_URL=..."
 
 GITHUB_REPO="${GITHUB_REPO:-https://github.com/kusehsup/custom-platform.git}"
-APP_DIR="/opt/custom-platform"
-WEB_PORT=8002       # uvicorn порт
-NGINX_PORT=8001     # nginx порт (публичный)
-PROXY_URL="socks5://127.0.0.1:10808"
-DOMAIN="code.kusehsup.ru"
-EMAIL="vandeproject@gmail.com"
+APP_DIR="${APP_DIR:-/opt/custom-platform}"
+WEB_PORT="${WEB_PORT:-8002}"        # uvicorn порт
+NGINX_PORT="${NGINX_PORT:-8001}"    # nginx порт (публичный)
+PROXY_URL="${PROXY_URL:-socks5://127.0.0.1:10808}"
+DOMAIN="${DOMAIN:-code.kusehsup.ru}"
+EMAIL="${EMAIL:-vandeproject@gmail.com}"
 
 # ── 1. Пакеты ─────────────────────────────────────────────────────────
 log "Обновление пакетов..."
@@ -54,12 +65,20 @@ cd "$APP_DIR"
 log "Устанавливаем Python зависимости..."
 $PYTHON_BIN -m venv .venv
 .venv/bin/pip install -q --upgrade pip
-.venv/bin/pip install -q \
-    "fastapi" "uvicorn[standard]" \
-    "python-jose[cryptography]" "passlib[bcrypt]" \
-    "websockets" "python-dotenv" \
-    "aiogram" "aiohttp" "aiohttp-socks" \
-    "python-socks"
+# Берём из requirements.txt в репе — единственный источник правды.
+# Фоллбэк со списком пакетов на случай если файла нет (старый клон).
+if [ -f "$APP_DIR/requirements.txt" ]; then
+    .venv/bin/pip install -q -r "$APP_DIR/requirements.txt"
+else
+    warn "requirements.txt не найден — ставим минимальный набор"
+    .venv/bin/pip install -q \
+        "fastapi" "uvicorn[standard]" "python-multipart" \
+        "python-jose[cryptography]" "passlib[bcrypt]" \
+        "pyotp" "qrcode[pil]" \
+        "websockets" "python-dotenv" \
+        "pymysql" "cryptography" \
+        "aiogram" "aiohttp" "aiohttp-socks" "python-socks"
+fi
 
 # ── 5. .env ───────────────────────────────────────────────────────────
 log "Создаём .env..."
@@ -79,8 +98,11 @@ install -m 755 /tmp/xray_bin/xray /usr/local/bin/xray
 rm -rf /tmp/xray.zip /tmp/xray_bin
 
 mkdir -p /etc/xray
-# Используем python3 чтобы избежать проблем с heredoc в разных окружениях
-python3 -c "
+# Если конфиг уже есть — не перезатираем (юзер мог поправить vless-креды,
+# IP сервера и т.п.). Запишем дефолт только при первом запуске.
+if [ ! -f /etc/xray/config.json ]; then
+    log "Пишем дефолтный xray-конфиг (отредактируйте под свой vless-сервер)"
+    python3 -c "
 import json
 cfg = {
   'log': {'loglevel': 'warning'},
@@ -89,6 +111,9 @@ cfg = {
 }
 open('/etc/xray/config.json','w').write(json.dumps(cfg, indent=2))
 "
+else
+    warn "xray-конфиг уже существует — оставляем как есть"
+fi
 
 cat > /etc/systemd/system/xray.service <<'EOF'
 [Unit]
@@ -169,14 +194,23 @@ mkdir -p /var/www/html
 nginx -t && systemctl reload nginx
 
 # ── 10. SSL через Let's Encrypt ───────────────────────────────────────
+# Не валим весь скрипт если certbot не справился (например DNS ещё
+# не пропагирован). Будет работать по HTTP, юзер запустит certbot
+# вручную позже.
 log "Получаем SSL сертификат для ${DOMAIN}..."
-certbot --nginx \
+if certbot --nginx \
     -d "$DOMAIN" \
     --email "$EMAIL" \
     --agree-tos \
     --non-interactive \
     --redirect \
-    2>&1 | tail -5
+    2>&1 | tail -10; then
+    log "SSL получен"
+else
+    warn "Certbot не справился (DNS не пропагирован? ratelimit?). Работаем по HTTP."
+    warn "Когда DNS будет указывать на этот сервер — запусти:"
+    warn "  certbot --nginx -d ${DOMAIN} --email ${EMAIL} --agree-tos --non-interactive --redirect"
+fi
 
 # ── 11. Запуск сервисов ───────────────────────────────────────────────
 log "Запускаем сервисы..."

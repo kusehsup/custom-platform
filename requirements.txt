@@ -1,0 +1,30 @@
+# Реальные внешние зависимости платформы.
+# Версии не пинуем — пусть pip берёт последние совместимые.
+# Если нужна детерминированность — заменить на pip-compile lock.
+
+# Web
+fastapi
+uvicorn[standard]
+python-multipart
+
+# Auth
+python-jose[cryptography]
+passlib[bcrypt]
+pyotp
+qrcode[pil]
+
+# WS клиент к платформе
+websockets
+
+# БД
+pymysql
+cryptography
+
+# Telegram бот
+aiogram
+aiohttp
+aiohttp-socks
+python-socks
+
+# Конфиг
+python-dotenv
