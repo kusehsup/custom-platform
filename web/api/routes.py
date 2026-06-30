@@ -76,14 +76,16 @@ async def login(body: LoginRequest, request: Request):
     user_agent = request.headers.get('user-agent', '')
     check_rate_limit(ip)
 
-    # Проверяем TOTP если включён — но пропускаем для доверенных устройств
-    if totp_store.is_enabled():
+    # Проверяем TOTP если включён У ЭТОГО юзера — пропускаем для доверенных устройств.
+    # ВАЖНО: глобального TOTP больше нет (см. totp_store) — каждый юзер
+    # настраивает свой 2FA, и проверяется именно его секрет.
+    if totp_store.is_enabled(body.login):
         device_trusted = trusted_devices.is_trusted(body.login, ip, user_agent)
         if not device_trusted:
             if not body.totp_code:
                 raise HTTPException(status_code=401, detail='TOTP_REQUIRED')
             import pyotp
-            secret = totp_store.get_secret()
+            secret = totp_store.get_secret(body.login)
             if not pyotp.TOTP(secret).verify(body.totp_code, valid_window=1):
                 raise HTTPException(status_code=401, detail='Неверный код аутентификатора')
 
@@ -103,8 +105,9 @@ async def login(body: LoginRequest, request: Request):
 
     reset_rate_limit(ip)
     set_session(body.login, client)
-    # После успешного входа делаем устройство доверенным (или продлеваем срок)
-    if totp_store.is_enabled():
+    # После успешного входа делаем устройство доверенным (или продлеваем срок).
+    # Только если у этого юзера включён TOTP — иначе доверять нечему.
+    if totp_store.is_enabled(body.login):
         trusted_devices.trust(body.login, ip, user_agent)
     token = create_token(body.login)
     return {'token': token}

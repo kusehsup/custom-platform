@@ -50,23 +50,29 @@ class EnableRequest(BaseModel):
     code: str
 
 
+class VerifyLoginRequest(BaseModel):
+    login: str
+    code: str
+
+
 # ------------------------------------------------------------------ #
 #  Эндпоинты                                                          #
 # ------------------------------------------------------------------ #
 
 @router.get('/status')
 async def totp_status(login: str = Depends(get_current_user)):
+    """Статус TOTP ТЕКУЩЕГО юзера, не глобальный."""
     return {
-        'enabled': totp_store.is_enabled(),
-        'has_secret': totp_store.get_secret() is not None,
+        'enabled':    totp_store.is_enabled(login),
+        'has_secret': totp_store.has_secret(login),
     }
 
 
 @router.post('/setup')
 async def totp_setup(login: str = Depends(get_current_user)):
-    """Генерируем новый секрет и возвращаем QR-код."""
+    """Генерируем новый секрет для текущего юзера и возвращаем QR-код."""
     secret = pyotp.random_base32()
-    totp_store.setup(secret)
+    totp_store.setup(login, secret)
 
     uri = pyotp.totp.TOTP(secret).provisioning_uri(
         name=login,
@@ -88,35 +94,39 @@ async def totp_setup(login: str = Depends(get_current_user)):
 @router.post('/enable')
 async def totp_enable(body: EnableRequest, login: str = Depends(get_current_user)):
     """Включаем TOTP после того как пользователь подтвердил код."""
-    secret = totp_store.get_secret()
+    secret = totp_store.get_secret(login)
     if not secret:
         raise HTTPException(status_code=400, detail='Сначала выполните настройку')
     totp = pyotp.TOTP(secret)
     if not totp.verify(body.code, valid_window=1):
         raise HTTPException(status_code=400, detail='Неверный код')
-    totp_store.enable()
+    totp_store.enable(login)
     return {'ok': True}
 
 
 @router.post('/disable')
 async def totp_disable(body: VerifyRequest, login: str = Depends(get_current_user)):
     """Отключаем TOTP — нужен действующий код для подтверждения."""
-    secret = totp_store.get_secret()
+    secret = totp_store.get_secret(login)
     if not secret:
         raise HTTPException(status_code=400, detail='TOTP не настроен')
     totp = pyotp.TOTP(secret)
     if not totp.verify(body.code, valid_window=1):
         raise HTTPException(status_code=400, detail='Неверный код')
-    totp_store.disable()
+    totp_store.disable(login)
     return {'ok': True}
 
 
 @router.post('/verify')
-async def totp_verify(body: VerifyRequest):
-    """Проверка кода при логине (до выдачи JWT)."""
-    secret = totp_store.get_secret()
+async def totp_verify(body: VerifyLoginRequest):
+    """Проверка кода при логине (до выдачи JWT).
+
+    Требует login в body, потому что секрет per-user — без логина мы
+    не знаем какой секрет проверять.
+    """
+    secret = totp_store.get_secret(body.login)
     if not secret:
-        raise HTTPException(status_code=400, detail='TOTP не настроен')
+        raise HTTPException(status_code=400, detail='TOTP не настроен для этого пользователя')
     totp = pyotp.TOTP(secret)
     if not totp.verify(body.code, valid_window=1):
         raise HTTPException(status_code=401, detail='Неверный код аутентификатора')
