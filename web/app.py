@@ -24,6 +24,7 @@ from .api.claude_cli_routes import router as claude_router
 from .api.tasks_routes import router as tasks_router
 from .api.external_commands_routes import router as external_cmd_router
 from .api.notes_routes import router as notes_router
+from .api.xray_routes import router as xray_router
 
 app = FastAPI(title='CustomPlatform')
 app.include_router(router)
@@ -34,6 +35,7 @@ app.include_router(claude_router)
 app.include_router(tasks_router)
 app.include_router(external_cmd_router)
 app.include_router(notes_router)
+app.include_router(xray_router)
 
 
 class NoCacheAPIMiddleware(BaseHTTPMiddleware):
@@ -83,6 +85,13 @@ async def manifest():
 @app.get('/n/{token}')
 async def public_note_page(token: str):
     return FileResponse(static_dir / 'public_note.html')
+
+
+# Аварийная админка xray — отдельный HTML без SPA/auth.
+# Доступ только по PIN из /etc/custom-platform/xray_pin.
+@app.get('/xray-admin')
+async def xray_admin_page():
+    return FileResponse(static_dir / 'xray_admin.html')
 
 
 @app.get('/{full_path:path}')

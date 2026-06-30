@@ -306,6 +306,23 @@ else
 fi
 
 # ── 11. Запуск сервисов ───────────────────────────────────────────────
+# ── PIN для аварийной страницы /xray-admin ───────────────────────────
+# Случайный 6-значный пин, сохраняется в /etc/custom-platform/xray_pin.
+# При re-run скрипта пин НЕ перегенерируется. Печатаем в финале.
+mkdir -p /etc/custom-platform
+chmod 700 /etc/custom-platform
+if [ ! -f /etc/custom-platform/xray_pin ]; then
+    XRAY_PIN_VALUE=$(python3 -c "import secrets; print(secrets.randbelow(900000) + 100000)")
+    echo -n "$XRAY_PIN_VALUE" > /etc/custom-platform/xray_pin
+    chmod 600 /etc/custom-platform/xray_pin
+    XRAY_PIN_NEW=1
+else
+    XRAY_PIN_VALUE=$(cat /etc/custom-platform/xray_pin)
+    XRAY_PIN_NEW=0
+fi
+# Чтобы веб-процесс мог читать — даём nobody/www-data? Сервис под root,
+# так что 600 нормально. Web-роут читает напрямую.
+
 log "Запускаем сервисы..."
 systemctl daemon-reload
 systemctl enable custom-platform-web custom-platform-bot
@@ -333,6 +350,15 @@ systemctl is-active custom-platform-web && echo "  ✅ web"      || echo "  ❌ 
 systemctl is-active custom-platform-bot && echo "  ✅ bot"      || echo "  ❌ bot"
 echo ""
 echo "  🌐 https://${DOMAIN}"
+echo ""
+echo "Аварийная настройка xray (когда платформа недоступна):"
+echo "  🔧 https://${DOMAIN}/xray-admin"
+if [ "$XRAY_PIN_NEW" = "1" ]; then
+    echo "  PIN (сгенерирован сейчас): ${XRAY_PIN_VALUE}"
+    echo "  ⚠️  ЗАПИШИ В МЕНЕДЖЕР ПАРОЛЕЙ — потерять = переинсталлить"
+else
+    echo "  PIN: уже задан ранее, посмотри: cat /etc/custom-platform/xray_pin"
+fi
 echo ""
 echo "Логи:"
 echo "  journalctl -u custom-platform-web -f"
