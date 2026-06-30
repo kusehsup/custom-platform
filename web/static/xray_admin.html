@@ -33,7 +33,7 @@
             -webkit-font-smoothing: antialiased;
         }
         .wrap {
-            max-width: 560px;
+            max-width: 700px;
             margin: 60px auto;
             padding: 0 20px 80px;
         }
@@ -61,6 +61,19 @@
             text-transform: uppercase;
             letter-spacing: 0.08em;
             margin: 0 0 12px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .card h2 .tag {
+            text-transform: none;
+            letter-spacing: 0;
+            font-size: 10px;
+            color: var(--green);
+            border: 1px solid var(--green);
+            padding: 1px 7px;
+            border-radius: 10px;
             font-weight: 600;
         }
         .row {
@@ -112,7 +125,7 @@
             box-sizing: border-box;
         }
         textarea {
-            min-height: 80px;
+            min-height: 76px;
             resize: vertical;
             line-height: 1.4;
         }
@@ -151,6 +164,65 @@
             border-color: var(--red);
             color: var(--red);
         }
+        button.ghost {
+            background: transparent;
+        }
+
+        .slot-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+        @media (max-width: 640px) {
+            .slot-grid { grid-template-columns: 1fr; }
+        }
+        .slot {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 14px;
+            display: flex;
+            flex-direction: column;
+        }
+        .slot.active {
+            border-color: var(--green);
+            box-shadow: inset 0 0 0 1px rgba(34,197,94,0.25);
+        }
+        .slot-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        .slot-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text);
+        }
+        .slot-state {
+            font-size: 10.5px;
+            color: var(--text-3);
+        }
+        .slot-state.active { color: var(--green); }
+        .slot-host {
+            font-family: var(--mono);
+            font-size: 11.5px;
+            color: var(--text-2);
+            min-height: 16px;
+            margin-bottom: 8px;
+            word-break: break-all;
+        }
+        .slot textarea {
+            min-height: 70px;
+            font-size: 12px;
+        }
+        .slot .actions {
+            margin-top: 10px;
+        }
+        .slot .actions button {
+            font-size: 12px;
+            padding: 6px 10px;
+        }
 
         .toast {
             position: fixed;
@@ -187,9 +259,9 @@
     <div class="wrap">
         <h1>🔧 Xray admin</h1>
         <p class="sub">
-            Аварийная страница: настройка туннеля xray без входа в платформу.
-            Используется когда основной WS-коннект к SA-MP-платформе лежит из-за
-            проблем с прокси.
+            Аварийная страница: настройка xray-туннеля без входа в платформу.
+            Два слота — основной и резервный, активный применяется к
+            <code>/etc/xray/config.json</code>.
         </p>
 
         <div class="card">
@@ -198,19 +270,18 @@
             <input id="pin" type="password" inputmode="numeric" maxlength="6"
                    placeholder="••••••" autocomplete="off" autofocus />
             <div class="actions">
-                <button id="btn-status">Проверить статус</button>
+                <button id="btn-status" class="primary">Загрузить статус</button>
             </div>
         </div>
 
         <div class="card" id="status-card" style="display:none">
-            <h2>Статус</h2>
+            <h2>
+                Статус xray
+                <span style="display:none" class="tag" id="st-tag">active</span>
+            </h2>
             <div class="row">
-                <span class="k">Сервис xray</span>
+                <span class="k">Сервис</span>
                 <span class="v" id="st-active">—</span>
-            </div>
-            <div class="row">
-                <span class="k">Конфиг существует</span>
-                <span class="v" id="st-config">—</span>
             </div>
             <div class="row">
                 <span class="k">Outbound</span>
@@ -221,19 +292,45 @@
                 <span class="v" id="st-security">—</span>
             </div>
             <div class="actions">
-                <button id="btn-start"  class="primary">▶ Старт</button>
-                <button id="btn-stop"   class="danger">■ Стоп</button>
-                <button id="btn-refresh">↻ Обновить</button>
+                <button id="btn-start"   class="primary">▶ Старт</button>
+                <button id="btn-stop"    class="danger">■ Стоп</button>
+                <button id="btn-refresh" class="ghost">↻ Обновить</button>
             </div>
         </div>
 
-        <div class="card" id="apply-card" style="display:none">
-            <h2>Изменить vless</h2>
-            <label for="vless">vless:// ссылка</label>
-            <textarea id="vless" placeholder="vless://uuid@host:443?security=reality&pbk=...&sni=google.com&fp=chrome&flow=xtls-rprx-vision&type=tcp"></textarea>
-            <div class="hint">Скопируй из v2RayNG / Streisand / Hiddify.</div>
-            <div class="actions">
-                <button id="btn-apply" class="primary">Применить + перезапустить</button>
+        <div class="card" id="profiles-card" style="display:none">
+            <h2>Профили</h2>
+            <div class="slot-grid">
+                <div class="slot" id="slot-primary">
+                    <div class="slot-head">
+                        <span class="slot-title">Основной</span>
+                        <span class="slot-state" id="primary-state">—</span>
+                    </div>
+                    <div class="slot-host" id="primary-host">не настроен</div>
+                    <textarea id="primary-vless" placeholder="vless://..."></textarea>
+                    <div class="actions">
+                        <button class="ghost" data-slot="primary" data-act="save">💾 Сохранить</button>
+                        <button class="primary" data-slot="primary" data-act="activate">⚡ Активировать</button>
+                    </div>
+                </div>
+
+                <div class="slot" id="slot-backup">
+                    <div class="slot-head">
+                        <span class="slot-title">Резервный</span>
+                        <span class="slot-state" id="backup-state">—</span>
+                    </div>
+                    <div class="slot-host" id="backup-host">не настроен</div>
+                    <textarea id="backup-vless" placeholder="vless://..."></textarea>
+                    <div class="actions">
+                        <button class="ghost" data-slot="backup" data-act="save">💾 Сохранить</button>
+                        <button class="primary" data-slot="backup" data-act="activate">⚡ Активировать</button>
+                    </div>
+                </div>
+            </div>
+            <div class="hint">
+                «Сохранить» — кладёт ссылку в слот, но не переключает.
+                «Активировать» — записывает в /etc/xray/config.json и
+                рестартит xray. UUID/публичный ключ не показываются в UI.
             </div>
         </div>
 
@@ -268,18 +365,30 @@
 
         function renderStatus(s) {
             $('status-card').style.display = 'block';
-            $('apply-card').style.display  = 'block';
+            $('profiles-card').style.display = 'block';
 
             $('st-active').innerHTML = s.active
                 ? `<span class="dot dot-on"></span>active`
                 : `<span class="dot dot-off"></span>inactive`;
-            $('st-config').innerHTML = s.config_exists
-                ? `<span class="dot dot-on"></span>есть`
-                : `<span class="dot dot-off"></span>нет`;
+            const tag = $('st-tag');
+            tag.style.display = s.active ? 'inline-block' : 'none';
             $('st-outbound').textContent = s.outbound_host
                 ? `${s.outbound_host}:${s.outbound_port || ''}`
                 : '—';
             $('st-security').textContent = s.outbound_security || '—';
+
+            const p = s.profiles || {active: null, slots: {}};
+            for (const slot of ['primary', 'backup']) {
+                const info = (p.slots || {})[slot] || {};
+                const isActive = p.active === slot;
+                $(`slot-${slot}`).classList.toggle('active', isActive);
+                const stateEl = $(`${slot}-state`);
+                stateEl.textContent = isActive ? '● активен' : (info.configured ? 'настроен' : 'пусто');
+                stateEl.classList.toggle('active', isActive);
+                $(`${slot}-host`).textContent = info.configured
+                    ? `${info.host || '—'}:${info.port || '—'}${info.security ? ' · ' + info.security : ''}`
+                    : 'не настроен';
+            }
         }
 
         async function loadStatus() {
@@ -297,7 +406,6 @@
         $('pin').addEventListener('keydown', (e) => {
             if (e.key === 'Enter') loadStatus();
         });
-
         $('btn-refresh').addEventListener('click', loadStatus);
 
         $('btn-start').addEventListener('click', async () => {
@@ -305,7 +413,7 @@
             try {
                 const s = await req('/api/xray/setup/start');
                 renderStatus(s);
-                toast(s.active ? 'xray запущен' : 'xray не поднялся — смотри /var/log/journal', s.active ? 'ok' : 'error');
+                toast(s.active ? 'xray запущен' : 'xray не поднялся — смотри journalctl', s.active ? 'ok' : 'error');
             } catch (e) { toast(e.message, 'error'); }
         });
 
@@ -319,19 +427,44 @@
             } catch (e) { toast(e.message, 'error'); }
         });
 
-        $('btn-apply').addEventListener('click', async () => {
-            if (!getPin()) return;
-            const vless = $('vless').value.trim();
-            if (!vless.startsWith('vless://')) {
-                toast('Ссылка должна начинаться с vless://', 'error');
-                return;
-            }
-            try {
-                const s = await req('/api/xray/setup/apply', {vless});
-                renderStatus(s);
-                if (s.active) toast('✓ Применено и перезапущено', 'ok');
-                else toast('Конфиг записан, но xray не active — проверь логи', 'error');
-            } catch (e) { toast(e.message, 'error'); }
+        // Обработчики кнопок слотов
+        document.querySelectorAll('.slot button[data-slot]').forEach((btn) => {
+            btn.addEventListener('click', async () => {
+                if (!getPin()) { toast('Введи PIN', 'error'); return; }
+                const slot = btn.dataset.slot;
+                const act = btn.dataset.act;
+
+                if (act === 'save') {
+                    const vless = $(`${slot}-vless`).value.trim();
+                    if (!vless.startsWith('vless://')) {
+                        toast('Ссылка должна начинаться с vless://', 'error');
+                        return;
+                    }
+                    try {
+                        const s = await req('/api/xray/setup/save_profile', {slot, vless});
+                        renderStatus(s);
+                        toast(`Слот ${slot === 'primary' ? 'основной' : 'резервный'} сохранён`, 'ok');
+                        $(`${slot}-vless`).value = '';
+                    } catch (e) { toast(e.message, 'error'); }
+                    return;
+                }
+                if (act === 'activate') {
+                    // Если в textarea что-то новое — сначала сохраним.
+                    const vless = $(`${slot}-vless`).value.trim();
+                    try {
+                        if (vless && vless.startsWith('vless://')) {
+                            await req('/api/xray/setup/save_profile', {slot, vless});
+                            $(`${slot}-vless`).value = '';
+                        }
+                        const s = await req('/api/xray/setup/activate', {slot});
+                        renderStatus(s);
+                        toast(s.active
+                            ? `✓ Активирован ${slot === 'primary' ? 'основной' : 'резервный'}`
+                            : 'Конфиг записан, но xray не active — смотри journalctl',
+                            s.active ? 'ok' : 'error');
+                    } catch (e) { toast(e.message, 'error'); }
+                }
+            });
         });
     })();
     </script>

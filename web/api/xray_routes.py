@@ -36,7 +36,10 @@ from .auth import get_current_user
 router = APIRouter()
 
 PIN_PATH = Path('/etc/custom-platform/xray_pin')
+PROFILES_PATH = Path('/etc/custom-platform/xray_profiles.json')
 XRAY_CONFIG = Path('/etc/xray/config.json')
+
+VALID_SLOTS = ('primary', 'backup')
 
 
 # ── Helpers ──────────────────────────────────────────────────────────
@@ -181,12 +184,83 @@ async def _xray_status_dict() -> dict:
         'outbound_host': outbound_host,
         'outbound_port': outbound_port,
         'outbound_security': outbound_security,
+        'profiles': _profiles_public(_profiles_read()),
     }
 
 
 def _write_config(cfg: dict):
     XRAY_CONFIG.parent.mkdir(parents=True, exist_ok=True)
     XRAY_CONFIG.write_text(json.dumps(cfg, indent=2), encoding='utf-8')
+
+
+# ── Profiles store ──────────────────────────────────────────────────
+
+def _profiles_read() -> dict:
+    """Загружает {primary, backup, active}. Если файла нет — пустые слоты."""
+    try:
+        data = json.loads(PROFILES_PATH.read_text(encoding='utf-8'))
+    except Exception:
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+    return {
+        'primary': str(data.get('primary') or ''),
+        'backup':  str(data.get('backup')  or ''),
+        'active':  data.get('active') if data.get('active') in VALID_SLOTS else None,
+    }
+
+
+def _profiles_write(profiles: dict):
+    PROFILES_PATH.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        'primary': profiles.get('primary') or '',
+        'backup':  profiles.get('backup')  or '',
+        'active':  profiles.get('active') if profiles.get('active') in VALID_SLOTS else None,
+    }
+    PROFILES_PATH.write_text(json.dumps(payload, indent=2), encoding='utf-8')
+    try:
+        PROFILES_PATH.chmod(0o600)
+    except Exception:
+        pass
+
+
+def _profiles_public(profiles: dict) -> dict:
+    """То что отдаём в UI — без UUID/private-полей. Только host+port+security."""
+    out = {'active': profiles.get('active'), 'slots': {}}
+    for slot in VALID_SLOTS:
+        url = profiles.get(slot) or ''
+        info = {'configured': False, 'host': None, 'port': None, 'security': None}
+        if url:
+            info['configured'] = True
+            try:
+                parsed = urlparse(url)
+                info['host'] = parsed.hostname
+                info['port'] = parsed.port
+                info['security'] = parse_qs(parsed.query).get('security', ['reality'])[0]
+            except Exception:
+                pass
+        out['slots'][slot] = info
+    return out
+
+
+async def _activate_slot(slot: str) -> dict:
+    """Записывает в /etc/xray/config.json профиль слота и рестартит xray."""
+    if slot not in VALID_SLOTS:
+        raise HTTPException(status_code=400, detail='Слот должен быть primary или backup')
+    profiles = _profiles_read()
+    url = profiles.get(slot)
+    if not url:
+        raise HTTPException(status_code=400, detail=f'Слот {slot} не настроен')
+    cfg = _vless_to_config(url)
+    _write_config(cfg)
+    profiles['active'] = slot
+    _profiles_write(profiles)
+    code, output = await _systemctl('restart')
+    if code != 0:
+        raise HTTPException(status_code=500,
+                            detail=f'Конфиг записан, но systemctl restart упал: {output}')
+    await asyncio.sleep(1)
+    return await _xray_status_dict()
 
 
 # ── Schemas ──────────────────────────────────────────────────────────
@@ -202,6 +276,35 @@ class ApplyBody(BaseModel):
 
 class ApplyAuthBody(BaseModel):
     vless: str
+
+
+class SaveProfileBody(BaseModel):
+    pin: str
+    slot: str   # 'primary' | 'backup'
+    vless: str
+
+
+class SaveProfileAuthBody(BaseModel):
+    slot: str
+    vless: str
+
+
+class ActivateBody(BaseModel):
+    pin: str
+    slot: str
+
+
+class ActivateAuthBody(BaseModel):
+    slot: str
+
+
+class SlotPinBody(BaseModel):
+    pin: str
+    slot: str
+
+
+class SlotAuthBody(BaseModel):
+    slot: str
 
 
 # ── Endpoints с PIN (без auth) ──────────────────────────────────────
@@ -245,6 +348,25 @@ async def setup_stop(body: PinBody):
     return await _xray_status_dict()
 
 
+@router.post('/api/xray/setup/save_profile')
+async def setup_save_profile(body: SaveProfileBody):
+    _check_pin(body.pin)
+    if body.slot not in VALID_SLOTS:
+        raise HTTPException(status_code=400, detail='Слот должен быть primary или backup')
+    # Валидируем что строка парсится — не сохраняем мусор
+    _vless_to_config(body.vless)
+    profiles = _profiles_read()
+    profiles[body.slot] = body.vless.strip()
+    _profiles_write(profiles)
+    return await _xray_status_dict()
+
+
+@router.post('/api/xray/setup/activate')
+async def setup_activate(body: ActivateBody):
+    _check_pin(body.pin)
+    return await _activate_slot(body.slot)
+
+
 # ── Endpoints с auth (внутри платформы) ──────────────────────────────
 
 @router.get('/api/xray/status')
@@ -279,3 +401,19 @@ async def auth_stop(login: str = Depends(get_current_user)):
     if code != 0:
         raise HTTPException(status_code=500, detail=f'systemctl stop xray: {output}')
     return await _xray_status_dict()
+
+
+@router.post('/api/xray/save_profile')
+async def auth_save_profile(body: SaveProfileAuthBody, login: str = Depends(get_current_user)):
+    if body.slot not in VALID_SLOTS:
+        raise HTTPException(status_code=400, detail='Слот должен быть primary или backup')
+    _vless_to_config(body.vless)
+    profiles = _profiles_read()
+    profiles[body.slot] = body.vless.strip()
+    _profiles_write(profiles)
+    return await _xray_status_dict()
+
+
+@router.post('/api/xray/activate')
+async def auth_activate(body: ActivateAuthBody, login: str = Depends(get_current_user)):
+    return await _activate_slot(body.slot)
