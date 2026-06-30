@@ -572,7 +572,6 @@ const app = {
                 </div>
                 <div class="topbar-right">
                     <button class="topbar-btn hidden" id="btn-install" title="Установить как приложение">⬇ Установить</button>
-                    <button class="topbar-btn" id="btn-ai" title="AI ассистент">${ico.ai} AI</button>
                     <button class="topbar-btn" id="btn-db" title="БД (быстрый запрос)">${ico.db} БД</button>
                     <button class="topbar-btn" id="btn-console" title="Консоль">${ico.console} Консоль</button>
                     <button class="topbar-btn" id="btn-debug" title="WS лог">${ico.ws} WS</button>
@@ -587,8 +586,6 @@ const app = {
                 <span class="sidebar-section">Код</span>
                 <a data-page="files" class="nav-primary">${ico.files}<span class="label">Файлы</span></a>
                 <span class="sidebar-section">Инструменты</span>
-                <a data-page="ai">${ico.ai}<span class="label">AI ассистент</span></a>
-                <a data-page="tasks">${ico.tasks}<span class="label">Задачи</span><span id="tasks-badge" class="sidebar-badge hidden"></span></a>
                 <a data-page="todo">${ico.todo}<span class="label">TODO</span><span id="todo-badge" class="sidebar-badge hidden"></span></a>
                 <a data-page="db" class="nav-primary">${ico.db}<span class="label">База данных</span></a>
                 <a data-page="extcmd" class="nav-primary">${ico.extcmd}<span class="label">Внешние команды</span></a>
@@ -613,7 +610,6 @@ const app = {
 
         document.getElementById('btn-debug').addEventListener('click', () => this.toggleDebug());
         document.getElementById('btn-console').addEventListener('click', () => this.toggleConsole());
-        document.getElementById('btn-ai').addEventListener('click', () => AiWidget.toggle());
         document.getElementById('btn-db').addEventListener('click', () => DbWidget.toggle());
         document.getElementById('btn-theme').addEventListener('click', () => this.toggleTheme());
 
@@ -681,14 +677,11 @@ const app = {
         if (existing) { existing.remove(); return; }
 
         const navItems = [
-            {page: 'ai',       icon: '✦', label: 'AI ассистент'},
-            {page: 'tasks',    icon: '⎘', label: 'Задачи'},
             {page: 'todo',     icon: '✅', label: 'TODO'},
             {page: 'notes',    icon: '📝', label: 'Заметки'},
             {page: 'settings', icon: '⚙', label: 'Настройки'},
         ];
         const widgetItems = [
-            {action: 'ai',      icon: '✦', label: 'AI виджет'},
             {action: 'db',      icon: '🗄', label: 'БД виджет'},
             {action: 'console', icon: '📋', label: 'Консоль'},
             {action: 'theme',   icon: '◐', label: 'Тема'},
@@ -729,8 +722,7 @@ const app = {
         sheet.querySelectorAll('[data-action]').forEach((b) =>
             b.addEventListener('click', () => {
                 const a = b.dataset.action;
-                if (a === 'ai')      AiWidget.toggle();
-                else if (a === 'db') DbWidget.toggle();
+                if (a === 'db') DbWidget.toggle();
                 else if (a === 'console') this.toggleConsole();
                 else if (a === 'theme')   this.toggleTheme();
                 else if (a === 'logout')  document.getElementById('btn-logout')?.click();
@@ -753,10 +745,7 @@ const app = {
         P.register({ id: 'compile',      title: 'Компилировать',       icon: '🔨', group: 'Сервер', hint: 'Ctrl+Shift+B', run: () => this._doCompile() });
         P.register({ id: 'view.console', title: 'Виджет: Консоль',     icon: '📋', group: 'Виджеты', run: () => this.toggleConsole() });
         P.register({ id: 'view.wslog',   title: 'Виджет: WS Log',      icon: '📡', group: 'Виджеты', run: () => this.toggleDebug() });
-        P.register({ id: 'view.ai',      title: 'Виджет: AI ассистент', icon: '✦', group: 'Виджеты', run: () => AiWidget.toggle() });
         P.register({ id: 'view.db',      title: 'Виджет: БД (быстрый запрос)', icon: '🗄', group: 'Виджеты', run: () => DbWidget.toggle() });
-        P.register({ id: 'tasks.open',   title: 'Перейти к задачам',   icon: '⎘', group: 'Навигация', run: () => this.navigate('tasks') });
-        P.register({ id: 'ai.thread',    title: 'AI: выбрать тред...', icon: '✦', hint: 'Ctrl+/', group: 'AI', run: () => { if (typeof AiChat !== 'undefined') { AiChat.init(); AiChat.ensureThreadsLoaded().then(() => AiChat.showThreadPicker()); } } });
         P.register({ id: 'sidebar.toggle', title: 'Свернуть/Развернуть сайдбар', icon: '◧', group: 'Интерфейс', run: () => document.getElementById('sidebar-toggle')?.click() });
         P.register({ id: 'logout',       title: 'Выйти',               icon: '🚪', group: 'Прочее', run: () => document.getElementById('btn-logout')?.click() });
         // Команды редактора
@@ -823,15 +812,6 @@ window.app = app;
 // Глобальные хоткеи
 document.addEventListener('keydown', e => {
     if (!app._ws) return;
-    // Ctrl+/ — AI thread picker
-    if ((e.ctrlKey || e.metaKey) && e.key === '/') {
-        if (typeof AiChat !== 'undefined') {
-            e.preventDefault();
-            AiChat.init();
-            AiChat.ensureThreadsLoaded().then(() => AiChat.showThreadPicker());
-        }
-        return;
-    }
     if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'b') {
         e.preventDefault(); app._doCompile();
     } else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 's') {
