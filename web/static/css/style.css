@@ -3422,8 +3422,10 @@ select.ss-native {
     padding: 6px 6px 6px;
     display: flex;
     flex-direction: column;
-    max-height: 320px;
     box-sizing: border-box;
+    /* Высота popover'а сама по себе не ограничивается — режем внутренний
+       список. Так надёжнее (некоторые контексты игнорируют max-height
+       у absolute-элемента). */
 }
 .ss-popover.ss-above {
     top: auto;
@@ -3444,8 +3446,12 @@ select.ss-native {
 .ss-search:focus { border-color: var(--accent); }
 .ss-list {
     overflow-y: auto;
-    flex: 1;
+    flex: 1 1 auto;
     min-height: 0;
+    /* Явный лимит: если опций много — прокрутка внутри списка.
+       max-height у .ss-popover иногда не срабатывает в некоторых
+       контекстах, режем сам список. */
+    max-height: 260px;
     margin: 0 -2px;
 }
 .ss-item {
