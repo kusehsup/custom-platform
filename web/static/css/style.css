@@ -3372,7 +3372,6 @@ select.ss-native {
     align-items: center;
     gap: 8px;
     width: 100%;
-    min-width: 120px;
     background: var(--surface2);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm, 4px);
@@ -3384,6 +3383,7 @@ select.ss-native {
     text-align: left;
     line-height: 1.4;
     transition: border-color 0.1s;
+    box-sizing: border-box;
 }
 .ss-trigger:hover { border-color: var(--border-2); }
 .ss-trigger:focus,
@@ -3409,8 +3409,12 @@ select.ss-native {
     position: absolute;
     top: calc(100% + 4px);
     left: 0;
-    right: 0;
-    min-width: 180px;
+    /* Не даём popover'у выпирать за пределы триггера справа. */
+    width: 100%;
+    /* Но если контент шире (длинные пути файлов) — раздвигаемся до
+       разумного предела, не выше 90vw. */
+    min-width: max-content;
+    max-width: min(560px, 90vw);
     z-index: 9999;
     background: var(--surface);
     border: 1px solid var(--border);
@@ -3420,6 +3424,7 @@ select.ss-native {
     display: flex;
     flex-direction: column;
     max-height: 320px;
+    box-sizing: border-box;
 }
 .ss-popover.ss-above {
     top: auto;
@@ -3451,9 +3456,8 @@ select.ss-native {
     cursor: pointer;
     border-radius: var(--radius-sm, 4px);
     line-height: 1.4;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    /* Полное имя файла может быть длинным — переносим, а не режем. */
+    word-break: break-all;
 }
 .ss-item.is-hover      { background: var(--surface2); }
 .ss-item.is-selected   { background: rgba(59, 130, 246, 0.14); color: var(--text); }

@@ -70,30 +70,16 @@
         if (shouldSkip(sel)) return;
         sel.setAttribute(MARKER, '1');
 
-        // Обёртка вокруг <select>. Пытаемся аккуратно унаследовать
-        // раскладку оригинального селекта:
-        //   - inline-width из style
-        //   - width: 100% если селект тянулся на 100% через CSS-класс
-        //   - flex-грамматику если родитель — flex-контейнер
+        // Обёртка вокруг <select>. Наследуем только явно указанную
+        // inline-ширину. Никаких попыток «угадать» flex/grid — это
+        // ломало раскладку (селект уезжал на всю ширину блока).
         const wrap = document.createElement('span');
         wrap.className = 'ss-wrap';
-        const cs = window.getComputedStyle(sel);
-        if (sel.style.width) {
-            wrap.style.width = sel.style.width;
-        } else if (cs.width && cs.display !== 'none') {
-            const parent = sel.parentElement;
-            if (parent) {
-                const pcs = window.getComputedStyle(parent);
-                if (pcs.display.includes('flex') || pcs.display.includes('grid')) {
-                    // В flex/grid — wrapper должен занимать 100% как block
-                    wrap.style.width = '100%';
-                    wrap.style.display = 'block';
-                    if (sel.style.flex)     wrap.style.flex     = sel.style.flex;
-                    if (sel.style.flexGrow) wrap.style.flexGrow = sel.style.flexGrow;
-                    if (sel.style.minWidth) wrap.style.minWidth = sel.style.minWidth;
-                }
-            }
-        }
+        if (sel.style.width)     wrap.style.width     = sel.style.width;
+        if (sel.style.minWidth)  wrap.style.minWidth  = sel.style.minWidth;
+        if (sel.style.maxWidth)  wrap.style.maxWidth  = sel.style.maxWidth;
+        if (sel.style.flex)      wrap.style.flex      = sel.style.flex;
+        if (sel.style.flexGrow)  wrap.style.flexGrow  = sel.style.flexGrow;
 
         // Кнопка-триггер
         const trigger = document.createElement('button');
@@ -265,12 +251,23 @@
 
         function positionPopover() {
             pop.classList.remove('ss-above');
+            pop.style.left = '';
+            pop.style.right = '';
             const tr = trigger.getBoundingClientRect();
             const spaceBelow = window.innerHeight - tr.bottom;
             const spaceAbove = tr.top;
             if (spaceBelow < 220 && spaceAbove > spaceBelow) {
                 pop.classList.add('ss-above');
             }
+            // Если popover вылезает за правый край viewport — прижимаем справа.
+            // Ждём одну rAF чтобы браузер успел выставить размеры.
+            requestAnimationFrame(() => {
+                const pr = pop.getBoundingClientRect();
+                if (pr.right > window.innerWidth - 8) {
+                    pop.style.left = 'auto';
+                    pop.style.right = '0';
+                }
+            });
         }
 
         function onDocDown(e) {
