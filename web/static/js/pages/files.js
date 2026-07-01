@@ -734,8 +734,12 @@ app.register('files', {
 
         if (this._activeTab !== 'files') this._switchTab('files');
 
-        document.querySelectorAll('.file-item').forEach(el =>
-            el.classList.toggle('active', el.dataset.id === fileId)
+        // Подсветить активный файл во ВСЕХ вариантах списка: плоском
+        // (.file-item) и в дереве (.tree-row.file). Раньше подсвечивали
+        // только .file-item, поэтому в древовидном режиме active
+        // висел на прошлом открытом файле.
+        document.querySelectorAll('.file-item, .tree-row.file').forEach(el =>
+            el.classList.toggle('active', el.dataset.id === String(fileId))
         );
 
         const f    = this._files[fileId];
