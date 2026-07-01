@@ -12,7 +12,15 @@ app.register('settings', {
 
     render(root) {
         const s = this._load();
+        const loaderEnabled = (typeof Loader !== 'undefined') ? Loader.isEnabled() : true;
         root.innerHTML = `
+        <div class="card">
+            <div class="card-header"><span class="card-title">Внешний вид</span></div>
+            <div>
+                ${this._row('loader_enabled', '⏳', 'Лоадер загрузки', 'Показывать полноэкранный индикатор при входе и загрузке', loaderEnabled)}
+            </div>
+        </div>
+
         <div class="card">
             <div class="card-header"><span class="card-title">Уведомления</span></div>
             <div>
@@ -56,6 +64,12 @@ app.register('settings', {
 
         root.querySelectorAll('input[type=checkbox]').forEach(cb => {
             cb.addEventListener('change', () => {
+                // loader_enabled хранится отдельным ключом, читает Loader сам
+                if (cb.dataset.key === 'loader_enabled') {
+                    if (typeof Loader !== 'undefined') Loader.setEnabled(cb.checked);
+                    app.toast('Настройки сохранены', 'info');
+                    return;
+                }
                 const cur = this._load();
                 cur[cb.dataset.key] = cb.checked;
                 this._save(cur);

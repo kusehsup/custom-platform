@@ -445,22 +445,32 @@ const app = {
             this.toast('Установлено как приложение', 'success');
         });
 
+        // Показываем лоадер только когда есть токен — тогда предстоит
+        // реальная работа (fetch /status, showApp, connectWS).
+        // Форма логина показывается без лоадера.
+        if (API.hasToken()) Loader.show('Подключение…');
+
         try {
             const info = await API.get('/api/info');
             this.platformHost = info.platform_host || '';
         } catch { this.platformHost = ''; }
 
-        if (!API.hasToken()) { this._showAuth(); return; }
+        if (!API.hasToken()) { Loader.hide(); this._showAuth(); return; }
         try {
             const s = await API.get('/api/status');
             if (s.session_lost) {
                 // JWT валидный но сессия потеряна (рестарт) — показываем переподключение
+                Loader.hide();
                 this._showReconnect();
                 return;
             }
             this.state = { server: s.server, compile: s.compile };
             this._showApp();
-        } catch { this._showAuth(); }
+            Loader.hide();
+        } catch {
+            Loader.hide();
+            this._showAuth();
+        }
     },
 
     _showReconnect() {
@@ -494,13 +504,16 @@ const app = {
             const btn = document.getElementById('rc-btn');
             if (!password) { err.textContent = 'Введите пароль'; return; }
             btn.disabled = true; btn.textContent = 'Подключение...'; err.textContent = '';
+            Loader.show('Подключение…');
             try {
                 const data = await API.post('/api/login', { login, password, totp_code: totpCode });
                 API.setToken(data.token);
                 const s = await API.get('/api/status');
                 this.state = { server: s.server, compile: s.compile };
                 this._showApp();
+                Loader.hide();
             } catch (e) {
+                Loader.hide();
                 if (e.message === 'TOTP_REQUIRED') {
                     const totpWrap = document.getElementById('rc-totp-wrap');
                     totpWrap.style.display = 'block';

@@ -3475,3 +3475,40 @@ select.ss-native {
     color: var(--text-3);
     font-size: 12px;
 }
+
+/* ── App loader ────────────────────────────────────────────────── */
+.app-loader {
+    position: fixed;
+    inset: 0;
+    background: var(--bg);
+    z-index: 99999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.18s ease-out;
+    pointer-events: all;
+}
+.app-loader.is-shown { opacity: 1; }
+.app-loader-inner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+}
+.app-loader-spinner {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: 3px solid var(--surface2);
+    border-top-color: var(--text-2);
+    animation: app-loader-spin 0.9s linear infinite;
+}
+.app-loader-text {
+    color: var(--text-3);
+    font-size: 12.5px;
+    letter-spacing: 0.03em;
+}
+@keyframes app-loader-spin {
+    to { transform: rotate(360deg); }
+}

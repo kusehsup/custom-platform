@@ -27,13 +27,16 @@ app.register('login', {
             const btn      = document.getElementById('btn-login');
             if (!login || !password) { err.textContent = 'Введите логин и пароль'; return; }
             btn.disabled = true; btn.textContent = 'Подключаемся...'; err.textContent = '';
+            Loader.show('Подключение…');
             try {
                 const data = await API.post('/api/login', { login, password, totp_code: totpCode });
                 API.setToken(data.token);
                 const s = await API.get('/api/status');
                 app.state = { server: s.server, compile: s.compile };
                 app._showApp();
+                Loader.hide();
             } catch (e) {
+                Loader.hide();
                 if (e.message === 'TOTP_REQUIRED') {
                     // Показываем поле кода и ждём ввода
                     const wrap = document.getElementById('totp-wrap');
