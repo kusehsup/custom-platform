@@ -314,32 +314,63 @@ const app = {
     },
 
     // ── WebSocket ─────────────────────────────────────────────────────
+    // Защита от петли переподключения: пропускаем повторный connectWS
+    // если сокет уже открыт или мы только что попытались подключиться.
+    // Раньше при быстром двойном вызове (setTimeout из onclose + другой
+    // источник) старый сокет закрывался кодом 1005, тут же открывался
+    // новый, тоже закрывался — так по кругу пока не Ctrl+F5.
     connectWS() {
-        if (this._ws) this._ws.close();
+        // Если сокет уже установлен и живой — не трогаем.
+        if (this._ws && (this._ws.readyState === WebSocket.OPEN
+                      || this._ws.readyState === WebSocket.CONNECTING)) {
+            return;
+        }
+        // Rate-limit: не даём вызывать чаще раза в секунду.
+        const now = Date.now();
+        if (this._lastConnectAt && (now - this._lastConnectAt) < 1000) return;
+        this._lastConnectAt = now;
+
+        // Гарантированно закрываем предыдущий сокет с явным кодом (1000),
+        // чтобы отличать намеренное закрытие от «code=1005 no status».
+        if (this._ws) {
+            try {
+                this._ws.onclose = null;
+                this._ws.onerror = null;
+                this._ws.onmessage = null;
+                this._ws.close(1000, 'reconnect');
+            } catch {}
+        }
         if (this._pingInterval) clearInterval(this._pingInterval);
+        if (this._reconnectTimer) clearTimeout(this._reconnectTimer);
 
         this._logWS('Подключение к WS...', 'info');
-        this._ws = API.connectWS(msg => this._onWS(msg));
+        const ws = API.connectWS(msg => this._onWS(msg));
+        this._ws = ws;
 
-        this._ws.onopen = () => {
+        ws.onopen = () => {
+            if (this._ws !== ws) return; // устаревший сокет
             this._setWsStatus(true);
             this._logWS('WS подключён', 'success');
             this._pingInterval = setInterval(() => {
-                if (this._ws?.readyState === WebSocket.OPEN) {
-                    this._ws.send('ping');
-                    this._logWS('ping →', 'info');
+                if (ws.readyState === WebSocket.OPEN) {
+                    ws.send('ping');
                 }
             }, 20000);
         };
 
-        this._ws.onclose = (e) => {
+        ws.onclose = (e) => {
+            if (this._ws !== ws) return; // старый сокет — не реагируем
             this._setWsStatus(false);
             this._logWS(`WS закрыт (code=${e.code}, reason=${e.reason || '—'})`, 'error');
             clearInterval(this._pingInterval);
-            setTimeout(() => { if (API.hasToken()) this.connectWS(); }, 3000);
+            // Пере-подключаемся только если есть токен и мы не в процессе logout'а.
+            this._reconnectTimer = setTimeout(() => {
+                if (API.hasToken()) this.connectWS();
+            }, 3000);
         };
 
-        this._ws.onerror = (e) => {
+        ws.onerror = () => {
+            if (this._ws !== ws) return;
             this._setWsStatus(false);
             this._logWS('WS ошибка', 'error');
         };
@@ -661,7 +692,11 @@ const app = {
         document.getElementById('btn-logout').addEventListener('click', async () => {
             await API.post('/api/logout').catch(() => {});
             API.clearToken();
-            if (this._ws) this._ws.close();
+            if (this._reconnectTimer) { clearTimeout(this._reconnectTimer); this._reconnectTimer = null; }
+            if (this._ws) {
+                try { this._ws.onclose = null; this._ws.close(1000, 'logout'); } catch {}
+                this._ws = null;
+            }
             this._showAuth();
         });
 
