@@ -3409,12 +3409,9 @@ select.ss-native {
     position: absolute;
     top: calc(100% + 4px);
     left: 0;
-    /* Не даём popover'у выпирать за пределы триггера справа. */
+    /* Ровно ширина триггера. Опции wrap'ятся если длинные —
+       см. .ss-item ниже. */
     width: 100%;
-    /* Но если контент шире (длинные пути файлов) — раздвигаемся до
-       разумного предела, не выше 90vw. */
-    min-width: max-content;
-    max-width: min(560px, 90vw);
     z-index: 9999;
     background: var(--surface);
     border: 1px solid var(--border);
