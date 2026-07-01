@@ -234,7 +234,7 @@
             document.addEventListener('mousedown', onDocDown, true);
             document.addEventListener('keydown', onDocKey, true);
             window.addEventListener('resize', close);
-            window.addEventListener('scroll', close, true);
+            document.addEventListener('scroll', onOutsideScroll, true);
         }
 
         function close() {
@@ -246,7 +246,15 @@
             document.removeEventListener('mousedown', onDocDown, true);
             document.removeEventListener('keydown', onDocKey, true);
             window.removeEventListener('resize', close);
-            window.removeEventListener('scroll', close, true);
+            document.removeEventListener('scroll', onOutsideScroll, true);
+        }
+
+        // Скролл внутри самого popover — не закрываем. Внешний скролл
+        // (страница/родитель) — закрываем, чтобы popover не висел в
+        // воздухе относительно уехавшего триггера.
+        function onOutsideScroll(e) {
+            if (pop.contains(e.target)) return;
+            close();
         }
 
         function positionPopover() {
