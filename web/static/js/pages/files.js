@@ -205,6 +205,7 @@ app.register('files', {
                         <button class="btn btn-ghost btn-sm hidden" id="btn-goto" title="Перейти к строке (Ctrl+G)" style="font-family:var(--mono);font-size:11px">:N</button>
                         <button class="btn btn-ghost btn-sm hidden" id="btn-save">💾 Сохранить</button>
                         <button class="btn btn-ghost btn-sm hidden" id="btn-discard">✕ Сбросить</button>
+                        <button class="btn btn-ghost btn-sm hidden" id="btn-refresh" title="Перечитать файл с платформы">↻ Обновить</button>
                         <button class="btn btn-ghost btn-sm hidden" id="btn-history" title="История изменений">🕐 История</button>
                         <button class="btn btn-ghost btn-sm hidden" id="btn-gh-archive" title="Архив GitHub">⬡ Архив</button>
                         <button class="btn btn-ghost btn-sm hidden" id="btn-del-toggle" title="Удалить доступ к строкам">🗑</button>
@@ -265,6 +266,7 @@ app.register('files', {
             btn.addEventListener('click', () => this._switchTab(btn.dataset.tab))
         );
 
+        document.getElementById('btn-refresh').addEventListener('click', () => this._forceRefresh());
         document.getElementById('btn-history').addEventListener('click', () => this._showHistory());
         document.getElementById('btn-gh-archive').addEventListener('click', () => this._showGithubArchive());
         document.getElementById('btn-del-toggle').addEventListener('click', () => {
@@ -750,6 +752,7 @@ app.register('files', {
         document.getElementById('btn-discard')?.classList.add('hidden');
         // Показываем кнопку удаления доступа, панель скрыта по умолчанию
         document.getElementById('btn-goto')?.classList.remove('hidden');
+        document.getElementById('btn-refresh')?.classList.remove('hidden');
         document.getElementById('btn-history')?.classList.remove('hidden');
         document.getElementById('btn-gh-archive')?.classList.remove('hidden');
         document.getElementById('btn-del-toggle')?.classList.remove('hidden');
@@ -1604,6 +1607,60 @@ app.register('files', {
         if (this._partDrafts) delete this._partDrafts[this._activePartIdx];
         this._saveDrafts(this._activeFileId, this._partDrafts || {});
         this._loadPartIntoEditor(this._activePartIdx);
+    },
+
+    // Форсируем перечитывание файла с бэкенда. Полезно когда WS
+    // «промахнулся» мимо update_code (перереконнект и т.п.) и файл
+    // в редакторе выглядит устаревшим.
+    async _forceRefresh() {
+        if (!this._activeFileId) return;
+        const fileId = this._activeFileId;
+        // Если есть несохранённые правки — спрашиваем.
+        if (this._modified) {
+            if (!confirm('Есть несохранённые изменения. Перечитать файл с сервера и потерять их?')) return;
+            // Стираем draft
+            this._partDrafts = {};
+            this._saveDrafts(fileId, {});
+            this._modified = false;
+        }
+        const btn = document.getElementById('btn-refresh');
+        const orig = btn ? btn.textContent : '';
+        if (btn) { btn.disabled = true; btn.textContent = '⏳ Обновление…'; }
+        try {
+            // Стараемся сохранить активную часть и позицию курсора
+            const prevPartIdx = this._activePartIdx;
+            const editor = this._editor;
+            const pos = editor?.getPosition();
+            const scroll = editor?.getScrollTop?.() || 0;
+
+            const data = await API.get(`/api/file/${fileId}/code`);
+            if (this._activeFileId !== fileId) return;
+            const parts = data.code;
+            if (!parts || !parts.length) {
+                app.toast('Файл пустой или недоступен', 'error');
+                return;
+            }
+            this._setParts(parts, fileId);
+            // Возвращаемся на ту же часть если она ещё существует
+            if (prevPartIdx > 0 && prevPartIdx < parts.length) {
+                this._activePartIdx = prevPartIdx;
+                this._renderPartTabs?.();
+                this._loadPartIntoEditor(prevPartIdx);
+            }
+            // Восстанавливаем курсор/скролл после re-load
+            setTimeout(() => {
+                const ed = this._editor;
+                if (ed && pos) {
+                    ed.setPosition({ lineNumber: pos.lineNumber, column: pos.column });
+                }
+                if (ed && scroll) ed.setScrollTop(scroll);
+            }, 200);
+            app.toast('Файл обновлён', 'success');
+        } catch (e) {
+            app.toast('Не удалось обновить: ' + e.message, 'error');
+        } finally {
+            if (btn) { btn.disabled = false; btn.textContent = orig || '↻ Обновить'; }
+        }
     },
 
     _showGotoLine() {
