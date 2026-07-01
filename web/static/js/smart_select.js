@@ -251,12 +251,23 @@
 
         function positionPopover() {
             pop.classList.remove('ss-above');
+            pop.style.left = '';
+            pop.style.right = '';
             const tr = trigger.getBoundingClientRect();
             const spaceBelow = window.innerHeight - tr.bottom;
             const spaceAbove = tr.top;
             if (spaceBelow < 220 && spaceAbove > spaceBelow) {
                 pop.classList.add('ss-above');
             }
+            // Popover может быть шире триггера (растёт под контент).
+            // Если вылезает за правый край viewport — прижимаем справа.
+            requestAnimationFrame(() => {
+                const pr = pop.getBoundingClientRect();
+                if (pr.right > window.innerWidth - 8) {
+                    pop.style.left = 'auto';
+                    pop.style.right = '0';
+                }
+            });
         }
 
         function onDocDown(e) {

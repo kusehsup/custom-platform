@@ -3409,9 +3409,11 @@ select.ss-native {
     position: absolute;
     top: calc(100% + 4px);
     left: 0;
-    /* Ровно ширина триггера. Опции wrap'ятся если длинные —
-       см. .ss-item ниже. */
-    width: 100%;
+    /* min = ширина триггера (чтобы никогда не был уже), max = разумный
+       предел, не выше 90vw. Растёт по содержимому. */
+    min-width: 100%;
+    width: max-content;
+    max-width: min(560px, 90vw);
     z-index: 9999;
     background: var(--surface);
     border: 1px solid var(--border);
@@ -3453,8 +3455,9 @@ select.ss-native {
     cursor: pointer;
     border-radius: var(--radius-sm, 4px);
     line-height: 1.4;
-    /* Полное имя файла может быть длинным — переносим, а не режем. */
-    word-break: break-all;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 .ss-item.is-hover      { background: var(--surface2); }
 .ss-item.is-selected   { background: rgba(59, 130, 246, 0.14); color: var(--text); }
