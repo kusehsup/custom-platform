@@ -39,7 +39,7 @@ PIN_PATH = Path('/etc/custom-platform/xray_pin')
 PROFILES_PATH = Path('/etc/custom-platform/xray_profiles.json')
 XRAY_CONFIG = Path('/etc/xray/config.json')
 
-VALID_SLOTS = ('primary', 'backup')
+VALID_SLOTS = ('primary', 'backup', 'custom')
 
 
 # ── Helpers ──────────────────────────────────────────────────────────
@@ -196,27 +196,22 @@ def _write_config(cfg: dict):
 # ── Profiles store ──────────────────────────────────────────────────
 
 def _profiles_read() -> dict:
-    """Загружает {primary, backup, active}. Если файла нет — пустые слоты."""
+    """Загружает все слоты + active. Если файла нет — пустые слоты."""
     try:
         data = json.loads(PROFILES_PATH.read_text(encoding='utf-8'))
     except Exception:
         data = {}
     if not isinstance(data, dict):
         data = {}
-    return {
-        'primary': str(data.get('primary') or ''),
-        'backup':  str(data.get('backup')  or ''),
-        'active':  data.get('active') if data.get('active') in VALID_SLOTS else None,
-    }
+    result = {slot: str(data.get(slot) or '') for slot in VALID_SLOTS}
+    result['active'] = data.get('active') if data.get('active') in VALID_SLOTS else None
+    return result
 
 
 def _profiles_write(profiles: dict):
     PROFILES_PATH.parent.mkdir(parents=True, exist_ok=True)
-    payload = {
-        'primary': profiles.get('primary') or '',
-        'backup':  profiles.get('backup')  or '',
-        'active':  profiles.get('active') if profiles.get('active') in VALID_SLOTS else None,
-    }
+    payload = {slot: (profiles.get(slot) or '') for slot in VALID_SLOTS}
+    payload['active'] = profiles.get('active') if profiles.get('active') in VALID_SLOTS else None
     PROFILES_PATH.write_text(json.dumps(payload, indent=2), encoding='utf-8')
     try:
         PROFILES_PATH.chmod(0o600)

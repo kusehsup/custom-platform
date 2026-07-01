@@ -170,10 +170,10 @@
 
         .slot-grid {
             display: grid;
-            grid-template-columns: 1fr 1fr;
+            grid-template-columns: 1fr 1fr 1fr;
             gap: 12px;
         }
-        @media (max-width: 640px) {
+        @media (max-width: 900px) {
             .slot-grid { grid-template-columns: 1fr; }
         }
         .slot {
@@ -326,6 +326,19 @@
                         <button class="primary" data-slot="backup" data-act="activate">⚡ Активировать</button>
                     </div>
                 </div>
+
+                <div class="slot" id="slot-custom">
+                    <div class="slot-head">
+                        <span class="slot-title">Кастомный</span>
+                        <span class="slot-state" id="custom-state">—</span>
+                    </div>
+                    <div class="slot-host" id="custom-host">не настроен</div>
+                    <textarea id="custom-vless" placeholder="vless://..."></textarea>
+                    <div class="actions">
+                        <button class="ghost" data-slot="custom" data-act="save">💾 Сохранить</button>
+                        <button class="primary" data-slot="custom" data-act="activate">⚡ Активировать</button>
+                    </div>
+                </div>
             </div>
             <div class="hint">
                 «Сохранить» — кладёт ссылку в слот, но не переключает.
@@ -350,6 +363,11 @@
             el._t = setTimeout(() => { el.className = 'toast'; }, 3500);
         };
         const getPin = () => $('pin').value.trim();
+        const slotLabel = (s) => ({
+            primary: 'основной',
+            backup:  'резервный',
+            custom:  'кастомный',
+        }[s] || s);
 
         async function req(path, extra) {
             const body = Object.assign({pin: getPin()}, extra || {});
@@ -378,7 +396,7 @@
             $('st-security').textContent = s.outbound_security || '—';
 
             const p = s.profiles || {active: null, slots: {}};
-            for (const slot of ['primary', 'backup']) {
+            for (const slot of ['primary', 'backup', 'custom']) {
                 const info = (p.slots || {})[slot] || {};
                 const isActive = p.active === slot;
                 $(`slot-${slot}`).classList.toggle('active', isActive);
@@ -443,7 +461,7 @@
                     try {
                         const s = await req('/api/xray/setup/save_profile', {slot, vless});
                         renderStatus(s);
-                        toast(`Слот ${slot === 'primary' ? 'основной' : 'резервный'} сохранён`, 'ok');
+                        toast(`Слот «${slotLabel(slot)}» сохранён`, 'ok');
                         $(`${slot}-vless`).value = '';
                     } catch (e) { toast(e.message, 'error'); }
                     return;
@@ -459,7 +477,7 @@
                         const s = await req('/api/xray/setup/activate', {slot});
                         renderStatus(s);
                         toast(s.active
-                            ? `✓ Активирован ${slot === 'primary' ? 'основной' : 'резервный'}`
+                            ? `✓ Активирован «${slotLabel(slot)}»`
                             : 'Конфиг записан, но xray не active — смотри journalctl',
                             s.active ? 'ok' : 'error');
                     } catch (e) { toast(e.message, 'error'); }
