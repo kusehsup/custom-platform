@@ -1468,7 +1468,7 @@ mark.palette-hl { background: rgba(234,179,8,0.15); color: var(--yellow); border
 
 .db-main { display: flex; flex-direction: column; overflow: hidden; background: var(--bg); }
 
-#db-query-panel { display: flex; flex-direction: column; flex: 1; overflow: hidden; }
+#db-query-panel { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }
 
 .db-toolbar {
     display: flex; align-items: center; gap: 5px;
@@ -1498,8 +1498,28 @@ mark.palette-hl { background: rgba(234,179,8,0.15); color: var(--yellow); border
 }
 .db-query-input:focus { border-color: var(--text-2); }
 
-.db-result-wrap  { flex: 1; overflow: auto; display: flex; flex-direction: column; }
-.db-result-inner { flex: 1; overflow: auto; }
+/* min-height:0 обязателен: без него flex-элемент не сжимается ниже
+   размера контента, и высокая таблица «выталкивает» контейнер за
+   пределы экрана вместо появления вертикального скролла. */
+.db-result-wrap  { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; }
+.db-result-inner { flex: 1; min-height: 0; overflow: auto; }
+
+/* Несколько результатов (пакет запросов, как в HeidiSQL) — каждый
+   блок скроллится независимо, между блоками скроллится контейнер. */
+.db-multi-results { display: flex; flex-direction: column; gap: 10px; padding-bottom: 8px; }
+.db-result-block { display: flex; flex-direction: column; min-height: 0; }
+.db-result-block-head {
+    display: flex; align-items: center; gap: 8px;
+    padding: 5px 10px;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; z-index: 3;
+}
+.db-result-block-body { overflow: auto; max-height: 55vh; }
+/* Единственный результат занимает всё доступное место и скроллится сам. */
+.db-multi-results > .db-result-block:only-child { flex: 1; min-height: 0; }
+.db-multi-results > .db-result-block:only-child > .db-result-block-body { flex: 1; min-height: 0; max-height: none; }
 
 .db-table-result {
     width: 100%;
