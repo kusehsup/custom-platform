@@ -52,6 +52,113 @@ def _socks5_connect_sync(proxy_host: str, proxy_port: int, target_host: str, tar
     return s
 
 
+# ------------------------------------------------------------------ #
+#  Разбивка на отдельные SQL-инструкции                              #
+# ------------------------------------------------------------------ #
+#  MySQL/MariaDB по протоколу не выполняет несколько инструкций в
+#  одном execute() (нет CLIENT.MULTI_STATEMENTS), поэтому «пакет»
+#  запросов от пользователя приходит одной строкой и падает с 1064.
+#  Разбиваем сами, аккуратно учитывая строковые литералы, кавычки-
+#  идентификаторы и комментарии, чтобы `;` внутри них не считался
+#  разделителем. Пустые инструкции и «только комментарий» пропускаем.
+
+def _split_sql_statements(sql: str) -> list[str]:
+    statements: list[str] = []
+    buf: list[str] = []
+    has_content = False   # есть ли в текущей инструкции реальный (не коммент/не пробел) текст
+
+    in_single = in_double = in_backtick = False
+    in_line_comment = in_block_comment = False
+
+    i, n = 0, len(sql)
+    while i < n:
+        ch = sql[i]
+        nxt = sql[i + 1] if i + 1 < n else ''
+
+        if in_line_comment:
+            buf.append(ch)
+            if ch == '\n':
+                in_line_comment = False
+            i += 1
+            continue
+
+        if in_block_comment:
+            buf.append(ch)
+            if ch == '*' and nxt == '/':
+                buf.append(nxt)
+                i += 2
+                in_block_comment = False
+                continue
+            i += 1
+            continue
+
+        if in_single:
+            buf.append(ch)
+            if ch == '\\' and nxt:
+                buf.append(nxt); i += 2; continue
+            if ch == "'":
+                if nxt == "'":
+                    buf.append(nxt); i += 2; continue
+                in_single = False
+            i += 1
+            continue
+
+        if in_double:
+            buf.append(ch)
+            if ch == '\\' and nxt:
+                buf.append(nxt); i += 2; continue
+            if ch == '"':
+                if nxt == '"':
+                    buf.append(nxt); i += 2; continue
+                in_double = False
+            i += 1
+            continue
+
+        if in_backtick:
+            buf.append(ch)
+            if ch == '`':
+                if nxt == '`':
+                    buf.append(nxt); i += 2; continue
+                in_backtick = False
+            i += 1
+            continue
+
+        # Начало комментариев
+        if ch == '-' and nxt == '-' and (i + 2 >= n or sql[i + 2] in ' \t\r\n'):
+            in_line_comment = True; buf.append(ch); i += 1; continue
+        if ch == '#':
+            in_line_comment = True; buf.append(ch); i += 1; continue
+        if ch == '/' and nxt == '*':
+            in_block_comment = True; buf.append(ch); buf.append(nxt); i += 2; continue
+
+        # Начало строк / идентификаторов
+        if ch == "'":
+            in_single = True; has_content = True; buf.append(ch); i += 1; continue
+        if ch == '"':
+            in_double = True; has_content = True; buf.append(ch); i += 1; continue
+        if ch == '`':
+            in_backtick = True; has_content = True; buf.append(ch); i += 1; continue
+
+        # Разделитель инструкций
+        if ch == ';':
+            if has_content:
+                statements.append(''.join(buf).strip())
+            buf = []
+            has_content = False
+            i += 1
+            continue
+
+        if not ch.isspace():
+            has_content = True
+        buf.append(ch)
+        i += 1
+
+    if has_content:
+        statements.append(''.join(buf).strip())
+
+    return [s for s in statements if s]
+
+
 def _db_connect_sync() -> pymysql.Connection:
     # Открываем SOCKS5-туннель сами и передаём готовый сокет в pymysql
     # через Connection.connect(sock=...). Это thread-safe — никаких
@@ -154,25 +261,50 @@ async def list_tables(database: str, login: str = Depends(get_current_user)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+MAX_QUERY_ROWS = 2000
+
+
 @router.post('/query')
 async def run_query(body: QueryRequest, login: str = Depends(get_current_user)):
+    statements = _split_sql_statements(body.sql)
+    if not statements:
+        raise HTTPException(status_code=400, detail='Пустой запрос')
+
     def _run():
         conn = _db_connect_sync()
         try:
+            results = []
             with conn.cursor(pymysql.cursors.DictCursor) as cur:
                 if body.database:
                     cur.execute(f'USE `{body.database}`')
-                cur.execute(body.sql)
-                if cur.description:
-                    rows = cur.fetchmany(2000)
-                    columns = [d[0] for d in cur.description]
-                    return {
-                        'columns': columns,
-                        'rows': [list(r.values()) for r in rows],
-                        'affected': cur.rowcount,
-                        'kind': 'select',
-                    }
-                return {'columns': [], 'rows': [], 'affected': cur.rowcount, 'kind': 'dml'}
+                for idx, stmt in enumerate(statements):
+                    try:
+                        cur.execute(stmt)
+                    except Exception as e:
+                        # Понятная привязка ошибки к конкретной инструкции пакета
+                        prefix = f'Запрос #{idx + 1}: ' if len(statements) > 1 else ''
+                        raise RuntimeError(f'{prefix}{e}') from e
+                    if cur.description:
+                        rows = cur.fetchmany(MAX_QUERY_ROWS)
+                        columns = [d[0] for d in cur.description]
+                        results.append({
+                            'columns': columns,
+                            'rows': [list(r.values()) for r in rows],
+                            'affected': cur.rowcount,
+                            'kind': 'select',
+                            'statement': stmt,
+                            'truncated': len(rows) >= MAX_QUERY_ROWS,
+                        })
+                    else:
+                        results.append({
+                            'columns': [],
+                            'rows': [],
+                            'affected': cur.rowcount,
+                            'kind': 'dml',
+                            'statement': stmt,
+                            'truncated': False,
+                        })
+            return {'results': results}
         finally:
             conn.close()
     try:

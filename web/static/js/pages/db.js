@@ -306,7 +306,10 @@ const DbPage = {
             if (btn) btn.classList.toggle('active', v === view);
             if (panel) {
                 if (v === view) {
-                    panel.style.display = v === 'query' ? 'block' : 'flex';
+                    // Все панели — flex-колонки: только так вложенная область
+                    // результата получает ограниченную высоту и скроллится
+                    // (при display:block высокая таблица растягивала панель).
+                    panel.style.display = 'flex';
                     panel.style.flexDirection = 'column';
                     panel.style.flex = '1';
                     panel.style.overflow = 'hidden';
@@ -401,29 +404,57 @@ const DbPage = {
             const res = await API.post('/api/db/query', { sql, database: this._db });
             const ms = Date.now() - t0;
             this._pushHist(sql);
-            if (res.kind === 'select') {
-                this._queryResult = { columns: res.columns, rows: res.rows, sql };
-                result.innerHTML = `
-                    <div style="display:flex;gap:6px;padding:6px 8px;border-bottom:1px solid var(--border);flex-shrink:0;align-items:center">
-                        <span style="font-size:12px;color:var(--text-3);flex:1">${res.rows.length} строк · ${ms}мс</span>
-                        <button class="btn btn-ghost btn-sm" id="db-export-csv" style="font-size:11px">↓ CSV</button>
-                        <button class="btn btn-ghost btn-sm" id="db-export-sql" style="font-size:11px">↓ SQL</button>
-                    </div>
-                    <div class="db-result-inner">${this._renderTable(res.columns, res.rows, true, null)}</div>`;
-                this._bindCellEditQuery(result, el, res.columns, res.rows);
-                result.querySelector('#db-export-csv').addEventListener('click', () =>
-                    this._exportCSV(res.columns, res.rows));
-                result.querySelector('#db-export-sql').addEventListener('click', () =>
-                    this._exportSQL(res.columns, res.rows, sql));
-                this._setStatus(`${res.rows.length} строк · ${ms}мс`, 'ok');
-                this._pushLog({ ts: Date.now(), sql, ok: true, ms, rows: res.rows.length });
+
+            // Бэкенд возвращает массив результатов (по одному на инструкцию).
+            // Поддерживаем и старый формат на всякий случай.
+            const results = res.results
+                ? res.results
+                : [{ columns: res.columns, rows: res.rows, affected: res.affected, kind: res.kind, statement: sql }];
+
+            const selectCount = results.filter(r => r.kind === 'select').length;
+            const multi = results.length > 1;
+
+            // Заголовок-сводка по всему пакету
+            const dmlAffected = results
+                .filter(r => r.kind !== 'select')
+                .reduce((a, r) => a + (r.affected || 0), 0);
+            const summaryParts = [];
+            if (selectCount) summaryParts.push(`${selectCount} результат${selectCount > 1 ? 'а' : ''}`);
+            if (results.some(r => r.kind !== 'select')) summaryParts.push(`затронуто ${dmlAffected} строк`);
+            summaryParts.push(`${ms}мс`);
+
+            const blocksHtml = results.map((r, i) => this._renderResultBlock(r, i, multi)).join('');
+
+            result.innerHTML = `
+                <div style="display:flex;gap:6px;padding:6px 8px;border-bottom:1px solid var(--border);flex-shrink:0;align-items:center">
+                    <span style="font-size:12px;color:var(--text-3);flex:1">${summaryParts.join(' · ')}</span>
+                </div>
+                <div class="db-result-inner db-multi-results">${blocksHtml}</div>`;
+
+            // Экспорт по каждому SELECT-результату
+            results.forEach((r, i) => {
+                if (r.kind !== 'select') return;
+                result.querySelector(`#db-export-csv-${i}`)?.addEventListener('click', () =>
+                    this._exportCSV(r.columns, r.rows));
+                result.querySelector(`#db-export-sql-${i}`)?.addEventListener('click', () =>
+                    this._exportSQL(r.columns, r.rows, r.statement || sql));
+            });
+
+            // Редактирование ячеек доступно только когда ровно один SELECT
+            // (иначе неоднозначно, к какой таблице относится строка).
+            if (selectCount === 1 && !multi) {
+                const only = results[0];
+                this._queryResult = { columns: only.columns, rows: only.rows, sql: only.statement || sql };
+                const inner = result.querySelector('.db-result-block[data-idx="0"]');
+                if (inner) this._bindCellEditQuery(inner, el, only.columns, only.rows);
             } else {
                 this._queryResult = null;
-                result.innerHTML = `<div style="padding:20px;color:var(--green);font-size:13px">OK · затронуто ${res.affected} строк · ${ms}мс</div>`;
-                this._setStatus(`OK · ${res.affected} строк · ${ms}мс`, 'ok');
-                this._pushLog({ ts: Date.now(), sql, ok: true, ms, rows: null });
-                if (this._view === 'browse' && this._table) this._browse(el);
             }
+
+            const totalRows = results.reduce((a, r) => a + (r.rows ? r.rows.length : 0), 0);
+            this._setStatus(`${summaryParts.join(' · ')}`, 'ok');
+            this._pushLog({ ts: Date.now(), sql, ok: true, ms, rows: selectCount ? totalRows : null });
+            if (selectCount === 0 && this._view === 'browse' && this._table) this._browse(el);
         } catch (e) {
             result.innerHTML = `<div style="padding:20px;color:var(--red);font-size:13px;font-family:var(--mono);white-space:pre-wrap">${this._esc(e.message)}</div>`;
             this._setStatus('Ошибка запроса', 'err');
@@ -431,6 +462,39 @@ const DbPage = {
         } finally {
             btn.disabled = false;
         }
+    },
+
+    // Рендер одного результата (SELECT → таблица, DML → строка статуса).
+    // При нескольких результатах каждая таблица скроллится независимо.
+    _renderResultBlock(r, idx, multi) {
+        const label = multi ? `#${idx + 1} · ` : '';
+        if (r.kind === 'select') {
+            const trunc = r.truncated
+                ? `<span style="color:var(--yellow);font-size:11px">показаны первые ${r.rows.length}</span>`
+                : '';
+            const stmt = multi && r.statement
+                ? `<span style="color:var(--text-3);font-size:11px;font-family:var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:340px" title="${this._esc(r.statement)}">${this._esc(r.statement)}</span>`
+                : '';
+            return `
+            <div class="db-result-block" data-idx="${idx}">
+                <div class="db-result-block-head">
+                    <span style="font-size:11px;color:var(--text-2);font-weight:600">${label}${r.rows.length} строк</span>
+                    ${trunc}
+                    ${stmt}
+                    <span style="flex:1"></span>
+                    <button class="btn btn-ghost btn-sm" id="db-export-csv-${idx}" style="font-size:11px">↓ CSV</button>
+                    <button class="btn btn-ghost btn-sm" id="db-export-sql-${idx}" style="font-size:11px">↓ SQL</button>
+                </div>
+                <div class="db-result-block-body">${this._renderTable(r.columns, r.rows, true, null)}</div>
+            </div>`;
+        }
+        return `
+        <div class="db-result-block" data-idx="${idx}">
+            <div class="db-result-block-head">
+                <span style="color:var(--green);font-size:12px">${label}OK · затронуто ${r.affected} строк</span>
+                ${multi && r.statement ? `<span style="color:var(--text-3);font-size:11px;font-family:var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:340px" title="${this._esc(r.statement)}">${this._esc(r.statement)}</span>` : ''}
+            </div>
+        </div>`;
     },
 
     _exportCSV(columns, rows) {
