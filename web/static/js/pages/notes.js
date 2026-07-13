@@ -13,6 +13,31 @@ const NotesPage = {
     _saveTimer: null,
     _saveDelay: 700,
     _previewMode: 'split',  // 'edit' | 'preview' | 'split'
+    _hljsPromise: null,     // ленивый лоадер highlight.js для code-заметок
+
+    // Языки для code-режима (pastebin). value → id языка highlight.js.
+    // Pawn (SA-MP) подсвечиваем как C — highlight.js своего pawn не имеет.
+    _LANGS: [
+        ['plaintext', 'Текст'],
+        ['c', 'Pawn / C'],
+        ['cpp', 'C++'],
+        ['javascript', 'JavaScript'],
+        ['typescript', 'TypeScript'],
+        ['python', 'Python'],
+        ['php', 'PHP'],
+        ['sql', 'SQL'],
+        ['json', 'JSON'],
+        ['bash', 'Bash'],
+        ['xml', 'HTML / XML'],
+        ['css', 'CSS'],
+        ['ini', 'INI'],
+        ['yaml', 'YAML'],
+        ['lua', 'Lua'],
+        ['go', 'Go'],
+        ['rust', 'Rust'],
+        ['java', 'Java'],
+        ['markdown', 'Markdown'],
+    ],
 
     async render(el) {
         el.innerHTML = `
@@ -142,10 +167,11 @@ const NotesPage = {
         const title = document.getElementById('notes-title')?.value ?? this._active.title;
         const body = document.getElementById('notes-body')?.value ?? this._active.body;
         const kind = this._active.kind || 'markdown';
+        const language = this._active.language || 'plaintext';
         try {
             this._updateSaveStatus('Сохранение…');
             const updated = await API.put(`/api/notes/${encodeURIComponent(this._active.id)}`,
-                {title, body, kind});
+                {title, body, kind, language});
             this._active = updated;
             this._dirty = false;
             this._updateSaveStatus('✓ Сохранено');
@@ -184,13 +210,20 @@ const NotesPage = {
         }
         const n = this._active;
         const kind = n.kind || 'markdown';
+        const curLang = n.language || 'plaintext';
         const modeBtn = (m, label) =>
             `<button class="notes-mode-btn${this._previewMode === m ? ' active' : ''}" data-mode="${m}">${label}</button>`;
         const kindBtn = (k, label) =>
             `<button class="notes-mode-btn${kind === k ? ' active' : ''}" data-kind="${k}">${label}</button>`;
         const placeholder = kind === 'html'
             ? '<!doctype html>&#10;<html>&#10;  <body>…</body>&#10;</html>'
-            : '# Заголовок&#10;&#10;Текст заметки в markdown…';
+            : kind === 'code'
+                ? 'Вставьте код…'
+                : '# Заголовок&#10;&#10;Текст заметки в markdown…';
+        const previewCls = kind === 'html' ? ' notes-preview-html'
+            : kind === 'code' ? ' notes-preview-code' : '';
+        const langOptions = this._LANGS.map(([val, label]) =>
+            `<option value="${val}"${val === curLang ? ' selected' : ''}>${this._esc(label)}</option>`).join('');
 
         root.innerHTML = `
         <div class="notes-toolbar">
@@ -198,7 +231,11 @@ const NotesPage = {
             <div class="notes-modes" title="Тип контента">
                 ${kindBtn('markdown', 'MD')}
                 ${kindBtn('html', 'HTML')}
+                ${kindBtn('code', 'Code')}
             </div>
+            ${kind === 'code'
+                ? `<select id="notes-lang" class="notes-lang-select" title="Язык подсветки">${langOptions}</select>`
+                : ''}
             <div class="notes-modes">
                 ${modeBtn('edit', 'Редактор')}
                 ${modeBtn('split', 'Split')}
@@ -207,6 +244,10 @@ const NotesPage = {
             ${kind === 'html'
                 ? `<button class="btn btn-ghost btn-sm" id="notes-upload-btn" title="Загрузить .html файл">📤 .html</button>
                    <input type="file" id="notes-upload-input" accept=".html,.htm,text/html" style="display:none" />`
+                : ''}
+            ${kind === 'code'
+                ? `<button class="btn btn-ghost btn-sm" id="notes-upload-btn" title="Загрузить файл с кодом">📤 Файл</button>
+                   <input type="file" id="notes-upload-input" style="display:none" />`
                 : ''}
             <button class="btn btn-ghost btn-sm" id="notes-share-btn" title="Поделиться">📤 Поделиться</button>
             <button class="btn btn-ghost btn-sm" id="notes-delete-btn" title="Удалить заметку">🗑</button>
@@ -218,7 +259,7 @@ const NotesPage = {
         <div class="notes-panes notes-panes-${this._previewMode}">
             <textarea id="notes-body" class="notes-body" spellcheck="false"
                 placeholder="${placeholder}">${this._esc(n.body)}</textarea>
-            <div id="notes-preview" class="notes-preview${kind === 'html' ? ' notes-preview-html' : ''}"></div>
+            <div id="notes-preview" class="notes-preview${previewCls}"></div>
         </div>`;
 
         const titleInp = document.getElementById('notes-title');
@@ -243,6 +284,17 @@ const NotesPage = {
 
         document.getElementById('notes-share-btn').addEventListener('click', () => this._showShareModal());
         document.getElementById('notes-delete-btn').addEventListener('click', () => this._deleteActive());
+
+        const langSel = document.getElementById('notes-lang');
+        if (langSel) {
+            langSel.addEventListener('change', () => {
+                if (!this._active) return;
+                this._active.language = langSel.value;
+                this._scheduleSave();
+                this._renderPreview();
+            });
+        }
+
         root.querySelectorAll('.notes-mode-btn').forEach((b) =>
             b.addEventListener('click', () => {
                 if (b.dataset.kind) {
@@ -279,8 +331,18 @@ const NotesPage = {
                     if (ta) {
                         ta.value = text;
                         this._scheduleSave();
-                        this._renderPreview();
                     }
+                    // Для code-заметки — угадываем язык по расширению файла
+                    if (this._active.kind === 'code') {
+                        const lang = this._langFromFilename(file.name);
+                        if (lang) {
+                            this._active.language = lang;
+                            const langSel2 = document.getElementById('notes-lang');
+                            if (langSel2) langSel2.value = lang;
+                            this._scheduleSave();
+                        }
+                    }
+                    this._renderPreview();
                     // Если у заметки нет нормального названия — подставим имя файла
                     if (!this._active.title || this._active.title === 'Без названия' || this._active.title === 'Новая заметка') {
                         const titleInp2 = document.getElementById('notes-title');
@@ -321,11 +383,88 @@ const NotesPage = {
             return;
         }
 
+        if (kind === 'code') {
+            this._renderCodePreview(el, body, this._active?.language || 'plaintext');
+            return;
+        }
+
         el.innerHTML = NotesMd.render(body);
         // Делаем чекбоксы кликабельными — toggle строки в исходном markdown
         el.querySelectorAll('input[type="checkbox"][data-task-idx]').forEach((cb) =>
             cb.addEventListener('change', (e) => this._toggleTask(parseInt(e.target.dataset.taskIdx, 10), e.target.checked)),
         );
+    },
+
+    // ── Code (pastebin) режим ────────────────────────────────────
+
+    // Ленивая загрузка highlight.js с CDN. Если не загрузится — код просто
+    // останется моноширинным без подсветки (уже отрендерен в _renderCodePreview).
+    _ensureHljs() {
+        if (window.hljs) return Promise.resolve(window.hljs);
+        if (this._hljsPromise) return this._hljsPromise;
+        const base = 'https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11.9.0';
+        this._hljsPromise = new Promise((resolve, reject) => {
+            if (!document.getElementById('hljs-theme')) {
+                const link = document.createElement('link');
+                link.id = 'hljs-theme';
+                link.rel = 'stylesheet';
+                link.href = `${base}/styles/github-dark.min.css`;
+                document.head.appendChild(link);
+            }
+            const s = document.createElement('script');
+            s.src = `${base}/highlight.min.js`;
+            s.onload = () => resolve(window.hljs);
+            s.onerror = () => reject(new Error('highlight.js не загрузился'));
+            document.head.appendChild(s);
+        });
+        return this._hljsPromise;
+    },
+
+    _renderCodePreview(el, body, lang) {
+        const langLabel = (this._LANGS.find(([v]) => v === lang) || [])[1] || lang;
+        el.innerHTML = `
+        <div class="notes-code-bar">
+            <span class="notes-code-lang">${this._esc(langLabel)}</span>
+            <button class="notes-code-copy" type="button">Копировать</button>
+        </div>
+        <pre class="notes-code-pre"><code class="hljs">${this._esc(body)}</code></pre>`;
+
+        const copyBtn = el.querySelector('.notes-code-copy');
+        if (copyBtn) {
+            copyBtn.addEventListener('click', async () => {
+                try {
+                    await navigator.clipboard.writeText(body);
+                    copyBtn.textContent = 'Скопировано ✓';
+                    setTimeout(() => { copyBtn.textContent = 'Копировать'; }, 1500);
+                } catch { app.toast('Не удалось скопировать', 'error'); }
+            });
+        }
+
+        if (!body.trim() || lang === 'plaintext') return;
+        this._ensureHljs().then((hljs) => {
+            if (!hljs) return;
+            const codeEl = el.querySelector('.notes-code-pre code');
+            if (!codeEl || !document.body.contains(codeEl)) return;
+            if (!hljs.getLanguage(lang)) return;
+            try {
+                codeEl.innerHTML = hljs.highlight(body, { language: lang, ignoreIllegals: true }).value;
+            } catch {}
+        }).catch(() => {});
+    },
+
+    _langFromFilename(name) {
+        const ext = (String(name).split('.').pop() || '').toLowerCase();
+        const map = {
+            pwn: 'c', inc: 'c', c: 'c', h: 'c',
+            cpp: 'cpp', cc: 'cpp', cxx: 'cpp', hpp: 'cpp',
+            js: 'javascript', mjs: 'javascript', ts: 'typescript',
+            py: 'python', php: 'php', sql: 'sql', json: 'json',
+            sh: 'bash', bash: 'bash', html: 'xml', htm: 'xml', xml: 'xml',
+            css: 'css', ini: 'ini', cfg: 'ini', conf: 'ini',
+            yml: 'yaml', yaml: 'yaml', lua: 'lua', go: 'go', rs: 'rust',
+            java: 'java', md: 'markdown', txt: 'plaintext',
+        };
+        return map[ext] || '';
     },
 
     _toggleTask(idx, checked) {

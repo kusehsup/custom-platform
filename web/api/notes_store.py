@@ -70,10 +70,22 @@ def get_note(login: str, note_id: str) -> Optional[dict]:
         return _bucket(data, login).get(note_id)
 
 
-VALID_KINDS = {'markdown', 'html'}
+VALID_KINDS = {'markdown', 'html', 'code'}
+
+# Ограничение на идентификатор языка (для code-заметок). Просто чтобы в
+# store не попадала мусорная строка произвольной длины.
+_LANG_MAX = 32
 
 
-def create_note(login: str, title: str = '', body: str = '', kind: str = 'markdown') -> dict:
+def _norm_lang(lang: Optional[str]) -> str:
+    if not lang:
+        return 'plaintext'
+    lang = str(lang).strip().lower()[:_LANG_MAX]
+    return lang or 'plaintext'
+
+
+def create_note(login: str, title: str = '', body: str = '',
+                kind: str = 'markdown', language: str = 'plaintext') -> dict:
     nid = uuid.uuid4().hex[:12]
     now = _now()
     if kind not in VALID_KINDS:
@@ -83,6 +95,7 @@ def create_note(login: str, title: str = '', body: str = '', kind: str = 'markdo
         'title': title or 'Без названия',
         'body': body or '',
         'kind': kind,
+        'language': _norm_lang(language),
         'share_token': None,
         'share_enabled': False,
         'created_at': now,
@@ -98,7 +111,8 @@ def create_note(login: str, title: str = '', body: str = '', kind: str = 'markdo
 def update_note(login: str, note_id: str, *,
                 title: Optional[str] = None,
                 body: Optional[str] = None,
-                kind: Optional[str] = None) -> Optional[dict]:
+                kind: Optional[str] = None,
+                language: Optional[str] = None) -> Optional[dict]:
     with _LOCK:
         data = _read()
         b = _bucket(data, login)
@@ -111,6 +125,8 @@ def update_note(login: str, note_id: str, *,
             note['body'] = body
         if kind is not None and kind in VALID_KINDS:
             note['kind'] = kind
+        if language is not None:
+            note['language'] = _norm_lang(language)
         note['updated_at'] = _now()
         _write(data)
         return note

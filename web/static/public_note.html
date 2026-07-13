@@ -145,6 +145,67 @@
             border: none;
             display: block;
         }
+        /* Code (pastebin) режим — на весь экран: шапка + скроллящийся код. */
+        body.pn-code-mode { background: var(--bg); }
+        body.pn-code-mode #pn-root {
+            position: fixed;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+        }
+        .pn-code-head {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 20px;
+            border-bottom: 1px solid var(--border);
+            background: var(--surface);
+            flex-shrink: 0;
+        }
+        .pn-code-title {
+            font-weight: 600;
+            color: var(--text);
+            font-size: 15px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            max-width: 55%;
+        }
+        .pn-code-lang {
+            font-family: var(--mono);
+            font-size: 11px;
+            color: var(--text-3);
+            text-transform: uppercase;
+            letter-spacing: .04em;
+            flex: 1;
+        }
+        .pn-code-copy {
+            background: var(--surface2);
+            color: var(--text-2);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font-size: 12px;
+            padding: 5px 12px;
+            cursor: pointer;
+        }
+        .pn-code-copy:hover { color: var(--text); }
+        .pn-code-pre {
+            flex: 1;
+            min-height: 0;
+            overflow: auto;
+            margin: 0;
+            padding: 16px 20px;
+            background: var(--bg);
+        }
+        .pn-code-pre code {
+            font-family: var(--mono);
+            font-size: 13px;
+            line-height: 1.55;
+            white-space: pre;
+            color: var(--text);
+            background: none;
+        }
+        .pn-code-pre code.hljs { background: transparent; padding: 0; }
     </style>
 </head>
 <body>
@@ -335,6 +396,59 @@
             } catch { return iso; }
         }
 
+        // ── Code (pastebin) ─────────────────────────────────────
+        // highlight.js грузим лениво с CDN. Не загрузился — код остаётся
+        // просто моноширинным (уже отрендерен), без подсветки.
+        function ensureHljs() {
+            if (window.hljs) return Promise.resolve(window.hljs);
+            if (window.__hljsPromise) return window.__hljsPromise;
+            const base = 'https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11.9.0';
+            window.__hljsPromise = new Promise((resolve, reject) => {
+                const link = document.createElement('link');
+                link.rel = 'stylesheet';
+                link.href = base + '/styles/github-dark.min.css';
+                document.head.appendChild(link);
+                const s = document.createElement('script');
+                s.src = base + '/highlight.min.js';
+                s.onload = () => resolve(window.hljs);
+                s.onerror = () => reject(new Error('hljs'));
+                document.head.appendChild(s);
+            });
+            return window.__hljsPromise;
+        }
+
+        function renderCode(data) {
+            const lang = data.language || 'plaintext';
+            const body = data.body || '';
+            document.body.classList.add('pn-code-mode');
+            root.innerHTML =
+                '<div class="pn-code-head">'
+                + '<span class="pn-code-title">' + escapeHtml(data.title || 'Без названия') + '</span>'
+                + '<span class="pn-code-lang">' + escapeHtml(lang) + '</span>'
+                + '<button class="pn-code-copy" id="pn-copy" type="button">Копировать</button>'
+                + '</div>'
+                + '<pre class="pn-code-pre"><code class="hljs">' + escapeHtml(body) + '</code></pre>';
+            const btn = document.getElementById('pn-copy');
+            if (btn) {
+                btn.addEventListener('click', async () => {
+                    try {
+                        await navigator.clipboard.writeText(body);
+                        btn.textContent = 'Скопировано ✓';
+                        setTimeout(() => { btn.textContent = 'Копировать'; }, 1500);
+                    } catch {}
+                });
+            }
+            if (!body.trim() || lang === 'plaintext') return;
+            ensureHljs().then((hljs) => {
+                if (!hljs) return;
+                const c = root.querySelector('.pn-code-pre code');
+                if (!c || !hljs.getLanguage(lang)) return;
+                try {
+                    c.innerHTML = hljs.highlight(body, { language: lang, ignoreIllegals: true }).value;
+                } catch {}
+            }).catch(() => {});
+        }
+
         fetch('/api/public/notes/' + encodeURIComponent(token), {
             headers: {'Cache-Control': 'no-cache'},
         }).then(async (r) => {
@@ -349,6 +463,10 @@
             }
             const data = await r.json();
             document.title = data.title || 'Заметка';
+            if ((data.kind || 'markdown') === 'code') {
+                renderCode(data);
+                return;
+            }
             if ((data.kind || 'markdown') === 'html') {
                 // HTML-заметка — рендерим в iframe sandbox. Без allow-same-origin,
                 // так что скрипт внутри не дотянется до cookie / localStorage
