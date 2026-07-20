@@ -44,6 +44,15 @@ def _install_config_from_args() -> argparse.Namespace:
     return args
 
 
+def _first_line(content: str, limit: int = 80) -> str:
+    """Первая непустая строка блока (для заголовка в дереве редактора)."""
+    for line in (content or '').split('\n'):
+        stripped = line.strip()
+        if stripped:
+            return stripped[:limit]
+    return ''
+
+
 class Agent:
     def __init__(self, loop: asyncio.AbstractEventLoop):
         self._loop = loop
@@ -147,6 +156,7 @@ class Agent:
                     'line': p.get('line'),
                     'hash': p.get('hash'),
                     'lines': len((p.get('content') or '').split('\n')),
+                    'preview': _first_line(p.get('content')),
                 } for i, p in enumerate(parts)],
             })
         return {'files': out, 'order': order}

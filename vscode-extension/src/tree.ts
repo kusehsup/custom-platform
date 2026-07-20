@@ -6,6 +6,7 @@ export interface PartInfo {
     line: number;
     hash: string;
     lines: number;
+    preview?: string;
 }
 
 export interface FileEntry {
@@ -97,8 +98,12 @@ export class TreeNode extends vscode.TreeItem {
                 }
             }
         } else if (file && part) {
-            this.label = `блок @ строка ${part.line}`;
-            this.description = `${part.lines} строк`;
+            // Заголовок блока — его первая строка, чтобы сразу ориентироваться.
+            const preview = (part.preview || '').trim();
+            this.label = preview || `строка ${part.line}`;
+            this.description = `@ ${part.line} · ${part.lines} строк`;
+            this.tooltip = `${file.fullPath}\nблок со строки ${part.line} (${part.lines} строк)` +
+                (preview ? `\n\n${preview}` : '');
             this.iconPath = new vscode.ThemeIcon('symbol-namespace');
             this.command = {
                 command: 'platformSync.openBlock',
