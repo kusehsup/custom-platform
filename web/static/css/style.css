@@ -3206,6 +3206,75 @@ mark.palette-hl { background: rgba(234,179,8,0.15); color: var(--yellow); border
 .notes-preview img { max-width: 100%; border-radius: 4px; }
 .notes-preview input[type="checkbox"] { margin-right: 4px; accent-color: var(--accent); }
 
+/* ── Code (pastebin) режим ─────────────────────────────────────── */
+.notes-lang-select {
+    background: var(--surface2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-size: 12px;
+    padding: 4px 8px;
+    outline: none;
+    cursor: pointer;
+    font-family: var(--mono);
+}
+.notes-lang-select:focus { border-color: var(--text-2); }
+
+.notes-preview-code {
+    padding: 0;
+    background: var(--bg);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+.notes-code-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+}
+.notes-code-lang {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-3);
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    flex: 1;
+}
+.notes-code-copy {
+    background: var(--surface2);
+    color: var(--text-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-size: 11px;
+    padding: 3px 10px;
+    cursor: pointer;
+    transition: color .1s, border-color .1s;
+}
+.notes-code-copy:hover { color: var(--text); border-color: var(--border-2); }
+.notes-code-pre {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    margin: 0;
+    padding: 12px 16px;
+    background: var(--bg);
+}
+.notes-code-pre code {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    line-height: 1.55;
+    white-space: pre;
+    background: none;
+    padding: 0;
+    color: var(--text);
+}
+/* highlight.js тема сама задаёт цвета токенов; фон берём от контейнера. */
+.notes-code-pre code.hljs { background: transparent; padding: 0; }
+
 /* Share modal */
 .notes-modal-overlay {
     position: fixed;

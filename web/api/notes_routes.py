@@ -30,13 +30,15 @@ router = APIRouter()
 class CreateNoteRequest(BaseModel):
     title: str = ''
     body: str = ''
-    kind: str = 'markdown'   # 'markdown' | 'html'
+    kind: str = 'markdown'   # 'markdown' | 'html' | 'code'
+    language: str = 'plaintext'   # подсветка для kind == 'code'
 
 
 class UpdateNoteRequest(BaseModel):
     title: Optional[str] = None
     body: Optional[str] = None
-    kind: Optional[str] = None   # 'markdown' | 'html'
+    kind: Optional[str] = None   # 'markdown' | 'html' | 'code'
+    language: Optional[str] = None   # подсветка для kind == 'code'
 
 
 class ShareRequest(BaseModel):
@@ -59,7 +61,8 @@ async def list_notes(login: str = Depends(get_current_user)):
 async def create_note(body: CreateNoteRequest, login: str = Depends(get_current_user)):
     if len((body.body or '').encode('utf-8')) > MAX_BODY_BYTES:
         raise HTTPException(status_code=413, detail='Размер заметки превышает 1 МБ')
-    return notes_store.create_note(login, title=body.title, body=body.body, kind=body.kind)
+    return notes_store.create_note(login, title=body.title, body=body.body,
+                                   kind=body.kind, language=body.language)
 
 
 @router.get('/api/notes/{nid}')
@@ -77,6 +80,7 @@ async def update_note(nid: str, body: UpdateNoteRequest,
         raise HTTPException(status_code=413, detail='Размер заметки превышает 1 МБ')
     note = notes_store.update_note(
         login, nid, title=body.title, body=body.body, kind=body.kind,
+        language=body.language,
     )
     if not note:
         raise HTTPException(status_code=404, detail='Заметка не найдена')
@@ -119,5 +123,6 @@ async def public_note(token: str):
         'title': note.get('title', ''),
         'body': note.get('body', ''),
         'kind': note.get('kind', 'markdown'),
+        'language': note.get('language', 'plaintext'),
         'updated_at': note.get('updated_at'),
     }
