@@ -23,8 +23,23 @@ export class PlatformTree implements vscode.TreeDataProvider<TreeNode> {
     private _emitter = new vscode.EventEmitter<void>();
     readonly onDidChangeTreeData = this._emitter.event;
     private files: FileEntry[] = [];
+    private _showAll = false;
 
     constructor(private agent: PlatformAgent) {}
+
+    get showAll(): boolean {
+        return this._showAll;
+    }
+
+    setShowAll(v: boolean): void {
+        this._showAll = v;
+        this._emitter.fire();
+    }
+
+    /** Доступен ли файл (есть выданные блоки/полный доступ). */
+    private isAccessible(f: FileEntry): boolean {
+        return f.parts.length > 0;
+    }
 
     async refresh(): Promise<void> {
         try {
@@ -47,7 +62,9 @@ export class PlatformTree implements vscode.TreeDataProvider<TreeNode> {
 
     getChildren(node?: TreeNode): TreeNode[] {
         if (!node) {
-            return this.files.map((f) => new TreeNode(f));
+            // По умолчанию — только доступные файлы; по кнопке — все.
+            const list = this._showAll ? this.files : this.files.filter((f) => this.isAccessible(f));
+            return list.map((f) => new TreeNode(f));
         }
         if (node.file && node.file.parts.length > 1 && node.part === undefined) {
             return node.file.parts.map((p) => new TreeNode(node.file!, p));

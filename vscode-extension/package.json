@@ -40,6 +40,8 @@
       { "command": "platformSync.connect", "title": "Platform: Подключиться", "icon": "$(plug)" },
       { "command": "platformSync.disconnect", "title": "Platform: Отключиться", "icon": "$(debug-disconnect)" },
       { "command": "platformSync.refresh", "title": "Platform: Обновить список", "icon": "$(refresh)" },
+      { "command": "platformSync.showAllFiles", "title": "Platform: Показать все файлы", "icon": "$(eye)" },
+      { "command": "platformSync.showAccessibleFiles", "title": "Platform: Только доступные", "icon": "$(eye-closed)" },
       { "command": "platformSync.compile", "title": "Platform: Компилировать", "icon": "$(play)" },
       { "command": "platformSync.startServer", "title": "Platform: Запустить сервер", "icon": "$(vm-running)" },
       { "command": "platformSync.stopServer", "title": "Platform: Остановить сервер", "icon": "$(vm-outline)" },
@@ -49,11 +51,13 @@
     "menus": {
       "view/title": [
         { "command": "platformSync.connect", "when": "view == platformSyncFiles", "group": "navigation@1" },
-        { "command": "platformSync.refresh", "when": "view == platformSyncFiles", "group": "navigation@2" },
-        { "command": "platformSync.compile", "when": "view == platformSyncFiles", "group": "navigation@3" },
-        { "command": "platformSync.startServer", "when": "view == platformSyncFiles", "group": "navigation@4" },
-        { "command": "platformSync.stopServer", "when": "view == platformSyncFiles", "group": "navigation@5" },
-        { "command": "platformSync.showConsole", "when": "view == platformSyncFiles", "group": "navigation@6" }
+        { "command": "platformSync.showAllFiles", "when": "view == platformSyncFiles && !platformSync.showAll", "group": "navigation@2" },
+        { "command": "platformSync.showAccessibleFiles", "when": "view == platformSyncFiles && platformSync.showAll", "group": "navigation@2" },
+        { "command": "platformSync.refresh", "when": "view == platformSyncFiles", "group": "navigation@3" },
+        { "command": "platformSync.compile", "when": "view == platformSyncFiles", "group": "navigation@4" },
+        { "command": "platformSync.startServer", "when": "view == platformSyncFiles", "group": "navigation@5" },
+        { "command": "platformSync.stopServer", "when": "view == platformSyncFiles", "group": "navigation@6" },
+        { "command": "platformSync.showConsole", "when": "view == platformSyncFiles", "group": "navigation@7" }
       ],
       "commandPalette": [
         { "command": "platformSync.openBlock", "when": "false" }

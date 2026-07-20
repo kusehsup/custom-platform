@@ -20,6 +20,8 @@ import websockets
 FILES = {
     '101': {'name': 'gamemode.pwn', 'fullPath': 'gamemodes/gamemode.pwn'},
     '102': {'name': 'util.inc', 'fullPath': 'includes/util.inc'},
+    # Файл без выданного доступа (нет в CODE) — виден только по кнопке «все файлы».
+    '103': {'name': 'core.pwn', 'fullPath': 'gamemodes/core.pwn'},
 }
 CODE = {
     '101': [

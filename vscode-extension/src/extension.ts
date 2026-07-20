@@ -5,6 +5,7 @@ import { PlatformTree } from './tree';
 
 let agent: PlatformAgent;
 let tree: PlatformTree;
+let treeView: vscode.TreeView<any>;
 let serverChannel: vscode.OutputChannel;
 let compileChannel: vscode.OutputChannel;
 let statusItem: vscode.StatusBarItem;
@@ -23,14 +24,18 @@ export function activate(ctx: vscode.ExtensionContext): void {
     updateStatus();
     statusItem.show();
 
+    treeView = vscode.window.createTreeView('platformSyncFiles', { treeDataProvider: tree });
+
     ctx.subscriptions.push(
         vscode.workspace.registerFileSystemProvider('pawn', fs, { isCaseSensitive: true }),
-        vscode.window.registerTreeDataProvider('platformSyncFiles', tree),
+        treeView,
         serverChannel,
         compileChannel,
         statusItem,
         agent.onEvent(handleEvent),
     );
+
+    setShowAll(false);
 
     const reg = (id: string, fn: (...a: any[]) => any) =>
         ctx.subscriptions.push(vscode.commands.registerCommand(id, fn));
@@ -38,6 +43,8 @@ export function activate(ctx: vscode.ExtensionContext): void {
     reg('platformSync.connect', () => connect(ctx));
     reg('platformSync.disconnect', () => disconnect());
     reg('platformSync.refresh', () => tree.refresh());
+    reg('platformSync.showAllFiles', () => setShowAll(true));
+    reg('platformSync.showAccessibleFiles', () => setShowAll(false));
     reg('platformSync.openBlock', (uri: vscode.Uri) => openBlock(uri));
     reg('platformSync.compile', () => compile());
     reg('platformSync.startServer', () => serverCmd('start_server'));
@@ -159,6 +166,15 @@ function handleEvent(ev: AgentEvent): void {
         case 'code_updated':
             tree.refresh();
             break;
+    }
+}
+
+function setShowAll(value: boolean): void {
+    tree.setShowAll(value);
+    // Контекст управляет тем, какая кнопка-переключатель видна в шапке вью.
+    vscode.commands.executeCommand('setContext', 'platformSync.showAll', value);
+    if (treeView) {
+        treeView.description = value ? 'все файлы' : 'только доступные';
     }
 }
 
