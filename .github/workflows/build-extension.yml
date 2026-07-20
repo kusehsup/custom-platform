@@ -57,3 +57,24 @@ jobs:
         with:
           name: custom-platform-sync-${{ matrix.target }}
           path: vscode-extension/custom-platform-sync-${{ matrix.target }}.vsix
+
+  # Публикация релиза с прикреплёнными .vsix — только при пуше тега v*.
+  # Пользователь качает нужный файл одним кликом из вкладки Releases.
+  release:
+    needs: package
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all VSIX artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/**/*.vsix
+          generate_release_notes: true
+          fail_on_unmatched_files: true

@@ -27,7 +27,7 @@ VS Code / Cursor  ──JSON-RPC(stdio)──►  sync.agent  ──WS(Socket.IO
 - Только для режима разработки: Python + корень репозитория с пакетом `sync`.
 
 ## Установка релизного `.vsix` (пользователю)
-1. Скачай `.vsix` под свою ОС из артефактов CI (workflow «Build VS Code extension») или из релиза: `custom-platform-sync-win32-x64.vsix` для Windows.
+1. Скачай `.vsix` под свою ОС **одним кликом со вкладки Releases** репозитория (для Windows — `custom-platform-sync-win32-x64.vsix`). Релиз с прикреплёнными файлами публикуется автоматически при пуше тега `v*` (CI собирает бинари под win/mac/linux). Как альтернатива — артефакты запуска workflow «Build VS Code extension».
 2. Установи:
    - Cursor / VS Code: палитра команд → **Extensions: Install from VSIX…** → выбери файл.
    - или из терминала: `code --install-extension custom-platform-sync-win32-x64.vsix` (в Cursor — `cursor --install-extension ...`).
@@ -37,7 +37,7 @@ VS Code / Cursor  ──JSON-RPC(stdio)──►  sync.agent  ──WS(Socket.IO
 Расширение автоматически предпочитает встроенный бинарь `bin/<platform>-<arch>/platform-agent[.exe]`; `platformSync.pythonPath` используется только как fallback в деве.
 
 ## Сборка `.vsix` (релиз)
-Кросс-компиляции у PyInstaller нет — бинарь под каждую ОС собирается на этой ОС. В CI это матрица (`.github/workflows/build-extension.yml`, цели `win32-x64`/`linux-x64`/`darwin-x64`/`darwin-arm64`). Локально под текущую ОС:
+Кросс-компиляции у PyInstaller нет — бинарь под каждую ОС собирается на этой ОС. В CI это матрица (`.github/workflows/build-extension.yml`, цели `win32-x64`/`linux-x64`/`darwin-x64`/`darwin-arm64`); по тегу `v*` результаты автоматически прикрепляются к GitHub Release. Локально под текущую ОС:
 ```bash
 pip install -r requirements.txt pyinstaller
 python scripts/build_agent.py            # → vscode-extension/bin/<platform>-<arch>/platform-agent
