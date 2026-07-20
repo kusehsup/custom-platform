@@ -71,7 +71,13 @@ async function connect(ctx: vscode.ExtensionContext): Promise<void> {
     }
     await ctx.secrets.store('platformSync.login', login);
 
-    agent.start(pythonPath, agentCwd, platformUrl, proxyUrl);
+    agent.start({
+        extensionPath: ctx.extensionPath,
+        pythonPath,
+        cwd: agentCwd,
+        platformUrl,
+        proxyUrl,
+    });
     await new Promise((r) => setTimeout(r, 300));
 
     try {
@@ -83,7 +89,8 @@ async function connect(ctx: vscode.ExtensionContext): Promise<void> {
         connected = true;
         updateStatus();
         await tree.refresh();
-        vscode.window.showInformationMessage('Подключено к платформе.');
+        const mode = agent.launchMode === 'bundled' ? 'встроенный агент' : 'python-агент';
+        vscode.window.showInformationMessage(`Подключено к платформе (${mode}).`);
     } catch (e: any) {
         vscode.window.showErrorMessage('Ошибка подключения: ' + e.message);
     }

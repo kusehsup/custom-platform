@@ -23,15 +23,35 @@ VS Code / Cursor  ──JSON-RPC(stdio)──►  sync.agent  ──WS(Socket.IO
 
 ## Требования
 - Запущенный локальный **xray** (SOCKS5), если платформа доступна только через туннель (см. `platformSync.proxyUrl`).
-- Python-агент. В деве — Python + корень репозитория (где лежит пакет `sync`). В релизном `.vsix` агент планируется класть встроенным бинарём (PyInstaller), тогда Python пользователю не нужен.
+- **Релизный `.vsix`** содержит встроенный бинарь агента (PyInstaller) — Python пользователю НЕ нужен.
+- Только для режима разработки: Python + корень репозитория с пакетом `sync`.
 
-## Сборка (dev)
+## Установка релизного `.vsix` (пользователю)
+1. Скачай `.vsix` под свою ОС из артефактов CI (workflow «Build VS Code extension») или из релиза: `custom-platform-sync-win32-x64.vsix` для Windows.
+2. Установи:
+   - Cursor / VS Code: палитра команд → **Extensions: Install from VSIX…** → выбери файл.
+   - или из терминала: `code --install-extension custom-platform-sync-win32-x64.vsix` (в Cursor — `cursor --install-extension ...`).
+3. Задай `platformSync.platformUrl` и (если нужен туннель) `platformSync.proxyUrl`. Запусти локальный xray.
+4. **Platform: Подключиться**.
+
+Расширение автоматически предпочитает встроенный бинарь `bin/<platform>-<arch>/platform-agent[.exe]`; `platformSync.pythonPath` используется только как fallback в деве.
+
+## Сборка `.vsix` (релиз)
+Кросс-компиляции у PyInstaller нет — бинарь под каждую ОС собирается на этой ОС. В CI это матрица (`.github/workflows/build-extension.yml`, цели `win32-x64`/`linux-x64`/`darwin-x64`/`darwin-arm64`). Локально под текущую ОС:
+```bash
+pip install -r requirements.txt pyinstaller
+python scripts/build_agent.py            # → vscode-extension/bin/<platform>-<arch>/platform-agent
+cd vscode-extension && npm install && npm run compile
+npx vsce package --target <target>       # напр. win32-x64 → .vsix со встроенным агентом
+```
+
+## Сборка (dev, без бинаря)
 ```bash
 cd vscode-extension
 npm install
 npm run compile      # tsc → out/
 ```
-Запуск в Extension Development Host: открой папку `vscode-extension` в VS Code и нажми F5 (или упакуй `.vsix` через `vsce package`).
+Открой папку `vscode-extension` в VS Code и нажми F5 (Extension Development Host). Без бинаря агент запускается через `platformSync.pythonPath` (`python -m sync.agent`), поэтому задай `platformSync.agentCwd` = корень репозитория.
 
 ## Настройки
 - `platformSync.platformUrl` — URL платформы.

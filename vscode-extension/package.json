@@ -4,6 +4,12 @@
   "description": "Работа с кодом SA-MP веб-платформы напрямую из VS Code / Cursor: подтягивание файлов/блоков, сохранение, компиляция, старт/стоп сервера и консоль сервера.",
   "version": "0.1.0",
   "publisher": "customplatform",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kusehsup/custom-platform.git",
+    "directory": "vscode-extension"
+  },
   "engines": {
     "vscode": "^1.75.0"
   },
@@ -81,11 +87,15 @@
   },
   "scripts": {
     "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./"
+    "watch": "tsc -watch -p ./",
+    "vscode:prepublish": "npm run compile",
+    "package": "vsce package",
+    "build:agent": "python ../scripts/build_agent.py"
   },
   "devDependencies": {
     "@types/node": "^18.19.0",
     "@types/vscode": "^1.75.0",
+    "@vscode/vsce": "^2.24.0",
     "typescript": "^5.4.0"
   }
 }

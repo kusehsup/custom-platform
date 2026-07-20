@@ -1,4 +1,6 @@
 import * as cp from 'child_process';
+import * as fs from 'fs';
+import * as path from 'path';
 import * as vscode from 'vscode';
 
 interface Pending {
@@ -10,6 +12,14 @@ interface Pending {
 export interface AgentEvent {
     event: string;
     data: any;
+}
+
+export interface AgentStartOptions {
+    extensionPath: string;
+    pythonPath: string;
+    cwd: string;
+    platformUrl: string;
+    proxyUrl: string;
 }
 
 /**
@@ -25,19 +35,51 @@ export class PlatformAgent {
     private emitter = new vscode.EventEmitter<AgentEvent>();
     readonly onEvent = this.emitter.event;
 
+    /** Как был запущен агент — для диагностики (встроенный бинарь или Python). */
+    launchMode: 'bundled' | 'python' = 'python';
+
     isRunning(): boolean {
         return !!this.proc;
     }
 
-    start(pythonPath: string, cwd: string, platformUrl: string, proxyUrl: string): void {
+    /**
+     * Определяет команду запуска: сначала ищем встроенный бинарь
+     * bin/<platform>-<arch>/platform-agent[.exe] (релизный .vsix), иначе
+     * fallback на `python -m sync.agent` (режим разработки).
+     */
+    private resolveCommand(opts: AgentStartOptions): { cmd: string; baseArgs: string[]; spawnCwd: string } {
+        const exe = process.platform === 'win32' ? 'platform-agent.exe' : 'platform-agent';
+        const bundled = path.join(opts.extensionPath, 'bin', `${process.platform}-${process.arch}`, exe);
+        if (fs.existsSync(bundled)) {
+            // На macOS/Linux exec-бит может теряться при упаковке в .vsix — чиним.
+            if (process.platform !== 'win32') {
+                try {
+                    fs.chmodSync(bundled, 0o755);
+                } catch {
+                    // ignore
+                }
+            }
+            this.launchMode = 'bundled';
+            return { cmd: bundled, baseArgs: [], spawnCwd: path.dirname(bundled) };
+        }
+        this.launchMode = 'python';
+        return {
+            cmd: opts.pythonPath,
+            baseArgs: ['-m', 'sync.agent'],
+            spawnCwd: opts.cwd || process.cwd(),
+        };
+    }
+
+    start(opts: AgentStartOptions): void {
         if (this.proc) {
             return;
         }
-        this.proc = cp.spawn(
-            pythonPath,
-            ['-m', 'sync.agent', '--platform-url', platformUrl, '--proxy-url', proxyUrl],
-            { cwd, env: { ...process.env, PYTHONPATH: cwd } },
-        );
+        const { cmd, baseArgs, spawnCwd } = this.resolveCommand(opts);
+        const args = [...baseArgs, '--platform-url', opts.platformUrl, '--proxy-url', opts.proxyUrl];
+        this.proc = cp.spawn(cmd, args, {
+            cwd: spawnCwd,
+            env: { ...process.env, PYTHONPATH: opts.cwd || '' },
+        });
         this.proc.stdout.setEncoding('utf-8');
         this.proc.stdout.on('data', (chunk: string) => this.onData(chunk));
         this.proc.stderr.on('data', (d: Buffer) => console.error('[platform-agent]', d.toString()));

@@ -1,0 +1,59 @@
+name: Build VS Code extension
+
+# Собирает sync-агент (PyInstaller) на каждой ОС и упаковывает
+# платформо-специфичный .vsix. Запуск вручную или по тегу v*.
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: win32-x64
+          - os: ubuntu-latest
+            target: linux-x64
+          - os: macos-13
+            target: darwin-x64
+          - os: macos-latest
+            target: darwin-arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Python deps + PyInstaller
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build agent binary
+        run: python scripts/build_agent.py
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install extension deps + compile
+        working-directory: vscode-extension
+        run: |
+          npm install
+          npm run compile
+
+      - name: Package VSIX
+        working-directory: vscode-extension
+        run: npx vsce package --target ${{ matrix.target }} -o "custom-platform-sync-${{ matrix.target }}.vsix"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: custom-platform-sync-${{ matrix.target }}
+          path: vscode-extension/custom-platform-sync-${{ matrix.target }}.vsix
