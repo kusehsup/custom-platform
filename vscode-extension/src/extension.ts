@@ -149,9 +149,7 @@ function handleEvent(ev: AgentEvent): void {
         case 'server_log':
             serverChannel.appendLine(ev.data.line);
             break;
-        case 'compile_result':
-            compileChannel.appendLine(ev.data.result);
-            break;
+        // compile_result выводится из ответа команды compile() — не дублируем здесь
         case 'status':
             if (ev.data.server) {
                 lastServer = ev.data.server;
