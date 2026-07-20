@@ -2,7 +2,7 @@
 // API-ответы (они динамические), не блокирует обновления. Существует
 // только чтобы браузер считал сайт PWA и предлагал "Установить".
 
-const VERSION = 'v1';
+const VERSION = 'v2';
 
 self.addEventListener('install', (event) => {
     // Сразу активируем новый SW без ожидания закрытия вкладок
@@ -22,6 +22,9 @@ self.addEventListener('fetch', (event) => {
     if (event.request.method !== 'GET') return;
     if (url.origin !== self.location.origin) return;
     if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/ws')) return;
+    // Встроенная IDE (code-server) под /ide/ — со своим service worker'ом и
+    // WS; наш SW не должен вмешиваться в его запросы.
+    if (url.pathname.startsWith('/ide')) return;
 
     // Для статики — network first, без обновления кэша
     event.respondWith(
