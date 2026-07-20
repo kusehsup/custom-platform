@@ -1,0 +1,101 @@
+{
+  "name": "custom-platform-sync",
+  "displayName": "CustomPlatform Sync",
+  "description": "Работа с кодом SA-MP веб-платформы напрямую из VS Code / Cursor: подтягивание файлов/блоков, сохранение, компиляция, старт/стоп сервера и консоль сервера.",
+  "version": "0.1.0",
+  "publisher": "customplatform",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kusehsup/custom-platform.git",
+    "directory": "vscode-extension"
+  },
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": ["Other"],
+  "main": "./out/extension.js",
+  "activationEvents": [
+    "onFileSystem:pawn"
+  ],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "platformSync",
+          "title": "Platform",
+          "icon": "media/platform.svg"
+        }
+      ]
+    },
+    "views": {
+      "platformSync": [
+        {
+          "id": "platformSyncFiles",
+          "name": "Файлы платформы"
+        }
+      ]
+    },
+    "commands": [
+      { "command": "platformSync.connect", "title": "Platform: Подключиться", "icon": "$(plug)" },
+      { "command": "platformSync.disconnect", "title": "Platform: Отключиться", "icon": "$(debug-disconnect)" },
+      { "command": "platformSync.refresh", "title": "Platform: Обновить список", "icon": "$(refresh)" },
+      { "command": "platformSync.compile", "title": "Platform: Компилировать", "icon": "$(play)" },
+      { "command": "platformSync.startServer", "title": "Platform: Запустить сервер", "icon": "$(vm-running)" },
+      { "command": "platformSync.stopServer", "title": "Platform: Остановить сервер", "icon": "$(vm-outline)" },
+      { "command": "platformSync.showConsole", "title": "Platform: Консоль сервера", "icon": "$(output)" },
+      { "command": "platformSync.openBlock", "title": "Platform: Открыть блок" }
+    ],
+    "menus": {
+      "view/title": [
+        { "command": "platformSync.connect", "when": "view == platformSyncFiles", "group": "navigation@1" },
+        { "command": "platformSync.refresh", "when": "view == platformSyncFiles", "group": "navigation@2" },
+        { "command": "platformSync.compile", "when": "view == platformSyncFiles", "group": "navigation@3" },
+        { "command": "platformSync.startServer", "when": "view == platformSyncFiles", "group": "navigation@4" },
+        { "command": "platformSync.stopServer", "when": "view == platformSyncFiles", "group": "navigation@5" },
+        { "command": "platformSync.showConsole", "when": "view == platformSyncFiles", "group": "navigation@6" }
+      ],
+      "commandPalette": [
+        { "command": "platformSync.openBlock", "when": "false" }
+      ]
+    },
+    "configuration": {
+      "title": "CustomPlatform Sync",
+      "properties": {
+        "platformSync.platformUrl": {
+          "type": "string",
+          "default": "",
+          "description": "URL SA-MP веб-платформы (например http://pawn.host:2540/)."
+        },
+        "platformSync.proxyUrl": {
+          "type": "string",
+          "default": "socks5://127.0.0.1:10808",
+          "description": "SOCKS5 прокси (локальный xray). Оставь пустым для прямого подключения."
+        },
+        "platformSync.pythonPath": {
+          "type": "string",
+          "default": "python3",
+          "description": "Путь к Python для запуска sync-агента (в собранном .vsix заменяется на встроенный бинарь)."
+        },
+        "platformSync.agentCwd": {
+          "type": "string",
+          "default": "",
+          "description": "Рабочая директория, где импортируется модуль sync.agent (корень репозитория). Пусто = папка воркспейса."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "vscode:prepublish": "npm run compile",
+    "package": "vsce package",
+    "build:agent": "python ../scripts/build_agent.py"
+  },
+  "devDependencies": {
+    "@types/node": "^18.19.0",
+    "@types/vscode": "^1.75.0",
+    "@vscode/vsce": "^2.24.0",
+    "typescript": "^5.4.0"
+  }
+}

@@ -17,6 +17,11 @@ input data/
 *.log
 probe.py
 
+# PyInstaller (сборка sync-агента)
+build/
+dist/
+*.spec
+
 # TOTP секрет — не должен попасть в репозиторий
 web/totp.json
 
