@@ -15,6 +15,13 @@ import os
 import platform
 import sys
 
+# На Windows дефолтная кодека консоли (cp1252) не умеет часть символов —
+# приводим вывод к utf-8, чтобы принты не роняли сборку.
+try:
+    sys.stdout.reconfigure(encoding='utf-8')
+except Exception:
+    pass
+
 import PyInstaller.__main__
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -49,7 +56,7 @@ def main() -> None:
         '--noconfirm',
         '--clean',
     ]
-    print(f'[build_agent] target={vscode_target()} → {out_dir}')
+    print(f'[build_agent] target={vscode_target()} -> {out_dir}')
     PyInstaller.__main__.run(args)
     print('[build_agent] done')
 

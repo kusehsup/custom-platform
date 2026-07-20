@@ -291,6 +291,14 @@ async def _amain():
 
 
 def main():
+    # stdio строго UTF-8: агент обменивается JSON (в т.ч. с кириллицей —
+    # логи сервера), а на Windows дефолт пайпа может быть cp1252 и ронять
+    # запись/чтение не-ASCII. Делаем до любого ввода-вывода.
+    for stream in (sys.stdout, sys.stdin):
+        try:
+            stream.reconfigure(encoding='utf-8', errors='replace')
+        except Exception:
+            pass
     try:
         asyncio.run(_amain())
     except (KeyboardInterrupt, RuntimeError):
