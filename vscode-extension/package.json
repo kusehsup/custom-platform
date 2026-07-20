@@ -2,7 +2,7 @@
   "name": "custom-platform-sync",
   "displayName": "CustomPlatform Sync",
   "description": "Работа с кодом SA-MP веб-платформы напрямую из VS Code / Cursor: подтягивание файлов/блоков, сохранение, компиляция, старт/стоп сервера и консоль сервера.",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "publisher": "customplatform",
   "license": "MIT",
   "repository": {
