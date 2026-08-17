@@ -122,13 +122,17 @@ body.ui-v2 .topbar {
 }
 body.ui-v2 .topbar-logo { font-weight: 600; letter-spacing: -0.2px; }
 
-/* Контекстные действия — сегментированная группа */
+/* Контекстные действия — компактная сегментированная «пилюля».
+   Важно: flex:0 0 auto, иначе базовый flex:1 растягивает пилюлю
+   на всю ширину топбара (выглядит как «кнопки на весь бар»). */
 body.ui-v2 .topbar-actions:not(.hidden) {
+    flex: 0 0 auto;
     background: var(--surface2);
     border: 1px solid var(--border);
     border-radius: 999px;
     padding: 3px;
     gap: 2px;
+    margin-left: 12px;
 }
 body.ui-v2 .topbar-actions .btn { border-radius: 999px; border-color: transparent; }
 body.ui-v2 .topbar-btn { border-radius: 999px; }
@@ -177,9 +181,16 @@ body.ui-v2 .sidebar a.active svg { color: var(--accent); fill: var(--accent-dim)
 #nav-collapse { display: none; }
 body.ui-v2 #nav-collapse {
     display: flex; align-items: center; justify-content: center;
-    margin: 6px 4px 2px; padding: 6px; border-radius: 8px;
+    align-self: flex-start;
+    width: 30px; height: 30px;
+    margin: 2px 2px 6px; padding: 0; border-radius: 8px;
     background: transparent; border: none; color: var(--text-3);
     cursor: pointer; transition: background 0.2s var(--ease), color 0.2s var(--ease);
+}
+body.ui-v2 #nav-collapse svg {
+    width: 16px; height: 16px;
+    stroke: currentColor; fill: none;
+    stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round;
 }
 body.ui-v2 #nav-collapse:hover { background: var(--surface2); color: var(--text); }
 body.ui-v2.nav-collapsed { --sidebar-w: 60px; }

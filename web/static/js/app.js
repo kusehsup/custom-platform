@@ -600,6 +600,7 @@ const app = {
             extcmd:   `<svg viewBox="0 0 16 16"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><path d="M4 6l2.2 2L4 10M8 10h4"/></svg>`,
             notes:    `<svg viewBox="0 0 16 16"><path d="M3 2h7l3 3v9a1 1 0 01-1 1H3a1 1 0 01-1-1V3a1 1 0 011-1z"/><path d="M10 2v3h3"/><path d="M5 8h6M5 11h4"/></svg>`,
             more:     `<svg viewBox="0 0 16 16"><circle cx="3.5" cy="8" r="1.4" fill="currentColor" stroke="none"/><circle cx="8"   cy="8" r="1.4" fill="currentColor" stroke="none"/><circle cx="12.5" cy="8" r="1.4" fill="currentColor" stroke="none"/></svg>`,
+            collapse: `<svg viewBox="0 0 16 16"><rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M6.5 3v10"/></svg>`,
         };
 
         document.body.innerHTML = `
@@ -626,7 +627,7 @@ const app = {
                 </div>
             </header>
             <nav class="sidebar">
-                <button id="nav-collapse" title="Свернуть панель">${ico.more}</button>
+                <button id="nav-collapse" title="Свернуть панель">${ico.collapse}</button>
                 <span class="sidebar-section">Управление</span>
                 <a data-page="server" class="nav-primary">${ico.server}<span class="label">Сервер</span></a>
                 <span class="sidebar-section">Код</span>
