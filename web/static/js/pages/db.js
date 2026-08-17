@@ -431,13 +431,15 @@ const DbPage = {
                 </div>
                 <div class="db-result-inner db-multi-results">${blocksHtml}</div>`;
 
-            // Экспорт по каждому SELECT-результату
+            // Экспорт + грид-улучшения по каждому SELECT-результату
             results.forEach((r, i) => {
                 if (r.kind !== 'select') return;
                 result.querySelector(`#db-export-csv-${i}`)?.addEventListener('click', () =>
                     this._exportCSV(r.columns, r.rows));
                 result.querySelector(`#db-export-sql-${i}`)?.addEventListener('click', () =>
                     this._exportSQL(r.columns, r.rows, r.statement || sql));
+                const body = result.querySelector(`.db-result-block[data-idx="${i}"] .db-result-block-body`);
+                this._enhanceTable(body, r.columns, r.rows);
             });
 
             // Редактирование ячеек доступно только когда ровно один SELECT
@@ -555,6 +557,7 @@ const DbPage = {
             el.querySelector('#db-next').disabled = to >= res.total;
             result.innerHTML = this._renderTable(res.columns, res.rows, true, this._orderBy);
             this._setStatus(`${res.total} строк · ${ms}мс`, 'ok');
+            this._enhanceTable(result, res.columns, res.rows);
             this._bindCellEdit(result, el);
             this._bindSortHeaders(result, el);
             const sql = `SELECT * FROM \`${this._table}\` LIMIT ${this._limit} OFFSET ${this._offset}`;
@@ -576,6 +579,9 @@ const DbPage = {
             ${this._renderTable(res.columns_headers, res.columns)}
             <div style="padding:12px 16px;font-size:12px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:.06em;margin-top:8px;border-top:1px solid var(--border)">Индексы</div>
             ${this._renderTable(res.indexes_headers, res.indexes)}`;
+            const tbls = result.querySelectorAll('table.db-table-result');
+            if (tbls[0]) this._enhanceTable(tbls[0], res.columns_headers, res.columns);
+            if (tbls[1]) this._enhanceTable(tbls[1], res.indexes_headers, res.indexes);
             this._setStatus(`Структура ${this._table}`, 'ok');
         } catch (e) {
             result.innerHTML = `<div style="padding:20px;color:var(--red);font-size:13px">${this._esc(e.message)}</div>`;
@@ -587,7 +593,7 @@ const DbPage = {
         const headerHtml = columns.map(c => {
             const arrow = editable && orderBy != null && c === orderBy
                 ? (this._orderDir === 'ASC' ? ' ↑' : ' ↓') : '';
-            return `<th ${editable ? `data-col="${this._esc(c)}" style="cursor:pointer;user-select:none"` : ''}>${this._esc(String(c))}${arrow}</th>`;
+            return `<th ${editable ? `data-col="${this._esc(c)}" style="cursor:pointer;user-select:none"` : ''} title="${this._esc(String(c))}"><span class="db-th-label">${this._esc(String(c))}${arrow}</span><span class="db-col-resizer"></span></th>`;
         }).join('');
         const bodyHtml = rows.map((row, ri) => {
             const cells = (Array.isArray(row) ? row : Object.values(row)).map((val, ci) => {
@@ -595,14 +601,138 @@ const DbPage = {
                 const isNum  = !isNull && typeof val === 'number';
                 const display = isNull ? 'NULL' : String(val);
                 const cls = isNull ? 'db-null' : isNum ? 'db-num' : 'db-str';
+                // title = полное значение → видно обрезанный контент при наведении
                 const attrs = editable
-                    ? `data-ri="${ri}" data-ci="${ci}" data-col="${this._esc(columns[ci])}" data-orig="${this._esc(display)}" class="${cls}" style="cursor:pointer" title="Двойной клик — редактировать"`
-                    : `class="${cls}"`;
+                    ? `data-ri="${ri}" data-ci="${ci}" data-col="${this._esc(columns[ci])}" data-orig="${this._esc(display)}" class="${cls}" style="cursor:pointer" title="${this._esc(display)}"`
+                    : `class="${cls}" title="${this._esc(display)}"`;
                 return `<td ${attrs}>${this._esc(display)}</td>`;
             }).join('');
-            return `<tr>${cells}</tr>`;
+            return `<tr><td class="db-gut" data-row-idx="${ri}" title="Открыть строку">${ri + 1}</td>${cells}</tr>`;
         }).join('');
-        return `<table class="db-table-result"><thead><tr>${headerHtml}</tr></thead><tbody>${bodyHtml}</tbody></table>`;
+        return `<table class="db-table-result"><thead><tr><th class="db-gut"></th>${headerHtml}</tr></thead><tbody>${bodyHtml}</tbody></table>`;
+    },
+
+    // Пост-обработка таблицы: ресайз колонок + карточный просмотр строки.
+    // scope — контейнер или сама <table> (для видов с несколькими таблицами).
+    _enhanceTable(scope, columns, rows) {
+        if (!scope) return;
+        const table = scope.matches && scope.matches('table.db-table-result')
+            ? scope : scope.querySelector('table.db-table-result');
+        if (!table) return;
+
+        // Карточный просмотр строки по клику на номер (удобно для «широких» таблиц)
+        table.querySelectorAll('td.db-gut[data-row-idx]').forEach(td => {
+            td.addEventListener('click', () => {
+                const idx = parseInt(td.dataset.rowIdx, 10);
+                this._openRowCard(columns, rows[idx]);
+            });
+        });
+
+        // Замораживаем текущие (авто) ширины и переключаемся на table-layout:
+        // fixed. Иначе браузер игнорирует заданную ширину колонки и ресайз не
+        // работает. Внешний вид сохраняется (ширины = как были в auto).
+        try {
+            const ths = [...table.querySelectorAll('thead th')];
+            let total = 0;
+            const widths = ths.map(th => {
+                const w = th.classList.contains('db-gut') ? 40 : Math.min(Math.max(th.offsetWidth, 48), 340);
+                total += w;
+                return w;
+            });
+            table.style.tableLayout = 'fixed';
+            table.style.width = total + 'px';
+            ths.forEach((th, i) => {
+                th.style.width = widths[i] + 'px';
+                th.style.minWidth = widths[i] + 'px';
+                th.style.maxWidth = widths[i] + 'px';
+            });
+        } catch {}
+
+        this._bindColResize(table);
+    },
+
+    _bindColResize(table) {
+        table.querySelectorAll('th .db-col-resizer').forEach(handle => {
+            handle.addEventListener('mousedown', e => {
+                e.preventDefault();
+                e.stopPropagation();
+                const th = handle.closest('th');
+                const startX = e.clientX;
+                const startW = th.offsetWidth;
+                const startTableW = table.offsetWidth;
+                const onMove = ev => {
+                    const w = Math.max(44, startW + (ev.clientX - startX));
+                    th.style.width = w + 'px';
+                    th.style.minWidth = w + 'px';
+                    th.style.maxWidth = w + 'px';
+                    // Растягиваем таблицу на ту же дельту → колонка реально
+                    // расширяется, остальные сохраняют ширину (появляется скролл).
+                    table.style.width = (startTableW + (w - startW)) + 'px';
+                };
+                const onUp = () => {
+                    document.removeEventListener('mousemove', onMove);
+                    document.removeEventListener('mouseup', onUp);
+                    document.body.style.cursor = '';
+                    document.body.style.userSelect = '';
+                };
+                document.addEventListener('mousemove', onMove);
+                document.addEventListener('mouseup', onUp);
+                document.body.style.cursor = 'col-resize';
+                document.body.style.userSelect = 'none';
+            });
+        });
+    },
+
+    // Карточка строки: все столбцы столбиком, полные значения, копирование.
+    _openRowCard(columns, row) {
+        if (row == null) return;
+        const vals = Array.isArray(row) ? row : columns.map(c => row[c]);
+        const rowsHtml = columns.map((c, i) => {
+            const v = vals[i];
+            const isNull = v === null || v === undefined;
+            const display = isNull ? 'NULL' : String(v);
+            return `<div class="db-card-row">
+                <div class="db-card-key" title="${this._esc(c)}">${this._esc(c)}</div>
+                <div class="db-card-val ${isNull ? 'db-null' : ''}">${this._esc(display)}</div>
+                <button class="db-card-copy" data-i="${i}" title="Копировать значение">⧉</button>
+            </div>`;
+        }).join('');
+
+        const modal = document.createElement('div');
+        modal.className = 'db-card-modal';
+        modal.style.cssText = 'position:fixed;inset:0;z-index:50000;display:flex;align-items:flex-start;justify-content:center;padding-top:64px;background:rgba(0,0,0,0.6);backdrop-filter:blur(4px)';
+        modal.innerHTML = `
+        <div class="db-card-box">
+            <div class="db-card-head">
+                <span style="font-size:13px;font-weight:600;color:var(--text)">Строка · ${columns.length} столбцов</span>
+                <span style="flex:1"></span>
+                <button id="dbc-copyall" class="btn btn-ghost btn-sm" style="font-size:11px">Копировать всё</button>
+                <button id="dbc-close" style="background:none;border:none;color:var(--text-2);cursor:pointer;font-size:18px;padding:2px 6px">✕</button>
+            </div>
+            <div class="db-card-body">${rowsHtml}</div>
+        </div>`;
+        document.body.appendChild(modal);
+
+        const close = () => modal.remove();
+        modal.querySelector('#dbc-close').addEventListener('click', close);
+        modal.addEventListener('click', e => { if (e.target === modal) close(); });
+        const onKey = e => { if (e.key === 'Escape') { close(); document.removeEventListener('keydown', onKey); } };
+        document.addEventListener('keydown', onKey);
+
+        modal.querySelectorAll('.db-card-copy').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const v = vals[parseInt(btn.dataset.i, 10)];
+                navigator.clipboard?.writeText(v == null ? '' : String(v));
+                btn.textContent = '✓';
+                setTimeout(() => { btn.textContent = '⧉'; }, 900);
+            });
+        });
+        modal.querySelector('#dbc-copyall').addEventListener('click', () => {
+            const obj = {};
+            columns.forEach((c, i) => { obj[c] = vals[i] === undefined ? null : vals[i]; });
+            navigator.clipboard?.writeText(JSON.stringify(obj, null, 2));
+            app.toast?.('Строка скопирована как JSON', 'success');
+        });
     },
 
     _bindSortHeaders(result, el) {
@@ -623,7 +753,7 @@ const DbPage = {
         result.querySelectorAll('td[data-col]').forEach(td => {
             td.addEventListener('dblclick', e => {
                 e.stopPropagation();
-                const pkCell = td.parentElement.querySelector('td');
+                const pkCell = td.parentElement.querySelector('td[data-col]');
                 this._openCellEditor(td, async (newVal) => {
                     await API.post('/api/db/cell', {
                         database: this._db, table: this._table,
@@ -651,7 +781,7 @@ const DbPage = {
             td.addEventListener('dblclick', e => {
                 e.stopPropagation();
                 if (!table) { app.toast('Таблица не определена из запроса', 'error'); return; }
-                const pkCell = td.parentElement.querySelector('td');
+                const pkCell = td.parentElement.querySelector('td[data-col]');
                 this._openCellEditor(td, async (newVal) => {
                     await API.post('/api/db/cell', {
                         database: this._db, table,

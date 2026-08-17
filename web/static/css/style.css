@@ -1647,9 +1647,68 @@ mark.palette-hl { background: rgba(234,179,8,0.15); color: var(--yellow); border
     cursor: default;
 }
 .db-table-result td.db-null { color: var(--text-3); font-style: italic; }
-.db-table-result td.db-num  { color: #818CF8; }
+.db-table-result td.db-num  { color: #818CF8; text-align: right; }
 .db-table-result td.db-str  { color: var(--green); }
 .db-table-result tr:hover td { background: rgba(255,255,255,0.015); }
+
+/* Резайзер колонок */
+.db-table-result th { position: relative; }
+.db-th-label { display: inline-block; }
+.db-col-resizer {
+    position: absolute; top: 0; right: 0; width: 6px; height: 100%;
+    cursor: col-resize; user-select: none; z-index: 2;
+}
+.db-col-resizer:hover { background: var(--accent, #3b82f6); opacity: 0.5; }
+
+/* Гуттер с номером строки — закреплён слева, открывает карточку строки */
+.db-table-result th.db-gut,
+.db-table-result td.db-gut {
+    position: sticky; left: 0; z-index: 2;
+    width: 40px; min-width: 40px; max-width: 40px;
+    text-align: right; padding: 4px 8px;
+    color: var(--text-3); font-size: 10px;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    user-select: none;
+}
+.db-table-result th.db-gut { z-index: 4; }
+.db-table-result td.db-gut { cursor: pointer; }
+.db-table-result tr:hover td.db-gut { color: var(--accent, #3b82f6); background: var(--surface2); }
+
+/* Карточный просмотр строки */
+.db-card-box {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); width: 100%; max-width: 620px;
+    max-height: 76vh; display: flex; flex-direction: column;
+    overflow: hidden; box-shadow: 0 24px 80px rgba(0,0,0,0.6);
+}
+.db-card-head {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 16px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.db-card-body { overflow-y: auto; padding: 4px 0; }
+.db-card-row {
+    display: grid; grid-template-columns: 180px 1fr auto; gap: 12px;
+    align-items: start; padding: 7px 16px;
+    border-bottom: 1px solid rgba(255,255,255,0.03);
+}
+.db-card-row:hover { background: rgba(255,255,255,0.02); }
+.db-card-key {
+    font-size: 11px; color: var(--text-3); font-family: var(--mono);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    padding-top: 1px;
+}
+.db-card-val {
+    font-size: 12px; color: var(--text); font-family: var(--mono);
+    white-space: pre-wrap; word-break: break-word; min-width: 0;
+}
+.db-card-val.db-null { color: var(--text-3); font-style: italic; }
+.db-card-copy {
+    background: none; border: 1px solid var(--border); border-radius: var(--radius-xs);
+    color: var(--text-3); cursor: pointer; font-size: 11px; padding: 1px 6px;
+    height: 22px; flex-shrink: 0;
+}
+.db-card-copy:hover { color: var(--text); border-color: var(--border-2); }
 
 .db-status {
     padding: 5px 12px; font-size: 10px; font-family: var(--mono);

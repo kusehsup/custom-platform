@@ -342,6 +342,17 @@ body.ui-v2 .widget-min {
 }
 body.ui-v2 .widget-min:hover { color: var(--text); }
 
+/* ── БД: карточка строки, гуттер, ресайзер ───────────────────────────── */
+body.ui-v2 .db-card-box {
+    background: color-mix(in srgb, var(--surface) 82%, transparent);
+    -webkit-backdrop-filter: blur(22px);
+    backdrop-filter: blur(22px);
+    border: 1px solid var(--border-2);
+    box-shadow: var(--shadow-pop, 0 32px 90px rgba(0,0,0,0.6));
+}
+body.ui-v2 .db-col-resizer:hover { background: var(--accent); opacity: 0.6; }
+body.ui-v2 .db-table-result tr:hover td.db-gut { color: var(--accent); }
+
 /* ── Консоль: чипы уровней, «вниз», подсветка ────────────────────────── */
 body.ui-v2 .console-chip:not(.off) {
     background: var(--accent-dim);
