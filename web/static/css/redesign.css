@@ -342,6 +342,17 @@ body.ui-v2 .widget-min {
 }
 body.ui-v2 .widget-min:hover { color: var(--text); }
 
+/* ── Вертикальные вкладки частей: стекло ─────────────────────────────── */
+body.ui-v2 .part-tabs-vertical {
+    background: color-mix(in srgb, var(--bg) 72%, transparent);
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
+    border-right: 1px solid var(--border);
+}
+body.ui-v2 .pvtab { border-radius: 8px; margin: 1px 6px; padding: 6px 8px; }
+body.ui-v2 .pvtab.active { background: var(--surface2); border-left-color: var(--accent); }
+body.ui-v2 .part-tabs-view-toggle { background: transparent; }
+
 /* ── Skeleton shimmer (утилита) ──────────────────────────────────────── */
 body.ui-v2 .skeleton {
     background: linear-gradient(90deg,

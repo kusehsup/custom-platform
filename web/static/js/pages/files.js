@@ -299,11 +299,7 @@ app.register('files', {
                     e.preventDefault();
                     const dir = e.shiftKey ? -1 : 1;
                     const next = (this._activePartIdx + dir + this._parts.length) % this._parts.length;
-                    // Сохраняем текущий черновик прежде чем переключаться
-                    if (this._editor && this._modified) {
-                        this._partDrafts[this._activePartIdx] = this._editor.getValue();
-                    }
-                    this._loadPartIntoEditor(next);
+                    this._activatePart(next);
                     return;
                 }
             });
@@ -889,9 +885,45 @@ app.register('files', {
         return null;
     },
 
+    // Вид вкладок частей: горизонтальный (по умолчанию) / вертикальный список.
+    _partsVertical()    { try { return localStorage.getItem('part_tabs_vertical') === '1'; } catch { return false; } },
+    _setPartsVertical(v){ try { localStorage.setItem('part_tabs_vertical', v ? '1' : ''); } catch {} },
+
+    // Переключение активной части БЕЗ пересборки полосы вкладок.
+    // Раньше клик вызывал полный _renderPartTabs() → полоса сбрасывалась
+    // влево и «летела» вправо (scroll-behavior: smooth). Теперь просто
+    // перекидываем класс .active на существующих вкладках.
+    _activatePart(i) {
+        if (i === this._activePartIdx) return;
+        if (this._editor && this._modified) {
+            this._partDrafts[this._activePartIdx] = this._editor.getValue();
+        }
+        this._activePartIdx = i;
+        document.querySelectorAll('#part-tabs .ptab, .part-vtabs .pvtab').forEach(t =>
+            t.classList.toggle('active', parseInt(t.dataset.idx, 10) === i));
+        const activeEl = document.querySelector(
+            `#part-tabs .ptab[data-idx="${i}"], .part-vtabs .pvtab[data-idx="${i}"]`);
+        activeEl?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'auto' });
+        if (this._partTabsUpdateArrows) this._partTabsUpdateArrows();
+        this._loadPartIntoEditor(i);
+    },
+
     _renderPartTabs() {
         document.getElementById('part-tabs-wrap')?.remove();
-        if (this._parts.length <= 1) return;
+        // Сбрасываем возможную вертикальную раскладку редактора
+        const areaEl = document.querySelector('.editor-area');
+        const monEl = document.getElementById('monaco-editor');
+        if (monEl) { monEl.style.flex = ''; monEl.style.width = ''; }
+        if (this._parts.length <= 1) {
+            if (areaEl) areaEl.style.flexDirection = '';
+            requestAnimationFrame(() => this._editor?.layout());
+            return;
+        }
+        if (this._partsVertical()) {
+            this._renderPartTabsVertical();
+            requestAnimationFrame(() => this._editor?.layout());
+            return;
+        }
 
         // Обёртка: стрелка влево + скроллер с вкладками + стрелка вправо
         const wrap = document.createElement('div');
@@ -930,18 +962,19 @@ app.register('files', {
 
             btn.appendChild(lineNum);
             btn.appendChild(label);
-            btn.addEventListener('click', () => {
-                // Сохраняем черновик текущей части перед переключением
-                if (this._editor && this._modified) {
-                    this._partDrafts[this._activePartIdx] = this._editor.getValue();
-                }
-                this._activePartIdx = i;
-                this._renderPartTabs();
-                this._loadPartIntoEditor(i);
-            });
+            btn.addEventListener('click', () => this._activatePart(i));
             tabBar.appendChild(btn);
         });
 
+        // Переключатель на вертикальный список блоков
+        const toV = document.createElement('button');
+        toV.type = 'button';
+        toV.className = 'part-tabs-view-toggle';
+        toV.title = 'Вертикальный список блоков';
+        toV.innerHTML = '&#9776;';
+        toV.addEventListener('click', () => { this._setPartsVertical(true); this._renderPartTabs(); });
+
+        wrap.appendChild(toV);
         wrap.appendChild(arrowL);
         wrap.appendChild(tabBar);
         wrap.appendChild(arrowR);
@@ -1033,6 +1066,81 @@ app.register('files', {
         }
     },
 
+
+    // Вертикальный список блоков — слева от редактора, с фильтром.
+    // Удобно искать нужный блок, когда их много.
+    _renderPartTabsVertical() {
+        const area = document.querySelector('.editor-area');
+        if (!area) return;
+
+        const wrap = document.createElement('div');
+        wrap.id = 'part-tabs-wrap';
+        wrap.className = 'part-tabs-vertical';
+
+        const head = document.createElement('div');
+        head.className = 'part-vtabs-head';
+        const title = document.createElement('span');
+        title.className = 'part-vtabs-title';
+        title.textContent = `Блоки · ${this._parts.length}`;
+        const filter = document.createElement('input');
+        filter.type = 'search';
+        filter.className = 'part-vtabs-filter';
+        filter.placeholder = 'Фильтр блоков…';
+        const toH = document.createElement('button');
+        toH.type = 'button';
+        toH.className = 'part-tabs-view-toggle';
+        toH.title = 'Горизонтальные вкладки';
+        toH.innerHTML = '&#9647;';
+        toH.addEventListener('click', () => { this._setPartsVertical(false); this._renderPartTabs(); });
+        head.appendChild(title);
+        head.appendChild(filter);
+        head.appendChild(toH);
+
+        const list = document.createElement('div');
+        list.className = 'part-vtabs';
+        this._parts.forEach((part, i) => {
+            const row = document.createElement('div');
+            row.className = 'pvtab' + (i === this._activePartIdx ? ' active' : '');
+            row.dataset.idx = String(i);
+            row.title = `Строка ${part.line}: ${part.content?.split('\n')[0]?.trim() || ''}`;
+            const ln = document.createElement('span');
+            ln.className = 'ptab-line';
+            ln.textContent = part.line;
+            const lbl = document.createElement('span');
+            lbl.className = 'ptab-label';
+            lbl.textContent = this._partLabel(part);
+            row.appendChild(ln);
+            row.appendChild(lbl);
+            row.addEventListener('click', () => this._activatePart(i));
+            list.appendChild(row);
+        });
+
+        filter.addEventListener('input', () => {
+            const q = filter.value.toLowerCase();
+            list.querySelectorAll('.pvtab').forEach(r => {
+                r.style.display = (!q || r.textContent.toLowerCase().includes(q)) ? '' : 'none';
+            });
+        });
+
+        wrap.appendChild(head);
+        wrap.appendChild(list);
+
+        // Раскладка: панель слева, редактор занимает остальное
+        area.style.display = 'flex';
+        area.style.flexDirection = 'row';
+        const mon = document.getElementById('monaco-editor');
+        if (mon) { mon.style.flex = '1'; mon.style.width = 'auto'; }
+        area.insertBefore(wrap, area.firstChild);
+
+        requestAnimationFrame(() => {
+            wrap.querySelector('.pvtab.active')?.scrollIntoView({ block: 'nearest', behavior: 'auto' });
+            this._editor?.layout();
+        });
+
+        this._partTabsWrap = wrap;
+        this._partTabsBar = null;
+        this._partTabsUpdateArrows = null;
+    },
 
     _loadPartIntoEditor(partIdx) {
         const part = this._parts[partIdx];
@@ -1815,6 +1923,17 @@ app.register('files', {
         }));
     },
 
+    // Опции <option> для селекторов файла в поиске — ВСЕ файлы (включая
+    // недоступные), отсортированные по пути; недоступные помечаем.
+    _allFileOptions() {
+        const src = (this._allFiles && Object.keys(this._allFiles).length) ? this._allFiles : this._files;
+        return Object.entries(src)
+            .map(([id, f]) => ({ id, path: (f && f.fullPath) || '', noacc: !this._files[id] }))
+            .sort((a, b) => a.path.localeCompare(b.path))
+            .map(o => `<option value="${o.id}">${this._esc(o.path)}${o.noacc ? '  •  нет доступа' : ''}</option>`)
+            .join('');
+    },
+
     _initSearch() {
         const root = document.getElementById('search-root');
         if (!root || this._searchInited) return;
@@ -1852,13 +1971,13 @@ app.register('files', {
                     <span>в файле:</span>
                     <select id="sq-file" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);padding:5px 8px;font-size:13px;outline:none;max-width:220px">
                         <option value="-1">Все файлы</option>
-                        ${Object.entries(this._files).map(([id, f]) => `<option value="${id}">${this._esc(f.fullPath)}</option>`).join('')}
+                        ${this._allFileOptions()}
                     </select>
                 </div>
                 <div style="border-top:1px solid var(--border);padding-top:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px;color:var(--text-2)">
                     <span>Строка напрямую:</span>
                     <select id="sq-line-file" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);padding:5px 8px;font-size:13px;outline:none;max-width:200px">
-                        ${Object.entries(this._files).map(([id, f]) => `<option value="${id}">${this._esc(f.fullPath)}</option>`).join('')}
+                        ${this._allFileOptions()}
                     </select>
                     <input type="text" id="sq-line-num" placeholder="Номер строки" style="width:110px;padding:5px 8px" />
                     <button class="btn btn-ghost btn-sm" id="sq-get-line">Получить</button>

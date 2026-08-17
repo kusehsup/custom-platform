@@ -1154,6 +1154,61 @@ mark.sq-hl { background: rgba(234,179,8,0.15); color: var(--yellow); border-radi
 }
 .ptab.active .ptab-label { color: var(--text); }
 
+/* ─── Вкладки частей: переключатель вида + вертикальный список ──── */
+.part-tabs-view-toggle {
+    flex: 0 0 auto;
+    width: 28px;
+    background: var(--bg);
+    color: var(--text-3);
+    border: none;
+    border-right: 1px solid var(--border);
+    cursor: pointer;
+    font-size: 13px;
+    line-height: 1;
+    transition: background .1s, color .1s;
+}
+.part-tabs-view-toggle:hover { background: var(--surface2); color: var(--text); }
+
+.part-tabs-vertical {
+    flex: 0 0 auto;
+    width: 250px;
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid var(--border);
+    background: var(--bg);
+    overflow: hidden;
+}
+.part-vtabs-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+}
+.part-vtabs-title {
+    font-size: 10px; font-weight: 600; color: var(--text-3);
+    text-transform: uppercase; letter-spacing: .06em; white-space: nowrap;
+}
+.part-vtabs-filter {
+    flex: 1; min-width: 0;
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); color: var(--text);
+    font-size: 11px; padding: 3px 8px; outline: none;
+}
+.part-vtabs-filter:focus { border-color: var(--text-2); }
+.part-vtabs-head .part-tabs-view-toggle { width: 24px; border: none; border-radius: var(--radius-sm); }
+.part-vtabs { flex: 1; overflow-y: auto; }
+.pvtab {
+    display: flex; align-items: center; gap: 6px;
+    padding: 6px 10px; cursor: pointer;
+    border-left: 2px solid transparent;
+    transition: background .06s;
+}
+.pvtab:hover { background: var(--surface2); }
+.pvtab.active { background: var(--surface2); border-left-color: var(--text); }
+.pvtab .ptab-label { flex: 1; }
+
 /* ─── History modal ──────────────────────────────────────────── */
 .hist-item {
     padding: 8px 12px;
