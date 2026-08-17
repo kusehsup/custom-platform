@@ -32,6 +32,7 @@ const Widgets = {
             <span class="widget-title">${title}</span>
             <div class="widget-controls">
                 <input type="range" class="widget-opacity" min="20" max="100" value="${Math.round(opacity * 100)}" title="Прозрачность" />
+                <button class="widget-min" title="Свернуть в полоску">–</button>
                 <button class="widget-close">✕</button>
             </div>
         </div>
@@ -44,6 +45,18 @@ const Widgets = {
         // Закрытие
         el.querySelector('.widget-close').addEventListener('click', () => {
             el.style.display = 'none';
+        });
+
+        // Свернуть в полоску (только заголовок) / развернуть
+        el.querySelector('.widget-min')?.addEventListener('click', () => {
+            const min = el.classList.toggle('widget--min');
+            if (min) {
+                el.dataset.prevHeight = el.style.height;
+                el.style.height = 'auto';
+            } else if (el.dataset.prevHeight) {
+                el.style.height = el.dataset.prevHeight;
+            }
+            el.querySelector('.widget-min').textContent = min ? '□' : '–';
         });
 
         // Прозрачность

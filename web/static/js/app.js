@@ -453,6 +453,7 @@ const app = {
 
     // ── Boot ──────────────────────────────────────────────────────────
     async boot() {
+        this._applyUiVersion();
         // Регистрируем Service Worker — нужен чтобы браузер предлагал
         // "Установить как приложение". Кэширования агрессивного нет,
         // ошибки регистрации игнорируем (на http не запустится — это норма).
@@ -625,6 +626,7 @@ const app = {
                 </div>
             </header>
             <nav class="sidebar">
+                <button id="nav-collapse" title="Свернуть панель">${ico.more}</button>
                 <span class="sidebar-section">Управление</span>
                 <a data-page="server" class="nav-primary">${ico.server}<span class="label">Сервер</span></a>
                 <span class="sidebar-section">Код</span>
@@ -652,6 +654,7 @@ const app = {
             })
         );
 
+        document.getElementById('nav-collapse')?.addEventListener('click', () => this.toggleNavCollapsed());
         document.getElementById('btn-debug').addEventListener('click', () => this.toggleDebug());
         document.getElementById('btn-console').addEventListener('click', () => this.toggleConsole());
         document.getElementById('btn-db').addEventListener('click', () => DbWidget.toggle());
@@ -701,6 +704,7 @@ const app = {
         });
 
         this._applyTheme(localStorage.getItem('theme') || 'dark');
+        this._applyUiVersion();
         this.connectWS();
         // Восстанавливаем последнюю активную вкладку и место в редакторе.
         // Session.restore() сам решает что делать — если ничего не сохранено,
@@ -809,6 +813,27 @@ const app = {
         P.register({ id: 'db',            title: 'База данных',                icon: '🗄', group: 'Прочее', run: () => this.navigate('db') });
         P.register({ id: 'extcmd',        title: 'Внешние команды',            icon: '▸', group: 'Сервер', run: () => this.navigate('extcmd') });
         P.register({ id: 'notes',         title: 'Заметки (markdown)',         icon: '📝', group: 'Навигация', run: () => this.navigate('notes') });
+    },
+
+    // ── UI v2 (новый дизайн) ─────────────────────────────────────────
+    // Полностью на CSS-классе body.ui-v2 (см. redesign.css). Старый дизайн
+    // не затрагивается — при выключенном тумблере класса просто нет.
+    _applyUiVersion() {
+        const on = (() => { try { return localStorage.getItem('ui_v2') === '1'; } catch { return false; } })();
+        document.body.classList.toggle('ui-v2', on);
+        const collapsed = (() => { try { return localStorage.getItem('nav_collapsed') === '1'; } catch { return false; } })();
+        document.body.classList.toggle('nav-collapsed', on && collapsed);
+    },
+
+    setUiV2(on) {
+        try { localStorage.setItem('ui_v2', on ? '1' : '0'); } catch {}
+        this._applyUiVersion();
+    },
+
+    toggleNavCollapsed() {
+        const cur = (() => { try { return localStorage.getItem('nav_collapsed') === '1'; } catch { return false; } })();
+        try { localStorage.setItem('nav_collapsed', cur ? '0' : '1'); } catch {}
+        this._applyUiVersion();
     },
 
     _applyTheme(theme) {

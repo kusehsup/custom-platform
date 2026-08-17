@@ -13,10 +13,12 @@ app.register('settings', {
     render(root) {
         const s = this._load();
         const loaderEnabled = (typeof Loader !== 'undefined') ? Loader.isEnabled() : true;
+        const uiV2Enabled = (() => { try { return localStorage.getItem('ui_v2') === '1'; } catch { return false; } })();
         root.innerHTML = `
         <div class="card">
             <div class="card-header"><span class="card-title">Внешний вид</span></div>
             <div>
+                ${this._row('ui_v2', '✨', 'Новый дизайн (бета)', 'Переработанный интерфейс: стекло, воздух, мягкий акцент. Можно выключить в любой момент', uiV2Enabled)}
                 ${this._row('loader_enabled', '⏳', 'Лоадер загрузки', 'Показывать полноэкранный индикатор при входе и загрузке', loaderEnabled)}
             </div>
         </div>
@@ -68,6 +70,11 @@ app.register('settings', {
                 if (cb.dataset.key === 'loader_enabled') {
                     if (typeof Loader !== 'undefined') Loader.setEnabled(cb.checked);
                     app.toast('Настройки сохранены', 'info');
+                    return;
+                }
+                if (cb.dataset.key === 'ui_v2') {
+                    app.setUiV2(cb.checked);
+                    app.toast(cb.checked ? 'Новый дизайн включён' : 'Классический дизайн', 'success');
                     return;
                 }
                 const cur = this._load();
