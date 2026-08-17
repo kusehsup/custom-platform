@@ -608,6 +608,47 @@ input::placeholder { color: var(--text-3); }
     font-family: var(--mono);
 }
 
+/* Перенос строк выкл — горизонтальный скролл, ровные логи */
+.console.nowrap { white-space: pre; word-break: normal; overflow-x: auto; }
+
+/* Подсветка совпадений фильтра */
+.con-hl { background: rgba(234,179,8,0.28); color: inherit; border-radius: 2px; }
+
+/* Чипы фильтра по уровням */
+.console-levels { display: flex; align-items: center; gap: 4px; }
+.console-chip {
+    font-family: var(--mono);
+    font-size: 10px;
+    padding: 2px 7px;
+    border-radius: 99px;
+    border: 1px solid var(--border-2);
+    background: var(--surface2);
+    color: var(--text-2);
+    cursor: pointer;
+    transition: opacity .12s, background .12s, color .12s;
+    user-select: none;
+}
+.console-chip:hover { color: var(--text); }
+.console-chip.off { opacity: 0.4; text-decoration: line-through; }
+
+/* Кнопка «вниз» */
+.console-jump {
+    position: absolute;
+    right: 16px;
+    bottom: 14px;
+    background: var(--surface2);
+    border: 1px solid var(--border-2);
+    color: var(--text);
+    border-radius: 99px;
+    font-size: 11px;
+    padding: 5px 12px;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    transition: opacity .15s, transform .15s;
+}
+.console-jump:hover { background: var(--surface3); }
+.console-jump.hidden { display: none; }
+
 /* ─── Compile output ─────────────────────────────────────────── */
 .compile-out {
     background: #080808;

@@ -342,6 +342,21 @@ body.ui-v2 .widget-min {
 }
 body.ui-v2 .widget-min:hover { color: var(--text); }
 
+/* ── Консоль: чипы уровней, «вниз», подсветка ────────────────────────── */
+body.ui-v2 .console-chip:not(.off) {
+    background: var(--accent-dim);
+    border-color: transparent;
+    color: var(--accent);
+}
+body.ui-v2 .console-jump {
+    background: color-mix(in srgb, var(--surface2) 70%, transparent);
+    -webkit-backdrop-filter: blur(16px);
+    backdrop-filter: blur(16px);
+    border: 1px solid var(--border-2);
+    box-shadow: var(--shadow-2);
+}
+body.ui-v2 .con-hl { background: color-mix(in srgb, var(--yellow) 35%, transparent); }
+
 /* ── Вертикальные вкладки частей: стекло ─────────────────────────────── */
 body.ui-v2 .part-tabs-vertical {
     background: color-mix(in srgb, var(--bg) 72%, transparent);
