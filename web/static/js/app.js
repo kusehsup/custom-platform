@@ -608,7 +608,8 @@ const app = {
             <header class="topbar">
                 <span class="topbar-logo">
                     <span class="topbar-logo-icon">⚡</span>
-                    CustomPlatform
+                    <span class="topbar-logo-label">CustomPlatform</span>
+                    <button id="nav-collapse" title="Свернуть панель">${ico.collapse}</button>
                 </span>
                 <div id="topbar-actions" class="topbar-actions hidden">
                     <button class="btn btn-sm" id="tb-server-btn">—</button>
@@ -627,7 +628,6 @@ const app = {
                 </div>
             </header>
             <nav class="sidebar">
-                <button id="nav-collapse" title="Свернуть панель">${ico.collapse}</button>
                 <span class="sidebar-section">Управление</span>
                 <a data-page="server" class="nav-primary">${ico.server}<span class="label">Сервер</span></a>
                 <span class="sidebar-section">Код</span>

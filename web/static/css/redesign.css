@@ -119,12 +119,17 @@ body.ui-v2 .topbar {
     -webkit-backdrop-filter: blur(18px) saturate(1.6);
     backdrop-filter: blur(18px) saturate(1.6);
     border-bottom: 1px solid var(--border);
+    position: relative;
 }
 body.ui-v2 .topbar-logo { font-weight: 600; letter-spacing: -0.2px; }
+body.ui-v2 .topbar-logo-label {
+    overflow: hidden; white-space: nowrap;
+    transition: opacity 0.2s var(--ease);
+}
 
 /* Контекстные действия — компактная сегментированная «пилюля».
-   Важно: flex:0 0 auto, иначе базовый flex:1 растягивает пилюлю
-   на всю ширину топбара (выглядит как «кнопки на весь бар»). */
+   flex:0 0 auto — не растягивается (базовый flex:1); на десктопе —
+   абсолютное центрирование строго по центру всего топбара. */
 body.ui-v2 .topbar-actions:not(.hidden) {
     flex: 0 0 auto;
     background: var(--surface2);
@@ -132,7 +137,14 @@ body.ui-v2 .topbar-actions:not(.hidden) {
     border-radius: 999px;
     padding: 3px;
     gap: 2px;
-    margin-left: 12px;
+}
+@media (min-width: 769px) {
+    body.ui-v2 .topbar-actions:not(.hidden) {
+        position: absolute;
+        left: 50%; top: 50%;
+        transform: translate(-50%, -50%);
+        margin: 0;
+    }
 }
 body.ui-v2 .topbar-actions .btn { border-radius: 999px; border-color: transparent; }
 body.ui-v2 .topbar-btn { border-radius: 999px; }
@@ -177,13 +189,12 @@ body.ui-v2 .sidebar a.active {
 }
 body.ui-v2 .sidebar a.active svg { color: var(--accent); fill: var(--accent-dim); }
 
-/* ── Кнопка сворачивания сайдбара (только v2) ────────────────────────── */
+/* ── Кнопка сворачивания панели — в шапке, справа от логотипа (v2) ────── */
 #nav-collapse { display: none; }
 body.ui-v2 #nav-collapse {
     display: flex; align-items: center; justify-content: center;
-    align-self: flex-start;
-    width: 30px; height: 30px;
-    margin: 2px 2px 6px; padding: 0; border-radius: 8px;
+    width: 28px; height: 28px; flex-shrink: 0;
+    margin: 0 0 0 2px; padding: 0; border-radius: 8px;
     background: transparent; border: none; color: var(--text-3);
     cursor: pointer; transition: background 0.2s var(--ease), color 0.2s var(--ease);
 }
@@ -193,13 +204,15 @@ body.ui-v2 #nav-collapse svg {
     stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round;
 }
 body.ui-v2 #nav-collapse:hover { background: var(--surface2); color: var(--text); }
-body.ui-v2.nav-collapsed { --sidebar-w: 60px; }
+
+/* Свёрнутое состояние: в логотипе остаётся только иконка + переключатель. */
+body.ui-v2.nav-collapsed { --sidebar-w: 64px; }
+body.ui-v2.nav-collapsed .topbar-logo { padding: 0 5px; gap: 2px; justify-content: center; }
+body.ui-v2.nav-collapsed .topbar-logo-label { display: none; }
 body.ui-v2.nav-collapsed .sidebar a { justify-content: center; padding: 8px 0; }
 body.ui-v2.nav-collapsed .sidebar a .label,
 body.ui-v2.nav-collapsed .sidebar-section,
 body.ui-v2.nav-collapsed .sidebar a .sidebar-badge { display: none; }
-body.ui-v2.nav-collapsed .topbar-logo .label,
-body.ui-v2.nav-collapsed #nav-collapse { }
 
 /* ── Карточки: невесомые, тень поднимает над фоном ───────────────────── */
 body.ui-v2 .card {
