@@ -1869,7 +1869,6 @@ app.register('files', {
     // ── Встроенный поиск ─────────────────────────────────────────────
     _searchInited: false,
     _sqLastResult: null,   // сохранённый результат поиска
-    _sqBookmarks: [],      // закладки на блоки
 
     // ── История поисковых запросов ────────────────────────────────────
     _sqHistKey: 'sq_history',
@@ -1881,46 +1880,6 @@ app.register('files', {
         h.unshift(text);
         if (h.length > this._sqHistMax) h = h.slice(0, this._sqHistMax);
         try { localStorage.setItem(this._sqHistKey, JSON.stringify(h)); } catch {}
-    },
-
-    // ── Закладки ─────────────────────────────────────────────────────
-    _sqBmKey: 'sq_bookmarks',
-    _sqLoadBm() { try { return JSON.parse(localStorage.getItem(this._sqBmKey) || '[]'); } catch { return []; } },
-    _sqSaveBm(bms) { try { localStorage.setItem(this._sqBmKey, JSON.stringify(bms)); } catch {} },
-    _sqAddBm(fileId, path, name, fileName) {
-        const bms = this._sqLoadBm();
-        const key = `${fileId}:${path}`;
-        if (!bms.find(b => b.key === key)) {
-            bms.unshift({ key, fileId, path, name, fileName, ts: Date.now() });
-            if (bms.length > 30) bms.pop();
-            this._sqSaveBm(bms);
-            app.toast('🔖 Закладка добавлена', 'success');
-        } else {
-            app.toast('Уже в закладках', 'info');
-        }
-        this._sqRenderBookmarks();
-    },
-    _sqRemoveBm(key) {
-        this._sqSaveBm(this._sqLoadBm().filter(b => b.key !== key));
-        this._sqRenderBookmarks();
-    },
-    _sqRenderBookmarks() {
-        const el = document.getElementById('sq-bookmarks');
-        if (!el) return;
-        const bms = this._sqLoadBm();
-        if (!bms.length) { el.innerHTML = '<div style="padding:8px 0;color:var(--text-3);font-size:12px">Нет закладок</div>'; return; }
-        el.innerHTML = bms.map(b => `
-        <div class="sq-bm-item">
-            <span class="sq-bm-name" data-key="${b.key}" data-file="${b.fileId}" data-path='${b.path}' data-name="${this._esc(b.name)}">${this._esc(b.name || b.fileName)}</span>
-            <span class="sq-bm-file">${this._esc(b.fileName || '')}</span>
-            <button class="sq-bm-del" data-key="${b.key}">✕</button>
-        </div>`).join('');
-        el.querySelectorAll('.sq-bm-name').forEach(n => n.addEventListener('click', () => {
-            this._sqGetCode('edit', { file: n.dataset.file, path: n.dataset.path, name: n.dataset.name, lines: '0' });
-        }));
-        el.querySelectorAll('.sq-bm-del').forEach(b => b.addEventListener('click', e => {
-            e.stopPropagation(); this._sqRemoveBm(b.dataset.key);
-        }));
     },
 
     // Опции <option> для селекторов файла в поиске — ВСЕ файлы (включая
@@ -1985,13 +1944,6 @@ app.register('files', {
             </div>
         </div>
 
-        <div class="card" style="padding:0;overflow:hidden">
-            <div style="display:flex;align-items:center;gap:8px;padding:10px 16px;border-bottom:1px solid var(--border)">
-                <span class="card-title" style="margin:0">🔖 Закладки</span>
-            </div>
-            <div id="sq-bookmarks" style="padding:8px 16px;max-height:120px;overflow-y:auto"></div>
-        </div>
-
         <div id="sq-results-wrap" class="card hidden" style="padding:0;overflow:hidden">
             <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--border)">
                 <span class="card-title" style="margin:0">Результаты</span>
@@ -2000,11 +1952,11 @@ app.register('files', {
             <div id="sq-results" style="padding:8px 0"></div>
         </div>`;
 
-        this._sqRenderBookmarks();
-
         // История — показываем при фокусе
         const textEl = document.getElementById('sq-text');
         const histDrop = document.getElementById('sq-hist-drop');
+        // Дропдаун истории тоже в body (иначе блюрится внутри .card с backdrop-filter)
+        if (histDrop && histDrop.parentNode !== document.body) document.body.appendChild(histDrop);
         textEl.addEventListener('focus', () => this._sqShowHist());
         textEl.addEventListener('input', () => this._sqShowHist());
         textEl.addEventListener('keydown', e => { if (e.key === 'Enter') { histDrop.classList.add('hidden'); this._sqSearch(); } if (e.key === 'Escape') histDrop.classList.add('hidden'); });
@@ -2038,10 +1990,16 @@ app.register('files', {
 
     _sqShowHist() {
         const drop = document.getElementById('sq-hist-drop');
-        if (!drop) return;
-        const val  = document.getElementById('sq-text').value.toLowerCase();
+        const input = document.getElementById('sq-text');
+        if (!drop || !input) return;
+        const val  = input.value.toLowerCase();
         const hist = this._sqLoadHist().filter(t => !val || t.toLowerCase().includes(val));
         if (!hist.length) { drop.classList.add('hidden'); return; }
+        // Позиционируем fixed относительно инпута (dropdown в body)
+        const r = input.getBoundingClientRect();
+        drop.style.top = (r.bottom + 4) + 'px';
+        drop.style.left = r.left + 'px';
+        drop.style.width = r.width + 'px';
         drop.classList.remove('hidden');
         drop.innerHTML = hist.slice(0, 8).map(t =>
             `<div class="sq-hist-item" data-val="${this._esc(t)}">${this._esc(t)}</div>`
@@ -2210,7 +2168,6 @@ app.register('files', {
                         </span>
                         <span class="sq-lines-badge" style="color:${linesColor}">${block.lines} стр.</span>
                         <div class="sq-row-actions">
-                            <button class="sq-act-btn sq-bm-add" data-file="${fileId}" data-path='${path}' data-name="${esc(block.name||'')}" data-fname="${esc(fileName||'')}" title="Закладка">🔖</button>
                             <button class="sq-act-btn" data-sqaction="edit" data-file="${fileId}" data-path='${path}' data-name="${esc(block.name||'')}" data-lines="${block.lines||0}" title="Получить код">↓ Код</button>
                         </div>
                     </div>
@@ -2242,7 +2199,6 @@ app.register('files', {
                         </span>
                         <div class="sq-row-actions">
                             ${goBtn}
-                            <button class="sq-act-btn sq-bm-add" data-file="${fileId}" data-path='${path}' data-name="${esc(block.name||'')}" data-fname="${esc(fileName||'')}" title="Закладка">🔖</button>
                             ${previewBtn}
                             <button class="sq-act-btn" data-sqaction="edit" data-file="${fileId}" data-path='${path}' data-name="${esc(block.name||'')}" title="Получить код">↓ Код</button>
                         </div>
@@ -2301,12 +2257,6 @@ app.register('files', {
         el.querySelectorAll('[data-sqaction="edit"]').forEach(b => b.addEventListener('click', e => {
             e.stopPropagation();
             this._sqGetCode('edit', b.dataset);
-        }));
-
-        // Закладки
-        el.querySelectorAll('.sq-bm-add').forEach(b => b.addEventListener('click', e => {
-            e.stopPropagation();
-            this._sqAddBm(b.dataset.file, b.dataset.path, b.dataset.name, b.dataset.fname);
         }));
 
         // Быстрый переход

@@ -97,11 +97,14 @@
         caret.textContent = '▾';
         trigger.appendChild(caret);
 
-        // Popover
+        // Popover — сразу в body с position:fixed. Иначе живёт внутри
+        // .card с backdrop-filter и блюрится / наезжает на фон (CSS filter
+        // создаёт stacking context и фильтрует потомков).
         const pop = document.createElement('div');
         pop.className = 'ss-popover';
         pop.setAttribute('role', 'listbox');
         pop.style.display = 'none';
+        document.body.appendChild(pop);
 
         const searchBox = document.createElement('input');
         searchBox.type = 'text';
@@ -115,11 +118,11 @@
         listBox.className = 'ss-list';
         pop.appendChild(listBox);
 
-        // Вставляем: <span.ss-wrap> [trigger] [pop] </span> и переносим select внутрь
+        // Вставляем: <span.ss-wrap> [trigger] </span>, select внутрь.
+        // Popover уже в document.body (см. выше).
         sel.parentNode.insertBefore(wrap, sel);
         wrap.appendChild(sel);
         wrap.appendChild(trigger);
-        wrap.appendChild(pop);
         sel.classList.add('ss-native');
 
         // Наследуем disabled
@@ -258,28 +261,41 @@
         }
 
         function positionPopover() {
-            pop.classList.remove('ss-above');
-            pop.style.left = '';
-            pop.style.right = '';
             const tr = trigger.getBoundingClientRect();
+            const gap = 4;
+            const minW = Math.max(tr.width, 180);
+            pop.style.minWidth = minW + 'px';
+            pop.style.width = 'max-content';
+            pop.style.left = tr.left + 'px';
+            pop.style.right = 'auto';
+
             const spaceBelow = window.innerHeight - tr.bottom;
             const spaceAbove = tr.top;
-            if (spaceBelow < 220 && spaceAbove > spaceBelow) {
-                pop.classList.add('ss-above');
+            const preferAbove = spaceBelow < 220 && spaceAbove > spaceBelow;
+            pop.classList.toggle('ss-above', preferAbove);
+
+            if (preferAbove) {
+                pop.style.top = 'auto';
+                pop.style.bottom = (window.innerHeight - tr.top + gap) + 'px';
+            } else {
+                pop.style.top = (tr.bottom + gap) + 'px';
+                pop.style.bottom = 'auto';
             }
-            // Popover может быть шире триггера (растёт под контент).
-            // Если вылезает за правый край viewport — прижимаем справа.
+
+            // Если вылезает за правый/левый край — прижимаем к viewport.
             requestAnimationFrame(() => {
                 const pr = pop.getBoundingClientRect();
+                let left = tr.left;
                 if (pr.right > window.innerWidth - 8) {
-                    pop.style.left = 'auto';
-                    pop.style.right = '0';
+                    left = Math.max(8, window.innerWidth - 8 - pr.width);
                 }
+                if (left < 8) left = 8;
+                pop.style.left = left + 'px';
             });
         }
 
         function onDocDown(e) {
-            if (!wrap.contains(e.target)) close();
+            if (!wrap.contains(e.target) && !pop.contains(e.target)) close();
         }
         function onDocKey(e) {
             // Обрабатываем только когда попап открыт
@@ -337,17 +353,20 @@
         });
 
         // Сохраняем handle чтобы можно было пересобрать при mutation
-        sel._ss = {refreshLabel, renderList, syncDisabled, wrap};
+        sel._ss = {refreshLabel, renderList, syncDisabled, wrap, pop, close};
     }
 
     // Полностью удалить наш wrapper (например если атрибут data-no-smart добавили динамически)
     function destroy(sel) {
         if (!sel._ss) return;
         const w = sel._ss.wrap;
-        if (!w) return;
-        // Возвращаем select наружу
-        w.parentNode.insertBefore(sel, w);
-        w.remove();
+        const p = sel._ss.pop;
+        if (p && p.parentNode) p.remove();
+        if (w) {
+            // Возвращаем select наружу
+            w.parentNode.insertBefore(sel, w);
+            w.remove();
+        }
         sel.removeAttribute(MARKER);
         sel.classList.remove('ss-native');
         delete sel._ss;

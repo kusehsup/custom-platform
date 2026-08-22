@@ -870,15 +870,17 @@ body.files-resizing * {
 mark.sq-hl { background: rgba(234,179,8,0.15); color: var(--yellow); border-radius: 2px; padding: 0 1px; }
 
 .sq-hist-drop {
-    position: absolute;
-    top: calc(100% + 4px);
-    left: 0; right: 0;
-    background: var(--surface);
+    /* fixed — чтобы не блюрился внутри .card с backdrop-filter (v2) */
+    position: fixed;
+    z-index: 50000;
+    background: var(--bg);
     border: 1px solid var(--border-2);
     border-radius: var(--radius);
-    z-index: 100;
     overflow: hidden;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    /* top/left/width выставляет _sqShowHist */
 }
 
 .sq-hist-item {
@@ -892,17 +894,6 @@ mark.sq-hl { background: rgba(234,179,8,0.15); color: var(--yellow); border-radi
     text-overflow: ellipsis;
 }
 .sq-hist-item:hover { background: var(--surface2); color: var(--text); }
-
-.sq-bm-item {
-    display: flex; align-items: center; gap: 6px;
-    padding: 5px 0; border-bottom: 1px solid var(--border); font-size: 12px;
-}
-.sq-bm-item:last-child { border-bottom: none; }
-.sq-bm-name { flex: 1; color: var(--indigo); cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); }
-.sq-bm-name:hover { text-decoration: underline; }
-.sq-bm-file { color: var(--text-3); font-size: 10px; flex-shrink: 0; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sq-bm-del { background: none; border: none; color: var(--text-3); cursor: pointer; font-size: 11px; padding: 2px 4px; flex-shrink: 0; }
-.sq-bm-del:hover { color: var(--red); }
 
 .sr-block-children { padding-left: 18px; border-left: 1px solid var(--border); margin: 2px 0 2px 8px; }
 .sr-brace { font-family: var(--mono); color: var(--text-3); font-size: 12px; padding: 2px 6px; }
@@ -3666,30 +3657,26 @@ select.ss-native {
 .ss-wrap.ss-open .ss-caret { transform: rotate(180deg); }
 
 .ss-popover {
-    position: absolute;
-    top: calc(100% + 4px);
-    left: 0;
-    /* min = ширина триггера (чтобы никогда не был уже), max = разумный
-       предел, не выше 90vw. Растёт по содержимому. */
-    min-width: 100%;
+    /* fixed + координаты из JS (getBoundingClientRect). Не absolute внутри
+       .card/.sidebar с backdrop-filter — иначе dropdown блюрится и «наезжает». */
+    position: fixed;
+    z-index: 50000;
+    /* min-width / top / left выставляет smart_select.js */
     width: max-content;
     max-width: min(560px, 90vw);
-    z-index: 9999;
-    background: var(--surface);
-    border: 1px solid var(--border);
+    background: var(--bg);
+    border: 1px solid var(--border-2);
     border-radius: var(--radius, 6px);
-    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5);
-    padding: 6px 6px 6px;
+    box-shadow: 0 12px 36px rgba(0, 0, 0, 0.55);
+    padding: 6px;
     display: flex;
     flex-direction: column;
     box-sizing: border-box;
-    /* Высота popover'а сама по себе не ограничивается — режем внутренний
-       список. Так надёжнее (некоторые контексты игнорируют max-height
-       у absolute-элемента). */
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
 }
 .ss-popover.ss-above {
-    top: auto;
-    bottom: calc(100% + 4px);
+    /* направление вверх задаётся через top/bottom в JS */
 }
 .ss-search {
     background: var(--surface2);
