@@ -485,8 +485,7 @@ const app = {
         try {
             const info = await API.get('/api/info');
             this.platformHost = info.platform_host || '';
-            this.ideUrl = info.ide_url || '/ide/';
-        } catch { this.platformHost = ''; this.ideUrl = '/ide/'; }
+        } catch { this.platformHost = ''; }
 
         if (!API.hasToken()) { Loader.hide(); this._showAuth(); return; }
         try {
@@ -600,7 +599,6 @@ const app = {
             ws:       `<svg viewBox="0 0 16 16"><path d="M2 8c0-3.3 2.7-6 6-6M14 8c0 3.3-2.7 6-6 6M5 8c0-1.7 1.3-3 3-3M11 8c0 1.7-1.3 3-3 3"/><circle cx="8" cy="8" r="1" fill="currentColor" stroke="none"/></svg>`,
             extcmd:   `<svg viewBox="0 0 16 16"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><path d="M4 6l2.2 2L4 10M8 10h4"/></svg>`,
             notes:    `<svg viewBox="0 0 16 16"><path d="M3 2h7l3 3v9a1 1 0 01-1 1H3a1 1 0 01-1-1V3a1 1 0 011-1z"/><path d="M10 2v3h3"/><path d="M5 8h6M5 11h4"/></svg>`,
-            ide:      `<svg viewBox="0 0 16 16"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><path d="M6 6L4 8l2 2M10 6l2 2-2 2"/></svg>`,
             more:     `<svg viewBox="0 0 16 16"><circle cx="3.5" cy="8" r="1.4" fill="currentColor" stroke="none"/><circle cx="8"   cy="8" r="1.4" fill="currentColor" stroke="none"/><circle cx="12.5" cy="8" r="1.4" fill="currentColor" stroke="none"/></svg>`,
             collapse: `<svg viewBox="0 0 16 16"><rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M6.5 3v10"/></svg>`,
         };
@@ -634,7 +632,6 @@ const app = {
                 <a data-page="server" class="nav-primary">${ico.server}<span class="label">Сервер</span></a>
                 <span class="sidebar-section">Код</span>
                 <a data-page="files" class="nav-primary">${ico.files}<span class="label">Файлы</span></a>
-                <a data-page="ide" class="nav-primary">${ico.ide}<span class="label">IDE</span></a>
                 <span class="sidebar-section">Инструменты</span>
                 <a data-page="todo">${ico.todo}<span class="label">TODO</span><span id="todo-badge" class="sidebar-badge hidden"></span></a>
                 <a data-page="db" class="nav-primary">${ico.db}<span class="label">База данных</span></a>
@@ -795,7 +792,6 @@ const app = {
         const P = Palette;
         P.register({ id: 'nav.server',   title: 'Перейти: Сервер',     icon: '🖥', group: 'Навигация', run: () => this.navigate('server') });
         P.register({ id: 'nav.files',    title: 'Перейти: Файлы',      icon: '📁', group: 'Навигация', run: () => this.navigate('files') });
-        P.register({ id: 'nav.ide',      title: 'Перейти: IDE',        icon: '🧩', group: 'Навигация', run: () => this.navigate('ide') });
         P.register({ id: 'nav.settings', title: 'Перейти: Настройки',  icon: '⚙️', group: 'Навигация', run: () => this.navigate('settings') });
         P.register({ id: 'srv.start',    title: 'Сервер: Запустить',   icon: '▶',  group: 'Сервер', hint: 'Ctrl+Shift+S', when: () => this.state.server !== 'on', run: async () => { await API.post('/api/server/start'); this.state.server='on'; this._updateTopbarActions(); this._pages['server']?.onState?.(); app.toast('Сервер запущен', 'success'); } });
         P.register({ id: 'srv.stop',     title: 'Сервер: Остановить',  icon: '⏹', group: 'Сервер', when: () => this.state.server === 'on', run: async () => { await API.post('/api/server/stop'); this.state.server='off'; this._updateTopbarActions(); this._pages['server']?.onState?.(); app.toast('Сервер остановлен', 'info'); } });

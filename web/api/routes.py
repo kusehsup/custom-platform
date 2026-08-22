@@ -126,10 +126,9 @@ async def logout(login: str = Depends(get_current_user)):
 @router.get('/api/info')
 async def get_info():
     from bot.config import PLATFORM_URL
-    from config import IDE_URL
     import urllib.parse
     host = urllib.parse.urlparse(PLATFORM_URL).netloc or PLATFORM_URL
-    return {'platform_host': host, 'ide_url': IDE_URL}
+    return {'platform_host': host}
 
 
 @router.get('/api/status')
