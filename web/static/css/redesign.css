@@ -214,6 +214,28 @@ body.ui-v2.nav-collapsed .sidebar a .label,
 body.ui-v2.nav-collapsed .sidebar-section,
 body.ui-v2.nav-collapsed .sidebar a .sidebar-badge { display: none; }
 
+/* ── Плотность интерфейса: компактный режим (body.ui-v2.ui-dense) ─────── */
+/* Только для нового дизайна; по умолчанию — комфортный (класса нет).
+   Не трогаем padding у .main — full-bleed страницы (БД, заметки, редактор)
+   компенсируют его margin:-32px -40px, иначе разъедется. */
+body.ui-v2.ui-dense { --topbar-h: 42px; }
+body.ui-v2.ui-dense .main { gap: 12px; }
+
+body.ui-v2.ui-dense .card { padding: 13px 16px; }
+body.ui-v2.ui-dense .card-header { margin-bottom: 10px; }
+
+body.ui-v2.ui-dense .sidebar { padding: 10px 8px; }
+body.ui-v2.ui-dense .sidebar a { padding: 6px 9px; }
+body.ui-v2.ui-dense .sidebar-section { padding: 12px 10px 4px; }
+
+body.ui-v2.ui-dense .settings-row { padding: 9px 0; }
+body.ui-v2.ui-dense .btn-sm { padding: 3px 9px; }
+
+/* Данные — больше строк на экране */
+body.ui-v2.ui-dense .db-table-result td { padding: 2px 9px; }
+body.ui-v2.ui-dense .db-table-result th { padding: 3px 9px; }
+body.ui-v2.ui-dense .console { line-height: 1.5; font-size: 11px; padding: 8px 12px; }
+
 /* ── Карточки: невесомые, тень поднимает над фоном ───────────────────── */
 body.ui-v2 .card {
     background: var(--surface);

@@ -824,11 +824,24 @@ const app = {
         document.body.classList.toggle('ui-v2', on);
         const collapsed = (() => { try { return localStorage.getItem('nav_collapsed') === '1'; } catch { return false; } })();
         document.body.classList.toggle('nav-collapsed', on && collapsed);
+        this._applyDensity();
     },
 
     setUiV2(on) {
         try { localStorage.setItem('ui_v2', on ? '1' : '0'); } catch {}
         this._applyUiVersion();
+    },
+
+    // ── Плотность интерфейса (компактный режим) ──────────────────────
+    // Класс body.ui-dense; эффект только в связке с ui-v2 (см. redesign.css).
+    _applyDensity() {
+        const dense = (() => { try { return localStorage.getItem('ui_dense') === '1'; } catch { return false; } })();
+        document.body.classList.toggle('ui-dense', dense);
+    },
+
+    setUiDensity(on) {
+        try { localStorage.setItem('ui_dense', on ? '1' : '0'); } catch {}
+        this._applyDensity();
     },
 
     toggleNavCollapsed() {
