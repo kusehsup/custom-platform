@@ -1,0 +1,462 @@
+/* ============================================================================
+   CustomPlatform — UI v2 (redesign)
+   Полностью заскоуплен под body.ui-v2 — при выключенном тумблере не влияет
+   ни на что. Философия: «холст для кода» — глубокий фон, стеклянные
+   поверхности, типографика вместо блоков, мягкий системный акцент,
+   многослойные тени, воздух, apple-like движение.
+   Токены переопределяются здесь → var()-стили (в т.ч. инлайновые в JS)
+   автоматически перекрашиваются под новый дизайн.
+   ============================================================================ */
+
+/* ── Токены (тёмная) ─────────────────────────────────────────────────── */
+body.ui-v2 {
+    --bg:        #060607;
+    --surface:   rgba(255, 255, 255, 0.024);
+    --surface2:  rgba(255, 255, 255, 0.05);
+    --surface3:  rgba(255, 255, 255, 0.08);
+    --border:    rgba(255, 255, 255, 0.07);
+    --border-2:  rgba(255, 255, 255, 0.12);
+
+    --accent:     #0A84FF;              /* системный голубой (Apple) */
+    --accent-2:   #409CFF;
+    --accent-dim: rgba(10, 132, 255, 0.16);
+
+    --text:   #F5F5F7;
+    --text-2: #98989F;
+    --text-3: #56565C;
+
+    --green: #30D158;  --green-dim: rgba(48, 209, 88, 0.12);
+    --red:   #FF453A;  --red-dim:   rgba(255, 69, 58, 0.12);
+    --yellow:#FFD60A;  --yellow-dim:rgba(255, 214, 10, 0.12);
+    --indigo:#5E5CE6;  --indigo-dim:rgba(94, 92, 230, 0.14);
+
+    --radius:    10px;
+    --radius-md: 14px;
+    --radius-lg: 20px;
+    --topbar-h:  44px;
+
+    --ease: cubic-bezier(0.23, 1, 0.32, 1);
+    --shadow-1: 0 1px 2px rgba(0,0,0,0.4);
+    --shadow-2: 0 12px 40px -8px rgba(0,0,0,0.6), 0 4px 12px -4px rgba(0,0,0,0.5);
+    --shadow-pop: 0 20px 60px -12px rgba(0,0,0,0.7), 0 2px 8px rgba(0,0,0,0.4);
+
+    background: var(--bg);
+    transition: background-color 0.4s var(--ease), color 0.4s var(--ease);
+}
+
+/* ── Токены (светлая, тёплая как iOS) ────────────────────────────────── */
+body.ui-v2.light {
+    --bg:        #F2F2F7;
+    --surface:   rgba(0, 0, 0, 0.022);
+    --surface2:  rgba(0, 0, 0, 0.05);
+    --surface3:  rgba(0, 0, 0, 0.08);
+    --border:    rgba(0, 0, 0, 0.08);
+    --border-2:  rgba(0, 0, 0, 0.14);
+
+    --accent:     #0071E3;
+    --accent-2:   #0A84FF;
+    --accent-dim: rgba(0, 113, 227, 0.12);
+
+    --text:   #1D1D1F;
+    --text-2: #6E6E73;
+    --text-3: #AEAEB2;
+
+    --green: #34C759;  --red: #FF3B30;  --yellow: #FF9F0A;  --indigo: #5856D6;
+    --shadow-2: 0 12px 40px -10px rgba(0,0,0,0.18), 0 3px 10px -4px rgba(0,0,0,0.12);
+    --shadow-pop: 0 24px 60px -12px rgba(0,0,0,0.22);
+}
+
+/* ── Плавное переключение темы/дизайна на всём интерактиве ───────────── */
+body.ui-v2 .card,
+body.ui-v2 .btn,
+body.ui-v2 .sidebar,
+body.ui-v2 .sidebar a,
+body.ui-v2 .topbar,
+body.ui-v2 .toggle-track,
+body.ui-v2 .badge,
+body.ui-v2 input,
+body.ui-v2 textarea,
+body.ui-v2 select {
+    transition: background-color 0.3s var(--ease), color 0.25s var(--ease),
+                border-color 0.3s var(--ease), box-shadow 0.3s var(--ease),
+                transform 0.18s var(--ease), opacity 0.25s var(--ease);
+}
+
+/* ── Motion / доступность ────────────────────────────────────────────── */
+body.ui-v2 :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 6px;
+}
+body.ui-v2 :focus:not(:focus-visible) { outline: none; }
+
+@media (prefers-reduced-motion: reduce) {
+    body.ui-v2 *, body.ui-v2 *::before, body.ui-v2 *::after {
+        animation-duration: 0.001ms !important;
+        transition-duration: 0.001ms !important;
+    }
+}
+
+/* ── Скроллбары: скрыты, появляются при наведении (macOS/Win11) ──────── */
+body.ui-v2 ::-webkit-scrollbar { width: 11px; height: 11px; }
+body.ui-v2 ::-webkit-scrollbar-track { background: transparent; }
+body.ui-v2 ::-webkit-scrollbar-thumb {
+    background: transparent;
+    border: 3px solid transparent;
+    border-radius: 999px;
+    background-clip: padding-box;
+}
+body.ui-v2 :hover::-webkit-scrollbar-thumb { background: rgba(140,140,150,0.35); background-clip: padding-box; }
+body.ui-v2 ::-webkit-scrollbar-thumb:hover { background: rgba(140,140,150,0.55); background-clip: padding-box; }
+
+/* ── Каркас / воздух ─────────────────────────────────────────────────── */
+body.ui-v2 .main { padding: 44px 48px; gap: 24px; }
+@media (max-width: 720px) { body.ui-v2 .main { padding: 20px 16px; } }
+
+/* ── Topbar: стекло, тоньше ──────────────────────────────────────────── */
+body.ui-v2 .topbar {
+    background: color-mix(in srgb, var(--bg) 55%, transparent);
+    -webkit-backdrop-filter: blur(18px) saturate(1.6);
+    backdrop-filter: blur(18px) saturate(1.6);
+    border-bottom: 1px solid var(--border);
+    position: relative;
+}
+body.ui-v2 .topbar-logo { font-weight: 600; letter-spacing: -0.2px; }
+body.ui-v2 .topbar-logo-label {
+    overflow: hidden; white-space: nowrap;
+    transition: opacity 0.2s var(--ease);
+}
+
+/* Контекстные действия — компактная сегментированная «пилюля».
+   flex:0 0 auto — не растягивается (базовый flex:1); на десктопе —
+   абсолютное центрирование строго по центру всего топбара. */
+body.ui-v2 .topbar-actions:not(.hidden) {
+    flex: 0 0 auto;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 3px;
+    gap: 2px;
+}
+@media (min-width: 769px) {
+    body.ui-v2 .topbar-actions:not(.hidden) {
+        position: absolute;
+        left: 50%; top: 50%;
+        transform: translate(-50%, -50%);
+        margin: 0;
+    }
+}
+body.ui-v2 .topbar-actions .btn { border-radius: 999px; border-color: transparent; }
+body.ui-v2 .topbar-btn { border-radius: 999px; }
+body.ui-v2 .topbar-btn:hover { background: var(--surface2); }
+
+/* ── Sidebar: стекло, вставная разделительная линия ──────────────────── */
+body.ui-v2 .sidebar {
+    background: color-mix(in srgb, var(--bg) 72%, transparent);
+    -webkit-backdrop-filter: blur(20px) saturate(1.4);
+    backdrop-filter: blur(20px) saturate(1.4);
+    border-right: none;
+    padding: 14px 10px;
+    gap: 2px;
+    position: relative;
+}
+body.ui-v2 .sidebar::after {
+    content: '';
+    position: absolute;
+    right: 0; top: 18px; bottom: 18px;
+    width: 1px;
+    background: var(--border);
+}
+body.ui-v2 .sidebar-section {
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    color: var(--text-3);
+    padding: 18px 12px 6px;
+}
+body.ui-v2 .sidebar a {
+    border-radius: 9px;
+    padding: 8px 10px;
+    letter-spacing: 0.01em;
+    font-weight: 500;
+}
+body.ui-v2 .sidebar a svg { stroke-width: 1.5; transition: transform 0.2s var(--ease); }
+body.ui-v2 .sidebar a:hover { background: var(--surface2); }
+body.ui-v2 .sidebar a:hover svg { transform: scale(1.06); }
+body.ui-v2 .sidebar a.active {
+    background: var(--surface2);
+    color: var(--text);
+    box-shadow: inset 0 0 0 1px var(--border);
+}
+body.ui-v2 .sidebar a.active svg { color: var(--accent); fill: var(--accent-dim); }
+
+/* ── Кнопка сворачивания панели — в шапке, справа от логотипа (v2) ────── */
+#nav-collapse { display: none; }
+body.ui-v2 #nav-collapse {
+    display: flex; align-items: center; justify-content: center;
+    width: 28px; height: 28px; flex-shrink: 0;
+    margin: 0 0 0 2px; padding: 0; border-radius: 8px;
+    background: transparent; border: none; color: var(--text-3);
+    cursor: pointer; transition: background 0.2s var(--ease), color 0.2s var(--ease);
+}
+body.ui-v2 #nav-collapse svg {
+    width: 16px; height: 16px;
+    stroke: currentColor; fill: none;
+    stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round;
+}
+body.ui-v2 #nav-collapse:hover { background: var(--surface2); color: var(--text); }
+
+/* Свёрнутое состояние: в логотипе остаётся только иконка + переключатель. */
+body.ui-v2.nav-collapsed { --sidebar-w: 64px; }
+body.ui-v2.nav-collapsed .topbar-logo { padding: 0 5px; gap: 2px; justify-content: center; }
+body.ui-v2.nav-collapsed .topbar-logo-label { display: none; }
+body.ui-v2.nav-collapsed .sidebar a { justify-content: center; padding: 8px 0; }
+body.ui-v2.nav-collapsed .sidebar a .label,
+body.ui-v2.nav-collapsed .sidebar-section,
+body.ui-v2.nav-collapsed .sidebar a .sidebar-badge { display: none; }
+
+/* ── Плотность интерфейса: компактный режим (body.ui-v2.ui-dense) ─────── */
+/* Только для нового дизайна; по умолчанию — комфортный (класса нет).
+   Не трогаем padding у .main — full-bleed страницы (БД, заметки, редактор)
+   компенсируют его margin:-32px -40px, иначе разъедется. */
+body.ui-v2.ui-dense { --topbar-h: 42px; }
+body.ui-v2.ui-dense .main { gap: 12px; }
+
+body.ui-v2.ui-dense .card { padding: 13px 16px; }
+body.ui-v2.ui-dense .card-header { margin-bottom: 10px; }
+
+body.ui-v2.ui-dense .sidebar { padding: 10px 8px; }
+body.ui-v2.ui-dense .sidebar a { padding: 6px 9px; }
+body.ui-v2.ui-dense .sidebar-section { padding: 12px 10px 4px; }
+
+body.ui-v2.ui-dense .settings-row { padding: 9px 0; }
+body.ui-v2.ui-dense .btn-sm { padding: 3px 9px; }
+
+/* Данные — больше строк на экране */
+body.ui-v2.ui-dense .db-table-result td { padding: 2px 9px; }
+body.ui-v2.ui-dense .db-table-result th { padding: 3px 9px; }
+body.ui-v2.ui-dense .console { line-height: 1.5; font-size: 11px; padding: 8px 12px; }
+
+/* ── Карточки: невесомые, тень поднимает над фоном ───────────────────── */
+body.ui-v2 .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 24px 26px;
+    box-shadow: var(--shadow-2);
+    -webkit-backdrop-filter: blur(6px);
+    backdrop-filter: blur(6px);
+}
+body.ui-v2 .card-title {
+    letter-spacing: -0.1px;
+    font-weight: 600;
+}
+/* Статус-строки — тоньше линии */
+body.ui-v2 .stat-row { border-bottom-color: var(--border); }
+
+/* Свечение сервера мягче + карточка сервера получает статусную левую грань */
+body.ui-v2 .card:has(#server-glow) {
+    border-left: 2px solid var(--border-2);
+    transition: border-color 0.6s var(--ease);
+}
+body.ui-v2 .card:has(.server-glow-on)  { border-left-color: var(--green); }
+body.ui-v2 .card:has(.server-glow-off) { border-left-color: var(--red); }
+
+/* ── Кнопки: скругления, приподнятие, иконка слева ───────────────────── */
+body.ui-v2 .btn {
+    border-radius: var(--radius);
+    padding: 7px 15px;
+    gap: 7px;
+    font-weight: 500;
+}
+body.ui-v2 .btn-sm { border-radius: 9px; padding: 5px 11px; }
+body.ui-v2 .btn:hover:not(:disabled) { transform: translateY(-1px); }
+body.ui-v2 .btn:active:not(:disabled) { transform: translateY(0); }
+
+body.ui-v2 .btn-primary {
+    background: var(--accent);
+    color: #fff;
+    border-color: transparent;
+    box-shadow: 0 3px 12px -2px rgba(10,132,255,0.45);
+}
+body.ui-v2 .btn-primary:hover:not(:disabled) { opacity: 1; background: var(--accent-2); }
+
+/* «Запустить» — капсула-заливка статусом */
+body.ui-v2 .btn-success {
+    background: var(--green);
+    color: #05130A;
+    border-color: transparent;
+    border-radius: 999px;
+    box-shadow: 0 3px 12px -2px rgba(48,209,88,0.4);
+}
+body.ui-v2 .btn-success:hover:not(:disabled) { background: var(--green); opacity: 0.92; }
+
+/* «Остановить» — только акцент в тексте/рамке, без агрессивной заливки */
+body.ui-v2 .btn-danger {
+    background: transparent;
+    color: var(--red);
+    border-color: var(--red-dim);
+    border-radius: 999px;
+}
+body.ui-v2 .btn-danger:hover:not(:disabled) { background: var(--red-dim); }
+
+body.ui-v2 .btn-ghost { border-radius: var(--radius); }
+
+/* ── Бейджи: точка + текст, без толстой капсулы ──────────────────────── */
+body.ui-v2 .badge {
+    background: transparent;
+    border: none;
+    padding: 0;
+    gap: 7px;
+    font-weight: 500;
+    font-size: 12px;
+}
+body.ui-v2 .badge::before { width: 7px; height: 7px; }
+body.ui-v2 .badge-on  { color: var(--green); }
+body.ui-v2 .badge-on::before  { background: var(--green); box-shadow: 0 0 0 4px var(--green-dim); animation: v2-pulse 2s var(--ease) infinite; }
+body.ui-v2 .badge-off { color: var(--text-2); }
+body.ui-v2 .badge-off::before { background: var(--text-3); animation: none; }
+body.ui-v2 .badge-busy { color: var(--yellow); }
+body.ui-v2 .badge-busy::before { background: var(--yellow); box-shadow: 0 0 0 4px var(--yellow-dim); }
+
+@keyframes v2-pulse {
+    0%, 100% { box-shadow: 0 0 0 3px var(--green-dim); }
+    50% { box-shadow: 0 0 0 6px transparent; }
+}
+
+/* ── Тумблер: акцентная заливка ──────────────────────────────────────── */
+body.ui-v2 .toggle-track { background: var(--surface3); border-color: var(--border-2); }
+body.ui-v2 .toggle input:checked + .toggle-track { background: var(--accent); border-color: var(--accent); }
+body.ui-v2 .toggle input:checked + .toggle-track::after { background: #fff; }
+
+/* ── Инпуты: акцентный фокус-ринг ────────────────────────────────────── */
+body.ui-v2 input,
+body.ui-v2 textarea,
+body.ui-v2 select {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+}
+body.ui-v2 input:focus,
+body.ui-v2 textarea:focus,
+body.ui-v2 select:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-dim);
+    outline: none;
+}
+
+/* ── Консоль / таблицы: zebra, hover-ряд, минимум линий ──────────────── */
+body.ui-v2 .console { background: rgba(0,0,0,0.25); }
+
+body.ui-v2 .db-table-result th {
+    background: color-mix(in srgb, var(--bg) 60%, transparent);
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--border);
+    font-weight: 600;
+}
+body.ui-v2 .db-table-result td { border-bottom: 1px solid rgba(255,255,255,0.03); }
+body.ui-v2 .db-table-result tbody tr:nth-child(even) td { background: rgba(255,255,255,0.018); }
+body.ui-v2 .db-table-result tbody tr:hover td { background: var(--accent-dim); }
+
+/* ── Модалки/оверлеи: стекло + глубокая тень ─────────────────────────── */
+body.ui-v2 .notes-modal,
+body.ui-v2 #compile-modal > div,
+body.ui-v2 .palette-box,
+body.ui-v2 #palette > div {
+    box-shadow: var(--shadow-pop) !important;
+    border-radius: var(--radius-lg) !important;
+}
+
+/* ── Плавающие виджеты: стеклянные ───────────────────────────────────── */
+body.ui-v2 .widget {
+    background: color-mix(in srgb, var(--surface2) 55%, transparent);
+    -webkit-backdrop-filter: blur(24px) saturate(1.5);
+    backdrop-filter: blur(24px) saturate(1.5);
+    border: 1px solid var(--border-2);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-pop);
+    overflow: hidden;
+}
+body.ui-v2 .widget-header { background: transparent; }
+/* Свёрнутый в полоску виджет */
+.widget.widget--min .widget-body,
+.widget.widget--min .widget-resize { display: none; }
+.widget.widget--min { height: auto !important; }
+body.ui-v2 .widget-min {
+    background: none; border: none; color: var(--text-2);
+    cursor: pointer; font-size: 13px; line-height: 1; padding: 2px 4px;
+}
+body.ui-v2 .widget-min:hover { color: var(--text); }
+
+/* ── БД: карточка строки, гуттер, ресайзер ───────────────────────────── */
+body.ui-v2 .db-card-box {
+    background: color-mix(in srgb, var(--surface) 82%, transparent);
+    -webkit-backdrop-filter: blur(22px);
+    backdrop-filter: blur(22px);
+    border: 1px solid var(--border-2);
+    box-shadow: var(--shadow-pop, 0 32px 90px rgba(0,0,0,0.6));
+}
+body.ui-v2 .db-col-resizer:hover { background: var(--accent); opacity: 0.6; }
+body.ui-v2 .db-table-result tr:hover td.db-gut { color: var(--accent); }
+
+/* ── Консоль: чипы уровней, «вниз», подсветка ────────────────────────── */
+body.ui-v2 .console-chip:not(.off) {
+    background: var(--accent-dim);
+    border-color: transparent;
+    color: var(--accent);
+}
+body.ui-v2 .console-jump {
+    background: color-mix(in srgb, var(--surface2) 70%, transparent);
+    -webkit-backdrop-filter: blur(16px);
+    backdrop-filter: blur(16px);
+    border: 1px solid var(--border-2);
+    box-shadow: var(--shadow-2);
+}
+body.ui-v2 .con-hl { background: color-mix(in srgb, var(--yellow) 35%, transparent); }
+
+/* ── Вертикальные вкладки частей: стекло ─────────────────────────────── */
+body.ui-v2 .part-tabs-vertical {
+    background: color-mix(in srgb, var(--bg) 72%, transparent);
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
+    border-right: 1px solid var(--border);
+}
+body.ui-v2 .pvtab { border-radius: 8px; margin: 1px 6px; padding: 6px 8px; }
+body.ui-v2 .pvtab.active { background: var(--surface2); border-left-color: var(--accent); }
+body.ui-v2 .part-tabs-view-toggle { background: transparent; }
+
+/* ── Skeleton shimmer (утилита) ──────────────────────────────────────── */
+body.ui-v2 .skeleton {
+    background: linear-gradient(90deg,
+        rgba(255,255,255,0.04) 25%,
+        rgba(255,255,255,0.09) 37%,
+        rgba(255,255,255,0.04) 63%);
+    background-size: 400% 100%;
+    animation: v2-shimmer 1.4s var(--ease) infinite;
+    border-radius: 8px;
+    color: transparent !important;
+}
+@keyframes v2-shimmer { 0% { background-position: 100% 0; } 100% { background-position: 0 0; } }
+
+/* ── Авторизация: стеклянная карточка по центру ──────────────────────── */
+body.ui-v2 .auth-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-pop);
+    -webkit-backdrop-filter: blur(20px);
+    backdrop-filter: blur(20px);
+    padding: 28px;
+    gap: 12px;
+}
+body.ui-v2 .auth-logo h1 { letter-spacing: -0.6px; }
+
+/* ── Тосты: стекло ───────────────────────────────────────────────────── */
+body.ui-v2 .toast {
+    background: color-mix(in srgb, var(--surface2) 70%, transparent);
+    -webkit-backdrop-filter: blur(20px);
+    backdrop-filter: blur(20px);
+    border: 1px solid var(--border-2);
+    box-shadow: var(--shadow-2);
+    border-radius: var(--radius);
+}

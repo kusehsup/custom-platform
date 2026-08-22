@@ -624,6 +624,47 @@ input::placeholder { color: var(--text-3); }
     font-family: var(--mono);
 }
 
+/* Перенос строк выкл — горизонтальный скролл, ровные логи */
+.console.nowrap { white-space: pre; word-break: normal; overflow-x: auto; }
+
+/* Подсветка совпадений фильтра */
+.con-hl { background: rgba(234,179,8,0.28); color: inherit; border-radius: 2px; }
+
+/* Чипы фильтра по уровням */
+.console-levels { display: flex; align-items: center; gap: 4px; }
+.console-chip {
+    font-family: var(--mono);
+    font-size: 10px;
+    padding: 2px 7px;
+    border-radius: 99px;
+    border: 1px solid var(--border-2);
+    background: var(--surface2);
+    color: var(--text-2);
+    cursor: pointer;
+    transition: opacity .12s, background .12s, color .12s;
+    user-select: none;
+}
+.console-chip:hover { color: var(--text); }
+.console-chip.off { opacity: 0.4; text-decoration: line-through; }
+
+/* Кнопка «вниз» */
+.console-jump {
+    position: absolute;
+    right: 16px;
+    bottom: 14px;
+    background: var(--surface2);
+    border: 1px solid var(--border-2);
+    color: var(--text);
+    border-radius: 99px;
+    font-size: 11px;
+    padding: 5px 12px;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    transition: opacity .15s, transform .15s;
+}
+.console-jump:hover { background: var(--surface3); }
+.console-jump.hidden { display: none; }
+
 /* ─── Compile output ─────────────────────────────────────────── */
 .compile-out {
     background: #080808;
@@ -1170,6 +1211,61 @@ mark.sq-hl { background: rgba(234,179,8,0.15); color: var(--yellow); border-radi
 }
 .ptab.active .ptab-label { color: var(--text); }
 
+/* ─── Вкладки частей: переключатель вида + вертикальный список ──── */
+.part-tabs-view-toggle {
+    flex: 0 0 auto;
+    width: 28px;
+    background: var(--bg);
+    color: var(--text-3);
+    border: none;
+    border-right: 1px solid var(--border);
+    cursor: pointer;
+    font-size: 13px;
+    line-height: 1;
+    transition: background .1s, color .1s;
+}
+.part-tabs-view-toggle:hover { background: var(--surface2); color: var(--text); }
+
+.part-tabs-vertical {
+    flex: 0 0 auto;
+    width: 250px;
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid var(--border);
+    background: var(--bg);
+    overflow: hidden;
+}
+.part-vtabs-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+}
+.part-vtabs-title {
+    font-size: 10px; font-weight: 600; color: var(--text-3);
+    text-transform: uppercase; letter-spacing: .06em; white-space: nowrap;
+}
+.part-vtabs-filter {
+    flex: 1; min-width: 0;
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); color: var(--text);
+    font-size: 11px; padding: 3px 8px; outline: none;
+}
+.part-vtabs-filter:focus { border-color: var(--text-2); }
+.part-vtabs-head .part-tabs-view-toggle { width: 24px; border: none; border-radius: var(--radius-sm); }
+.part-vtabs { flex: 1; overflow-y: auto; }
+.pvtab {
+    display: flex; align-items: center; gap: 6px;
+    padding: 6px 10px; cursor: pointer;
+    border-left: 2px solid transparent;
+    transition: background .06s;
+}
+.pvtab:hover { background: var(--surface2); }
+.pvtab.active { background: var(--surface2); border-left-color: var(--text); }
+.pvtab .ptab-label { flex: 1; }
+
 /* ─── History modal ──────────────────────────────────────────── */
 .hist-item {
     padding: 8px 12px;
@@ -1567,9 +1663,68 @@ mark.palette-hl { background: rgba(234,179,8,0.15); color: var(--yellow); border
     cursor: default;
 }
 .db-table-result td.db-null { color: var(--text-3); font-style: italic; }
-.db-table-result td.db-num  { color: #818CF8; }
+.db-table-result td.db-num  { color: #818CF8; text-align: right; }
 .db-table-result td.db-str  { color: var(--green); }
 .db-table-result tr:hover td { background: rgba(255,255,255,0.015); }
+
+/* Резайзер колонок */
+.db-table-result th { position: relative; }
+.db-th-label { display: inline-block; }
+.db-col-resizer {
+    position: absolute; top: 0; right: 0; width: 6px; height: 100%;
+    cursor: col-resize; user-select: none; z-index: 2;
+}
+.db-col-resizer:hover { background: var(--accent, #3b82f6); opacity: 0.5; }
+
+/* Гуттер с номером строки — закреплён слева, открывает карточку строки */
+.db-table-result th.db-gut,
+.db-table-result td.db-gut {
+    position: sticky; left: 0; z-index: 2;
+    width: 40px; min-width: 40px; max-width: 40px;
+    text-align: right; padding: 4px 8px;
+    color: var(--text-3); font-size: 10px;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    user-select: none;
+}
+.db-table-result th.db-gut { z-index: 4; }
+.db-table-result td.db-gut { cursor: pointer; }
+.db-table-result tr:hover td.db-gut { color: var(--accent, #3b82f6); background: var(--surface2); }
+
+/* Карточный просмотр строки */
+.db-card-box {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); width: 100%; max-width: 620px;
+    max-height: 76vh; display: flex; flex-direction: column;
+    overflow: hidden; box-shadow: 0 24px 80px rgba(0,0,0,0.6);
+}
+.db-card-head {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 16px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.db-card-body { overflow-y: auto; padding: 4px 0; }
+.db-card-row {
+    display: grid; grid-template-columns: 180px 1fr auto; gap: 12px;
+    align-items: start; padding: 7px 16px;
+    border-bottom: 1px solid rgba(255,255,255,0.03);
+}
+.db-card-row:hover { background: rgba(255,255,255,0.02); }
+.db-card-key {
+    font-size: 11px; color: var(--text-3); font-family: var(--mono);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    padding-top: 1px;
+}
+.db-card-val {
+    font-size: 12px; color: var(--text); font-family: var(--mono);
+    white-space: pre-wrap; word-break: break-word; min-width: 0;
+}
+.db-card-val.db-null { color: var(--text-3); font-style: italic; }
+.db-card-copy {
+    background: none; border: 1px solid var(--border); border-radius: var(--radius-xs);
+    color: var(--text-3); cursor: pointer; font-size: 11px; padding: 1px 6px;
+    height: 22px; flex-shrink: 0;
+}
+.db-card-copy:hover { color: var(--text); border-color: var(--border-2); }
 
 .db-status {
     padding: 5px 12px; font-size: 10px; font-family: var(--mono);

@@ -16,6 +16,8 @@ app.register('server', {
     _filter: '',
     _serverStartTs: null,
     _renderQueued: false,
+    _wrap: (() => { try { return localStorage.getItem('console_wrap') !== '0'; } catch { return true; } })(),
+    _hiddenLevels: (() => { try { return new Set(JSON.parse(localStorage.getItem('console_hidden_levels') || '[]')); } catch { return new Set(); } })(),
 
     // ── Консоль ──────────────────────────────────────────────────────
     // Новый формат localStorage: {v:2, lines:[..]}. Старый формат
@@ -78,14 +80,32 @@ app.register('server', {
         // Раньше срезали до CONSOLE_LIMIT — теперь не срезаем.
     },
 
-    _colorize(line) {
-        const s = line.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-        if (/\[fatal\]|\[crash\]/i.test(line))  return `<span class="con-fatal">${s}</span>`;
-        if (/\[error\]|error:/i.test(line))      return `<span class="con-error">${s}</span>`;
-        if (/\[warn\]|warning/i.test(line))      return `<span class="con-warn">${s}</span>`;
-        if (/\[debug\]/i.test(line))             return `<span class="con-debug">${s}</span>`;
-        if (/\[info\]/i.test(line))              return `<span class="con-info">${s}</span>`;
-        return `<span class="con-default">${s}</span>`;
+    _lineLevel(line) {
+        if (/\[fatal\]|\[crash\]/i.test(line)) return 'fatal';
+        if (/\[error\]|error:/i.test(line))    return 'error';
+        if (/\[warn\]|warning/i.test(line))     return 'warn';
+        if (/\[debug\]/i.test(line))            return 'debug';
+        if (/\[info\]/i.test(line))             return 'info';
+        return 'default';
+    },
+
+    _colorize(line, filter) {
+        let s = line.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        // Подсветка совпадений фильтра (не пряча контекст строки)
+        if (filter) {
+            const fe = filter.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+            if (fe) {
+                try {
+                    const re = new RegExp(fe.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+                    s = s.replace(re, (m) => `<mark class="con-hl">${m}</mark>`);
+                } catch {}
+            }
+        }
+        const cls = {
+            fatal: 'con-fatal', error: 'con-error', warn: 'con-warn',
+            debug: 'con-debug', info: 'con-info', default: 'con-default',
+        }[this._lineLevel(line)];
+        return `<span class="${cls}">${s}</span>`;
     },
 
     _flushConsole() {
@@ -105,8 +125,12 @@ app.register('server', {
         }
         if (this._tail) lines.push(this._tail);
         lines = lines.filter(l => l && l.trim());
+        // Фильтр по уровням (скрытие error/warn/info/debug спама)
+        if (this._hiddenLevels && this._hiddenLevels.size) {
+            lines = lines.filter(l => !this._hiddenLevels.has(this._lineLevel(l)));
+        }
         const visible = filter ? lines.filter(l => l.toLowerCase().includes(filter)) : lines;
-        el.innerHTML = visible.map(l => this._colorize(l)).join('\n');
+        el.innerHTML = visible.map(l => this._colorize(l, this._filter)).join('\n');
         this._updateCount(visible.length);
         if (this._autoScroll) el.scrollTop = el.scrollHeight;
     },
@@ -114,6 +138,14 @@ app.register('server', {
     _updateCount(n) {
         const el = document.getElementById('console-count');
         if (el) el.textContent = `${(n ?? this._lines.length).toLocaleString('ru-RU')} строк`;
+    },
+
+    _applyConsoleControls() {
+        if (this._el) this._el.classList.toggle('nowrap', !this._wrap);
+        const wb = document.getElementById('btn-wrap');
+        if (wb) wb.style.color = this._wrap ? 'var(--green)' : 'var(--text-3)';
+        document.querySelectorAll('.console-chip').forEach(c =>
+            c.classList.toggle('off', this._hiddenLevels.has(c.dataset.level)));
     },
 
     // ── Компиляция — хранилище ────────────────────────────────────────
@@ -240,17 +272,25 @@ app.register('server', {
         </div>
 
         <!-- Консоль -->
-        <div class="card" style="padding:0;overflow:hidden">
+        <div class="card" style="padding:0;overflow:hidden;position:relative">
             <div class="console-toolbar">
                 <span class="card-title" style="margin:0">Консоль</span>
                 <input id="con-filter" type="text" placeholder="Фильтр строк..." style="flex:1;margin:0 10px;padding:4px 10px;font-size:12px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-xs);color:var(--text);outline:none;max-width:260px" />
+                <span class="console-levels" id="console-levels">
+                    <button class="console-chip" data-level="error" title="Ошибки">err</button>
+                    <button class="console-chip" data-level="warn" title="Предупреждения">warn</button>
+                    <button class="console-chip" data-level="info" title="Инфо">info</button>
+                    <button class="console-chip" data-level="debug" title="Отладка">dbg</button>
+                </span>
                 <span class="console-count" id="console-count"></span>
+                <button class="btn btn-ghost btn-sm" id="btn-wrap" title="Перенос строк">↵</button>
                 <button class="btn btn-ghost btn-sm" id="btn-pause">⏸</button>
                 <button class="btn btn-ghost btn-sm" id="btn-autoscroll" title="Автоскролл" style="color:var(--green)">↓</button>
                 <button class="btn btn-ghost btn-sm" id="btn-download">↓ .txt</button>
                 <button class="btn btn-ghost btn-sm" id="btn-clear">🗑</button>
             </div>
             <div class="console" id="console-out"></div>
+            <button class="console-jump hidden" id="con-jump" title="Прокрутить вниз">↓ Вниз</button>
         </div>`;
 
         this._el = document.getElementById('console-out');
@@ -258,6 +298,7 @@ app.register('server', {
         if (hostEl && app.platformHost) hostEl.textContent = app.platformHost;
         this.onState();
         this._flushConsole();
+        this._applyConsoleControls();
 
         if (app.state.compile) {
             document.getElementById('btn-compile').disabled = true;
@@ -343,6 +384,35 @@ app.register('server', {
                 const btn = document.getElementById('btn-autoscroll');
                 if (btn) btn.style.color = 'var(--green)';
             }
+            document.getElementById('con-jump')?.classList.toggle('hidden', atBottom);
+        });
+
+        // Перенос строк вкл/выкл
+        document.getElementById('btn-wrap').addEventListener('click', () => {
+            this._wrap = !this._wrap;
+            try { localStorage.setItem('console_wrap', this._wrap ? '1' : '0'); } catch {}
+            this._applyConsoleControls();
+        });
+
+        // Фильтр по уровням (чипы)
+        document.querySelectorAll('.console-chip').forEach(chip => {
+            chip.addEventListener('click', () => {
+                const lvl = chip.dataset.level;
+                if (this._hiddenLevels.has(lvl)) this._hiddenLevels.delete(lvl);
+                else this._hiddenLevels.add(lvl);
+                try { localStorage.setItem('console_hidden_levels', JSON.stringify([...this._hiddenLevels])); } catch {}
+                this._applyConsoleControls();
+                this._flushConsole();
+            });
+        });
+
+        // Кнопка «вниз»
+        document.getElementById('con-jump').addEventListener('click', () => {
+            this._autoScroll = true;
+            const ab = document.getElementById('btn-autoscroll');
+            if (ab) ab.style.color = 'var(--green)';
+            if (this._el) this._el.scrollTop = this._el.scrollHeight;
+            document.getElementById('con-jump').classList.add('hidden');
         });
         document.getElementById('btn-clear').addEventListener('click', () => {
             this._lines = []; this._saveLines(); this._flushConsole();

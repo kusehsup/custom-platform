@@ -453,6 +453,7 @@ const app = {
 
     // ── Boot ──────────────────────────────────────────────────────────
     async boot() {
+        this._applyUiVersion();
         // Регистрируем Service Worker — нужен чтобы браузер предлагал
         // "Установить как приложение". Кэширования агрессивного нет,
         // ошибки регистрации игнорируем (на http не запустится — это норма).
@@ -601,6 +602,7 @@ const app = {
             notes:    `<svg viewBox="0 0 16 16"><path d="M3 2h7l3 3v9a1 1 0 01-1 1H3a1 1 0 01-1-1V3a1 1 0 011-1z"/><path d="M10 2v3h3"/><path d="M5 8h6M5 11h4"/></svg>`,
             ide:      `<svg viewBox="0 0 16 16"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><path d="M6 6L4 8l2 2M10 6l2 2-2 2"/></svg>`,
             more:     `<svg viewBox="0 0 16 16"><circle cx="3.5" cy="8" r="1.4" fill="currentColor" stroke="none"/><circle cx="8"   cy="8" r="1.4" fill="currentColor" stroke="none"/><circle cx="12.5" cy="8" r="1.4" fill="currentColor" stroke="none"/></svg>`,
+            collapse: `<svg viewBox="0 0 16 16"><rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M6.5 3v10"/></svg>`,
         };
 
         document.body.innerHTML = `
@@ -608,7 +610,8 @@ const app = {
             <header class="topbar">
                 <span class="topbar-logo">
                     <span class="topbar-logo-icon">⚡</span>
-                    CustomPlatform
+                    <span class="topbar-logo-label">CustomPlatform</span>
+                    <button id="nav-collapse" title="Свернуть панель">${ico.collapse}</button>
                 </span>
                 <div id="topbar-actions" class="topbar-actions hidden">
                     <button class="btn btn-sm" id="tb-server-btn">—</button>
@@ -655,6 +658,7 @@ const app = {
             })
         );
 
+        document.getElementById('nav-collapse')?.addEventListener('click', () => this.toggleNavCollapsed());
         document.getElementById('btn-debug').addEventListener('click', () => this.toggleDebug());
         document.getElementById('btn-console').addEventListener('click', () => this.toggleConsole());
         document.getElementById('btn-db').addEventListener('click', () => DbWidget.toggle());
@@ -704,6 +708,7 @@ const app = {
         });
 
         this._applyTheme(localStorage.getItem('theme') || 'dark');
+        this._applyUiVersion();
         this.connectWS();
         // Восстанавливаем последнюю активную вкладку и место в редакторе.
         // Session.restore() сам решает что делать — если ничего не сохранено,
@@ -813,6 +818,40 @@ const app = {
         P.register({ id: 'db',            title: 'База данных',                icon: '🗄', group: 'Прочее', run: () => this.navigate('db') });
         P.register({ id: 'extcmd',        title: 'Внешние команды',            icon: '▸', group: 'Сервер', run: () => this.navigate('extcmd') });
         P.register({ id: 'notes',         title: 'Заметки (markdown)',         icon: '📝', group: 'Навигация', run: () => this.navigate('notes') });
+    },
+
+    // ── UI v2 (новый дизайн) ─────────────────────────────────────────
+    // Полностью на CSS-классе body.ui-v2 (см. redesign.css). Старый дизайн
+    // не затрагивается — при выключенном тумблере класса просто нет.
+    _applyUiVersion() {
+        const on = (() => { try { return localStorage.getItem('ui_v2') === '1'; } catch { return false; } })();
+        document.body.classList.toggle('ui-v2', on);
+        const collapsed = (() => { try { return localStorage.getItem('nav_collapsed') === '1'; } catch { return false; } })();
+        document.body.classList.toggle('nav-collapsed', on && collapsed);
+        this._applyDensity();
+    },
+
+    setUiV2(on) {
+        try { localStorage.setItem('ui_v2', on ? '1' : '0'); } catch {}
+        this._applyUiVersion();
+    },
+
+    // ── Плотность интерфейса (компактный режим) ──────────────────────
+    // Класс body.ui-dense; эффект только в связке с ui-v2 (см. redesign.css).
+    _applyDensity() {
+        const dense = (() => { try { return localStorage.getItem('ui_dense') === '1'; } catch { return false; } })();
+        document.body.classList.toggle('ui-dense', dense);
+    },
+
+    setUiDensity(on) {
+        try { localStorage.setItem('ui_dense', on ? '1' : '0'); } catch {}
+        this._applyDensity();
+    },
+
+    toggleNavCollapsed() {
+        const cur = (() => { try { return localStorage.getItem('nav_collapsed') === '1'; } catch { return false; } })();
+        try { localStorage.setItem('nav_collapsed', cur ? '0' : '1'); } catch {}
+        this._applyUiVersion();
     },
 
     _applyTheme(theme) {

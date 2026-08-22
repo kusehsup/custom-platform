@@ -12,11 +12,21 @@ from config import PLATFORM_URL, PROXY_URL
 # Размер кольцевого буфера консольных логов (на одну сессию).
 CONSOLE_BUFFER_SIZE = 10000
 
-_host = urllib.parse.urlparse(PLATFORM_URL).netloc
+_parsed = urllib.parse.urlparse(PLATFORM_URL)
+_host = _parsed.netloc
+_scheme = (_parsed.scheme or 'http').lower()
+_ws_scheme = 'wss' if _scheme == 'https' else 'ws'
+# Порт для SOCKS-туннеля: явный из URL, иначе 443 для https / 80 для http.
+if ':' in _host:
+    _ws_hostname = _host.rsplit(':', 1)[0]
+    _ws_port = int(_host.rsplit(':', 1)[1])
+else:
+    _ws_hostname = _host
+    _ws_port = 443 if _scheme == 'https' else 80
 _path_param = urllib.parse.quote(PLATFORM_URL, safe='')
 _path_queries = urllib.parse.quote(PLATFORM_URL + 'code_queries', safe='')
-WS_URL = f'ws://{_host}/socket.io/?path={_path_param}&EIO=3&transport=websocket'
-WS_URL_QUERIES = f'ws://{_host}/socket.io/?path={_path_queries}&EIO=3&transport=websocket'
+WS_URL = f'{_ws_scheme}://{_host}/socket.io/?path={_path_param}&EIO=3&transport=websocket'
+WS_URL_QUERIES = f'{_ws_scheme}://{_host}/socket.io/?path={_path_queries}&EIO=3&transport=websocket'
 
 WS_HEADERS = {
     'Origin': PLATFORM_URL.rstrip('/'),
@@ -143,13 +153,19 @@ class PlatformClient:
     async def connect(self) -> bool:
         import logging
         log = logging.getLogger('platform.client')
-        host_part = _host.split(':')[0]
-        port_part = int(_host.split(':')[1]) if ':' in _host else 80
+        host_part = _ws_hostname
+        port_part = _ws_port
         kwargs = dict(
             additional_headers=WS_HEADERS,
             max_size=16 * 1024 * 1024,
             ping_interval=None,
         )
+        if _ws_scheme == 'wss':
+            # При готовом SOCKS-сокете websockets сам не всегда поднимает TLS —
+            # явно включаем SSL и задаём server_hostname для SNI/проверки.
+            import ssl as _ssl
+            kwargs['ssl'] = _ssl.create_default_context()
+            kwargs['server_hostname'] = host_part
         if PROXY_URL:
             # Создаём сокет в executor чтобы не блокировать event loop
             loop = asyncio.get_event_loop()
